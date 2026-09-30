@@ -1,0 +1,5 @@
+pnpm-lock.yaml
+
+# Markdown is written by hand in compact style (see docs/system-design.md),
+# and padding every table would turn small edits into large diffs.
+*.md

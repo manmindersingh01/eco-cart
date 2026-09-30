@@ -1,0 +1,30 @@
+# Dependencies
+node_modules
+
+# Build output
+.next
+next-env.d.ts
+dist
+*.tsbuildinfo
+
+# Test output
+coverage
+.vitest
+
+# Environment files (commit only the examples)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Local-only project files
+EcoKart_One_Month_Delivery_Timeline.pdf
+.lavish
+
+# Editor and OS files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store

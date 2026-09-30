@@ -1,0 +1,176 @@
+# EcoKart
+
+<!--
+Maintainer notes. Block comments like this are stripped before Claude reads the file, so they cost no context.
+- Keep this file under about 200 lines. Longer files lower how well Claude follows them.
+- Only keep rules Claude cannot work out by reading the code. If a rule only matters for one folder, move it to .claude/rules/ with a `paths:` filter.
+- Fill in "Commands" as soon as package.json exists.
+- Review this file at each milestone and delete rules Claude already follows without being told.
+-->
+
+EcoKart is a multi-vendor marketplace for India with three kinds of users: buyers, sellers, and administrators.
+It is one responsive Next.js app (App Router, React, TypeScript) plus one background worker built from the same codebase.
+PostgreSQL is the only stateful service we run, and it also holds full-text search, vectors (pgvector), and the job queue (pg-boss).
+A small AI layer (Claude API and Voyage embeddings) drafts listings, maps import columns, screens listings, powers natural-language and image search, and answers product questions.
+One developer builds it, and production launch is Saturday 31 October 2026.
+
+## Where the truth lives
+
+- `docs/system-design.md` is the source of truth for architecture, tables, and flows.
+  Before writing code for a feature, read its section: 4 code layout, 5 data model, 6.1 login, 6.2 listings, 6.3 checkout and payment, 6.4 dispatch, 6.5 returns, 6.6 invoices, 6.7 imports, 6.8 search, 6.9 assistant, 8 security.
+- `EcoKart_One_Month_Delivery_Timeline.pdf` has the milestones, the client inputs, and the launch priorities.
+- The decisions in section 11 of the design doc are recommendations until the client confirms them.
+  Build with the recommended option (Docker plus pg-boss, Drizzle, own OTP auth, guest cart, one role per account) unless told otherwise.
+- If a change would contradict the design doc, stop and ask first.
+  Once a new decision is agreed, update the design doc in the same change so code and doc never drift apart.
+
+## Commands
+
+This is a pnpm 12 workspace.
+pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, so never install Node.js separately for this project.
+
+- Install: `pnpm install`
+- Local database (PostgreSQL 16 with pgvector on port 5434): `pnpm db:up`, stop with `pnpm db:down`
+- Web app and worker together: `pnpm dev` (web on http://localhost:3000)
+- Worker only: `pnpm --filter @ecokart/worker dev`
+- Everything CI runs, in order: `pnpm check` (format check, lint, typecheck, test, build)
+- Single steps: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm format`
+- Tests in one package: `pnpm --filter @ecokart/core test`
+- Add a dependency: `pnpm --filter @ecokart/web add <name>`.
+  The version goes into the `catalog` in `pnpm-workspace.yaml` and `package.json` gets `catalog:`.
+- Not set up yet: e2e tests, db migrate, db seed.
+  Add them here when they exist.
+
+## Architecture rules
+
+- Follow the layout in design doc section 4: routes in `apps/web/src/app/`, business logic in `packages/core/src/modules/<domain>/` (`service.ts`, `queries.ts`, `jobs.ts`, `types.ts`), schema in `packages/core/src/db/schema/`, SQL migrations in `packages/core/src/db/migrations/`, worker job registration in `apps/worker/src/worker.ts`, external clients in `packages/core/src/lib/`.
+- The worker runs `packages/core` and its own code as TypeScript directly on Node.js, so use only type-level TypeScript syntax (no `enum`, `namespace`, or constructor parameter properties) and import local files with their `.ts` extension.
+- Pages, server actions, and API routes call module services.
+  They never write SQL themselves.
+- A module owns its tables.
+  Other modules call its exported service functions and never query its tables directly.
+- Jobs call the same service functions as the web app, so every business rule has exactly one implementation.
+- Never do slow work inside a request.
+  AI calls, embeddings, image resizing, PDFs, emails, and file imports go to a pg-boss job that the worker runs.
+- Do not add Redis, Elasticsearch, a separate vector database, or another queue.
+  Postgres covers all of these at launch, and section 9 of the design doc says when that changes.
+- Uploads go straight from the browser to object storage with presigned URLs.
+  Files never pass through the web app.
+- Public pages (home, category, product, content) use tag-based caching and must revalidate their tag when the product or category changes.
+  Personal pages (cart, orders, seller portal, admin) are never cached.
+
+## Money, tax, and orders
+
+- Money is an integer number of paise in a `bigint` column named `*_paise`.
+  Never use floats or decimals for money, in SQL or in TypeScript.
+- Tax rates are basis points in `*_bps` columns, so 18% is `1800`.
+- Prices are tax inclusive.
+  GST is back-calculated at order time and frozen on the order line.
+- Orders and invoices snapshot everything they show: title, SKU, options, price, MRP, GST rate, HSN code, address, and commission rate.
+  Later catalogue edits must never change a past order or invoice.
+- Carts store no prices.
+  Read price and stock fresh from `product_variants` every time the cart is shown or checked out.
+- The catalogue service updates the summary fields on `products` (`min_price_paise`, `total_stock`, `rating_avg`, `search_text`, and the rest) on every write that affects them.
+- The seller ledger (`seller_ledger_entries`) is append only.
+  Fix a mistake with a new `adjustment` entry, never with UPDATE or DELETE.
+- If seller and buyer are in the same state, the invoice uses CGST plus SGST.
+  If they are in different states, it uses IGST.
+- Invoice numbers come from the seller's own sequence and reset each Indian financial year (1 April to 31 March).
+
+## Checkout, payments, and concurrency
+
+- Never trust the browser.
+  Recompute prices, totals, discounts, stock, and permissions on the server.
+- Decrement stock with one conditional statement: `UPDATE product_variants SET stock = stock - $qty WHERE id = $id AND stock >= $qty`.
+  Zero rows updated means the item sold out, so roll back.
+  Use the same pattern for `coupons.used_count` and invoice sequences.
+- Never call Razorpay or any other external API inside a database transaction.
+  Commit first, then call, and run the compensating rollback on failure (design doc section 6.3, step 4).
+- Verify the Razorpay webhook signature before reading anything from the payload.
+- Webhooks are idempotent through the unique `(provider, event_id)` on `payment_events` with `ON CONFLICT DO NOTHING`.
+  A replay does nothing and still returns success.
+- The webhook and the browser return both confirm payment through the one idempotent `confirmOrderPayment` function.
+  Never add a second path.
+- EcoKart never receives card data.
+  Keep it that way.
+
+## Database and security
+
+- Every table holding buyer or seller data has row-level security (RLS).
+  Set `app.user_id`, `app.role`, and `app.seller_id` with `SET LOCAL` inside the transaction, never plain `SET`, because the connection pooler runs in transaction mode.
+- RLS is the safety net, not the check.
+  Application code still checks permissions explicitly.
+- The worker uses a separate database role that bypasses RLS.
+  Never use that role from the web app.
+- Status columns are `text` with a `CHECK` constraint listing allowed values.
+  Adding a state means a new migration.
+- Every table has `created_at`, and mutable tables also have `updated_at`.
+  Use soft delete (`deleted_at`) only for products and addresses.
+- Use UUID primary keys for anything that appears in a URL and `bigserial` for append-only logs.
+- Every list the UI shows needs a matching composite index and keyset pagination.
+  Never use OFFSET.
+- Never edit a migration that has already run anywhere.
+  Add a new one.
+- Emails go through `email_outbox`, written in the same transaction as the business change.
+- Every admin action writes to `audit_logs`, and every order state change writes to `order_events`.
+- Secrets live only in environment variables.
+  Never commit `.env` files, keys, or tokens, and never log OTP codes, session tokens, or webhook secrets.
+- OTP codes and session tokens are stored only as hashes.
+- Object storage buckets are private, and every download is a short-lived signed URL.
+
+## AI features
+
+- Use the Claude API with model `claude-opus-5-5` through `src/lib/claude.ts`, with structured outputs for every JSON result.
+- Embeddings use Voyage multimodal (1024 dimensions) and live in `product_embeddings`.
+  Re-embed only when `content_hash` changes.
+- Log every AI call in `ai_requests`.
+  Check the cache on `(feature, input_hash)` first, and enforce the daily platform and per-seller limits before calling out.
+- Run deterministic checks before AI checks.
+  For example, listing screening checks price above MRP and prohibited terms before asking Claude.
+- The shopping assistant answers only from the product data it was given and says so when it cannot answer.
+  It returns a structured object with cited product ids, and the storefront renders product cards from that object, never raw model text as HTML.
+
+## Naming and locale
+
+- Use British and Indian English spelling in code, UI, and docs, matching the design doc: `catalogue`, `colour`, `cancelled`.
+- Show money in rupees with Indian digit grouping, for example `new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' })` gives ₹1,00,000.
+- Store times as `timestamptz` and show them in `Asia/Kolkata`.
+- Store phone numbers in E.164 format (`+91...`).
+
+## Scope and priorities
+
+- Scope is fixed by quotation version 4.0 (14 September 2026).
+  Do not build features outside it.
+  If you spot a good idea, suggest it as a post-launch item and move on.
+- If the launch date is at risk, this order wins: payment integrity, order accuracy, catalogue management, the core buyer journey, and only then AI conveniences.
+- The launch-critical automated tests cover checkout, webhook idempotency, stock under concurrency, and row-level security.
+  Keep them green at all times.
+
+## How to work
+
+- Before a non-trivial change, read the matching design doc section and the existing code in that module, then make a short plan.
+- Match the style of the code around you.
+  Comments explain why, not what.
+- For a bug, first reproduce it the way a user would hit it (in the browser or through the real API), then fix it, then show the same reproduction passing.
+- A task is done only when typecheck, lint, and the relevant tests pass.
+  Show the command you ran and its output as evidence instead of just saying it works.
+- For UI work, check the result in Chrome and Safari at phone and desktop widths, and fix anything that looks off even if it was not part of the task.
+- If you see a lint error, a failing test, or a flaky test, fix it or raise it.
+  Never leave it silently.
+
+## Communication
+
+- Always explain things in simple terms.
+  Use short sentences and everyday words, and define any technical term the first time you use it.
+- Start with the answer or the result, then give the reason.
+- When an idea is tricky, add a small concrete example from EcoKart, such as an order, a seller, or a coupon.
+- Assume the client may read anything in `docs/`, so write docs in plain language, the way the design doc is written.
+- If something is unclear or the decision belongs to the client, ask instead of guessing.
+
+## Writing and attribution
+
+- Never add your name, "Claude", "AI-generated", or any similar attribution to code comments, commit messages, PR descriptions, or docs.
+  This includes `Co-Authored-By` and "Generated with" lines.
+- Never use the em dash character.
+  Use a plain hyphen (-) instead.
+- In long Markdown files, put each sentence on its own line.
