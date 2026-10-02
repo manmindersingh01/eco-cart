@@ -11,7 +11,7 @@ Maintainer notes. Block comments like this are stripped before Claude reads the 
 EcoKart is a multi-vendor marketplace for India with three kinds of users: buyers, sellers, and administrators.
 It is one responsive Next.js app (App Router, React, TypeScript) plus one background worker built from the same codebase.
 PostgreSQL is the only stateful service we run, and it also holds full-text search, vectors (pgvector), and the job queue (pg-boss).
-A small AI layer (Claude API and Voyage embeddings) drafts listings, maps import columns, screens listings, powers natural-language and image search, and answers product questions.
+A small AI layer, reached through OpenRouter with DeepSeek V4.1 Flash for chat and vision and Voyage Multimodal 3.5 for embeddings, drafts listings, maps import columns, screens listings, powers natural-language and image search, and answers product questions.
 One developer builds it, and production launch is Saturday 31 October 2026.
 
 ## Where the truth lives
@@ -20,7 +20,8 @@ One developer builds it, and production launch is Saturday 31 October 2026.
   Before writing code for a feature, read its section: 4 code layout, 5 data model, 6.1 login, 6.2 listings, 6.3 checkout and payment, 6.4 dispatch, 6.5 returns, 6.6 invoices, 6.7 imports, 6.8 search, 6.9 assistant, 8 security.
 - `EcoKart_One_Month_Delivery_Timeline.pdf` has the milestones, the client inputs, and the launch priorities.
 - The decisions in section 11 of the design doc are recommendations until the client confirms them.
-  Build with the recommended option (Docker plus pg-boss, Drizzle, own OTP auth, guest cart, one role per account) unless told otherwise.
+  Build with the recommended option (Docker plus pg-boss, Drizzle, guest cart, one role per account) unless told otherwise.
+  Already decided by the client: AWS for hosting only, OpenRouter for AI, Better Auth for authentication.
 - If a change would contradict the design doc, stop and ask first.
   Once a new decision is agreed, update the design doc in the same change so code and doc never drift apart.
 
@@ -115,18 +116,31 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Every admin action writes to `audit_logs`, and every order state change writes to `order_events`.
 - Secrets live only in environment variables.
   Never commit `.env` files, keys, or tokens, and never log OTP codes, session tokens, or webhook secrets.
-- OTP codes and session tokens are stored only as hashes.
+- Authentication is Better Auth (decided 2 October 2026) with the `emailOTP`, `phoneNumber`, and `admin` plugins and the Drizzle adapter (`provider: "pg"`, `usePlural: true`, `advanced.database.generateId: "uuid"`).
+  Its configuration lives in `packages/core/src/modules/auth/`, and it is mounted at `apps/web/src/app/api/auth/[...all]/route.ts`.
+- The tables `users`, `sessions`, `accounts`, and `verifications` belong to Better Auth.
+  Generate their schema with its CLI, never hand-edit them, and read or change users and sessions only through the Better Auth API (`getSession`, `createUser`, `setRole`, `banUser`).
+  Suspending an account is `banUser`.
+- OTP codes are stored hashed (`storeOTP: "hashed"`), and the OTP delivery callbacks only queue the email or SMS; they never send inline.
 - Object storage buckets are private, and every download is a short-lived signed URL.
 
 ## AI features
 
-- Use the Claude API with model `claude-opus-5-5` through `src/lib/claude.ts`, with structured outputs for every JSON result.
-- Embeddings use Voyage multimodal (1024 dimensions) and live in `product_embeddings`.
+- Every AI call goes through `packages/core/src/lib/ai/`, one OpenAI-compatible HTTP client whose base URL, API key, and model names come from environment variables (`AI_BASE_URL`, `AI_API_KEY`, `AI_CHAT_MODEL`, `AI_VISION_MODEL`, `AI_EMBED_MODEL`, `AI_EMBED_DIMENSIONS`, see design doc section 3.2).
+  Never import a vendor SDK anywhere else, and never hard-code a provider or model name outside that folder.
+- The gateway is OpenRouter (`https://openrouter.ai/api/v1`), decided by the client on 2 October 2026.
+  Chat and vision use `deepseek/deepseek-v4.1-flash`; embeddings use `voyageai/voyage-multimodal-3.5` at 1024 dimensions.
+  Changing a model is a configuration change, and changing the embedding model also needs a re-embed job.
+- Ask for JSON with `response_format`, put the word "json" and an example of the shape in the prompt, validate the reply against a schema, and retry once.
+  Never trust an unvalidated reply, even when the gateway advertises structured outputs.
+- Send images as `image_url` content parts pointing at the resized card-size image on CloudFront, never the original upload.
+- Embeddings live in `product_embeddings` as `vector(1024)`: one `text` row per product and one `image` row per product image, all from the same multimodal model, so text and photos share one index.
+  Use `input_type: search_document` for catalogue items and `search_query` for buyer queries.
   Re-embed only when `content_hash` changes.
 - Log every AI call in `ai_requests`.
   Check the cache on `(feature, input_hash)` first, and enforce the daily platform and per-seller limits before calling out.
 - Run deterministic checks before AI checks.
-  For example, listing screening checks price above MRP and prohibited terms before asking Claude.
+  For example, listing screening checks price above MRP and prohibited terms before asking the model.
 - The shopping assistant answers only from the product data it was given and says so when it cannot answer.
   It returns a structured object with cited product ids, and the storefront renders product cards from that object, never raw model text as HTML.
 
