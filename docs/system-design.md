@@ -26,12 +26,13 @@ The system has five moving parts.
 | Part | What it does | Runs where |
 | --- | --- | --- |
 | Next.js web app | Storefront, seller portal, admin console, API routes, Razorpay webhook | One or more stateless containers |
-| Worker process | Background jobs: AI drafts, embeddings, imports, invoice PDFs, emails, order expiry | One container built from the same codebase |
+| Worker process | Background jobs: AI drafts, embeddings, imports, invoice PDFs, emails, order expiry | A plain Node.js program written in TypeScript, one container built from the same codebase |
 | PostgreSQL | All data, full-text search, vector search (pgvector), and the job queue (pg-boss) | Managed Postgres with pgvector enabled |
 | Object storage + CDN | Product images, import files, invoice PDFs, static assets | Private S3 bucket behind CloudFront |
-| External services | Razorpay, DeepSeek API (text), Amazon Bedrock (vision and embeddings), Amazon SES, SMS provider | Client-owned AWS and DeepSeek accounts |
+| External services | Razorpay; AI through OpenRouter (DeepSeek V4.1 Flash for chat and vision, Voyage Multimodal 3.5 for embeddings); a transactional email provider; an SMS provider | Client-owned accounts |
 
-The whole system runs in the client's AWS account in the Mumbai region (`ap-south-1`).
+Everything we host runs in the client's AWS account in the Mumbai region (`ap-south-1`).
+AWS is used for hosting only; AI, payments, email, and SMS are separate client-owned accounts reached over HTTPS.
 
 The web app never does slow work inside a request.
 Anything that talks to an AI model, resizes an image, builds a PDF, sends an email, or processes a file is queued and handled by the worker.
@@ -47,15 +48,16 @@ Each of those can be added later if measurements show a need, and the code is st
 | --- | --- | --- |
 | Framework | Next.js (App Router), React, TypeScript | Fixed by the quotation. Server components give fast, cacheable public pages and one codebase for all three surfaces. |
 | Database access | Drizzle ORM with SQL migrations | Thin layer over SQL, easy to combine with row-level security and raw queries for search. Prisma is the alternative if preferred. |
-| Auth | Own OTP login with database-backed sessions in an HttpOnly cookie | Launch scope is OTP only (email and mobile). Two small tables cover it with no vendor lock-in and a clean fit with row-level security. |
-| Background jobs | pg-boss (queue stored in Postgres) with a worker process | Reliable retries and scheduling with zero extra infrastructure. If the web app is hosted on Vercel instead of containers, use Inngest for the same role. |
+| Auth | Better Auth (open source, MIT) with its email OTP, phone number, and admin plugins, sessions stored in Postgres through its Drizzle adapter | Decided by the client. It covers OTP login by email and SMS, roles, suspension, and session handling out of the box, so we do not write auth ourselves. It runs inside our app and database, so there is no third-party auth service and row-level security works unchanged. |
+| Background jobs | pg-boss (queue stored in Postgres) with a worker process | Reliable retries and scheduling with zero extra infrastructure. |
 | Search | Postgres full-text (`tsvector`), trigram fuzzy match (`pg_trgm`), and pgvector (HNSW index) | One database answers keyword, semantic, and image search with filters in a single query. Sufficient well past one million products. |
-| AI text tasks | DeepSeek API, `deepseek-chat`, through its OpenAI-compatible endpoint, JSON mode, every result validated against a schema before use | The client's chosen provider and very cheap per token. Covers every text task: listing text, import column mapping, missing-content suggestions, natural-language query parsing, text screening, and the shopping assistant. It cannot read images and has no embeddings endpoint, so those two jobs go to Bedrock. |
-| AI vision and embeddings | Amazon Bedrock: Titan Multimodal Embeddings (1024 dimensions) for text and image vectors, Amazon Nova Lite for reading photographs | Same AWS account and bill, IAM authentication, no extra vendor. Titan embeds text and images into one space, so a single index serves semantic search, image search, and similar products. Nova Lite reads seller photographs for the listing builder and flags unusable images during screening. |
+| AI gateway | OpenRouter, one OpenAI-compatible endpoint and one key per environment for chat, vision, and embeddings | Decided by the client. Any model is a configuration change, and the same client can point straight at a provider if OpenRouter is ever unavailable. |
+| AI chat and vision | `deepseek/deepseek-v4.1-flash` through OpenRouter: DeepSeek's current flash model, reads text and images, 1M context, JSON output | The client's chosen model family at a very low price per token. Reads photographs, so listing drafts from photos and image screening use the same model as every text task. Every JSON reply is validated against a schema and retried once. |
+| AI embeddings | `voyageai/voyage-multimodal-3.5` through OpenRouter at 1024 dimensions | DeepSeek has no embeddings endpoint, and this model embeds text and images into one space. One index serves semantic search, image search, and similar products, and an uploaded photo is embedded directly without a vision call. |
 | Media | Direct browser upload to S3 with presigned URLs; worker resizes into fixed sizes | Uploads never pass through the web app. Images are served from CloudFront with immutable cache headers. |
 | Payments | Razorpay hosted checkout, Orders API, and signature-verified webhooks | Fixed by the quotation. No card data ever touches EcoKart. |
-| Email and SMS | Amazon SES for email; an Indian SMS provider with DLT approval (MSG91 or similar) for OTP | SES is in the same account. Email OTP works from day one; SMS OTP switches on when DLT approval arrives. |
-| Hosting | AWS Mumbai: ECS Fargate for the web and worker containers, RDS PostgreSQL with pgvector, S3 + CloudFront, Secrets Manager | Client-owned account as the quotation requires. Infrastructure is defined as code, and staging and production are two environments of the same definition. |
+| Email and SMS | A transactional email API (Resend or Amazon SES, one adapter either way); an Indian SMS provider with DLT approval (MSG91 or similar) for OTP | Email OTP works from day one; SMS OTP switches on when DLT approval arrives. |
+| Hosting | AWS Mumbai, hosting only: ECS Fargate for the web and worker containers, RDS PostgreSQL with pgvector, S3 + CloudFront, Secrets Manager | Client-owned account as the quotation requires. Infrastructure is defined as code, and staging and production are two environments of the same definition. |
 
 ### 3.1 AWS deployment shape
 
@@ -68,45 +70,53 @@ Each of those can be added later if measurements show a need, and the code is st
 | S3 | One private bucket per environment for images, import files, and invoice PDFs |
 | CloudFront | One distribution in front of the ALB for public page caching and TLS, and one in front of the bucket with origin access control |
 | Route 53 + ACM | DNS and certificates |
-| SES | Transactional email, domain verified, moved out of the sandbox before launch |
-| Bedrock | Titan Multimodal Embeddings and Nova Lite, called from the worker and from the search endpoint |
-| Secrets Manager | Database password, Razorpay keys, DeepSeek key, SMS key, injected into task definitions |
+| Secrets Manager | Database password, Razorpay keys, AI provider keys, email and SMS keys, injected into task definitions |
 | CloudWatch | Logs from both services and alarms on error rate, queue depth, and database CPU |
 | GitHub Actions | Builds the image, pushes to ECR, runs migrations, deploys staging, and promotes to production on approval |
 
+AWS is used for hosting only.
+The AI, email, and SMS providers are ordinary HTTPS APIs called from the web and worker tasks, with their keys in Secrets Manager.
 Infrastructure is defined with the AWS CDK in the same repository, so the staging and production environments cannot drift apart.
 Each container keeps its own small application-side connection pool; RDS Proxy is added only if the number of tasks grows large.
-If a Bedrock model is not yet available in Mumbai, the worker calls it in another region; embeddings and image reading are asynchronous or one-off per request, so the extra latency does not affect page speed.
 
 ### 3.2 AI provider layer
 
-The application never calls a vendor directly.
-The `ai` module exposes three small interfaces, and each has one adapter behind it.
+Decided on 2 October 2026: every AI call goes through OpenRouter.
+Chat and vision use DeepSeek V4.1 Flash, and embeddings use Voyage Multimodal 3.5.
 
-| Interface | What it does | Adapter at launch | Used by |
+The application never imports a vendor SDK.
+Every AI call goes through one small HTTP client that speaks the OpenAI-compatible format, which OpenRouter, DeepSeek, and most other providers accept.
+Which model answers is decided by environment variables, so changing a model is a configuration change and not a code change.
+
+| Capability | Interface | Model through OpenRouter | Used by |
 | --- | --- | --- | --- |
-| `TextModel.json(prompt, schema)` | Sends a prompt, asks for JSON, validates the reply against a schema, retries once on invalid output | DeepSeek `deepseek-chat` | Listing text, import mapping, missing-content suggestions, query parsing, text screening, assistant |
-| `VisionModel.describe(images, prompt, schema)` | Reads photographs and returns validated JSON | Bedrock Amazon Nova Lite | Listing builder from photos, unusable-image screening |
-| `Embedder.embed(text or image)` | Returns a 1024-dimension vector | Bedrock Titan Multimodal Embeddings | Product text and image embeddings, semantic search, image search, similar products |
+| Chat (text in, JSON out) | `TextModel.json(prompt, schema)` validates the reply against a schema and retries once on invalid output | `deepseek/deepseek-v4.1-flash` | Listing text, import mapping, missing-content suggestions, query parsing, text screening, assistant |
+| Vision (images and text in, JSON out) | `VisionModel.describe(images, prompt, schema)` | `deepseek/deepseek-v4.1-flash` (accepts image input, 1M context) | Listing builder from photos, unusable-image screening |
+| Embeddings (text or image in, vector out) | `Embedder.embed(input)` returns a 1024-dimension vector | `voyageai/voyage-multimodal-3.5` with `dimensions: 1024` | Product text, product images, search queries, uploaded photos, similar products |
 
-Swapping a provider is one adapter file and one environment variable.
+Configuration lives in environment variables, with the same names in staging and production.
 
-What DeepSeek alone can and cannot do matters for the quoted feature list.
+```
+AI_BASE_URL=https://openrouter.ai/api/v1
+AI_API_KEY=<OpenRouter key for this environment>
+AI_CHAT_MODEL=deepseek/deepseek-v4.1-flash
+AI_VISION_MODEL=deepseek/deepseek-v4.1-flash
+AI_EMBED_MODEL=voyageai/voyage-multimodal-3.5
+AI_EMBED_DIMENSIONS=1024
+AI_EMBED_BASE_URL and AI_EMBED_API_KEY   optional overrides, so embeddings can move to another provider without touching chat
+```
 
-| Quoted feature | DeepSeek only | DeepSeek + Bedrock |
-| --- | --- | --- |
-| Listing draft from photographs | Not possible; the draft can only use the seller's notes and category | Full |
-| Listing draft from notes | Full | Full |
-| Import column mapping and missing-content suggestions | Full | Full |
-| Text screening for prohibited terms | Full | Full |
-| Unusable-image screening | Not possible | Full |
-| Natural-language search | Query parsing works, but ranking falls back to keyword search without embeddings | Full |
-| Image search and similar products | Not possible without an embedding model | Full |
-| Shopping assistant | Full, with keyword retrieval instead of semantic retrieval | Full |
+How OpenRouter is used.
 
-If the client insists on DeepSeek as the only paid AI vendor, the gap can be closed by running an open-weight image and text embedding model (SigLIP or CLIP through ONNX Runtime) inside the worker container.
-That restores semantic search, image search, and similar products with no external vendor, at the cost of a larger worker image and a few hundred milliseconds of CPU per embedding.
-Reading photographs would still require a vision model, so the listing builder would work from notes only.
+- One API key per environment, each with a credit limit set in the OpenRouter dashboard.
+  That limit is the hard cap behind the daily limits counted in `ai_requests`.
+- Chat requests ask for JSON with `response_format`.
+  OpenRouter advertises structured outputs for this model, so the client sends the JSON schema when the model accepts it, but every reply is still validated in code because enforcement varies by provider.
+- Image inputs are sent as `image_url` content parts pointing at the resized card-size image on CloudFront, never the original upload.
+- Embedding requests send `input_type: search_document` for catalogue items and `search_query` for buyer queries, and images as `image_url` content parts in the same request format.
+- The OpenRouter account's data policy is set to exclude providers that train on prompts, and routing prefers DeepSeek's own endpoint, so catalogue text goes to as few third parties as possible.
+- A DeepSeek direct key is kept in Secrets Manager as the emergency switch.
+  If OpenRouter is unreachable, pointing `AI_BASE_URL` at `https://api.deepseek.com` with model `deepseek-flash` restores chat and vision; embedding jobs simply wait in the queue until the gateway is back.
 
 Two rules apply to every AI call regardless of provider.
 Only catalogue data and the buyer's own question are sent; buyer identity, addresses, and order history never leave EcoKart.
@@ -143,11 +153,15 @@ packages/
     src/lib/
       razorpay.ts  storage.ts  email.ts  sms.ts  cache.ts
       ai/
-        text.ts        DeepSeek adapter behind the TextModel interface
-        vision.ts      Bedrock Nova adapter behind the VisionModel interface
-        embed.ts       Bedrock Titan adapter behind the Embedder interface
+        client.ts      one OpenAI-compatible HTTP client; base URL, key, model from env
+        chat.ts        TextModel and VisionModel on top of the chat client
+        embed.ts       Embedder on top of the embeddings client
 compose.yaml                   local PostgreSQL 16 with pgvector for development
 ```
+
+Both programs are Node.js.
+The web app is Next.js, which is itself a Node.js server, and the worker is a plain Node.js process with no HTTP server at all; it connects to Postgres, takes jobs from pg-boss, and runs the same module code the web app uses.
+Better Auth lives in `packages/core/src/modules/auth/` (its configuration, plugins, and the OTP delivery callbacks) and is mounted in the web app at `apps/web/src/app/api/auth/[...all]/route.ts`.
 
 Splitting the apps keeps each one small.
 The worker never loads Next.js, and the web app never loads worker-only code.
@@ -177,7 +191,7 @@ Three rules keep this maintainable.
 
 | Domain | Tables |
 | --- | --- |
-| Identity | `users`, `otp_codes`, `sessions`, `addresses` |
+| Identity | `users`, `sessions`, `accounts`, `verifications` (the four managed by Better Auth), `addresses` |
 | Sellers | `sellers` |
 | Catalogue | `categories`, `brands`, `products`, `product_variants`, `product_images`, `product_moderation`, `product_embeddings` |
 | Cart and promotions | `carts`, `cart_items`, `coupons` |
@@ -189,43 +203,57 @@ Three rules keep this maintainable.
 | AI and search | `ai_requests`, `search_queries` |
 | Platform | `platform_settings`, `content_pages`, `email_outbox`, `audit_logs`, `rate_limits` |
 
-That is 35 tables plus the schema that pg-boss creates for itself.
+That is 36 tables, four of them owned by Better Auth, plus the schema that pg-boss creates for itself.
 
 ### 5.3 Identity
 
+The first four tables are created and maintained by Better Auth.
+Its CLI generates their Drizzle schema, and application code never reads or writes them directly; it goes through the Better Auth API.
+They use UUID ids (`advanced.database.generateId: "uuid"`) and plural snake_case names (`usePlural`) so they look like the rest of the database.
+They carry no row-level security policies, because Better Auth is the only code that touches them.
+
 ```
-users
-  id                 uuid PK
-  role               text   buyer | seller | admin
-  email              citext UNIQUE, nullable
-  phone              text   UNIQUE, nullable, E.164 format
-  name               text
-  status             text   active | suspended
-  email_verified_at  timestamptz
-  phone_verified_at  timestamptz
+users                                   core + phone number plugin + admin plugin
+  id                      uuid PK
+  name                    text
+  email                   text UNIQUE   phone-only accounts get a placeholder generated by the plugin
+  email_verified          boolean
+  image                   text, nullable
+  phone_number            text UNIQUE, nullable, E.164 format
+  phone_number_verified   boolean
+  role                    text   buyer | seller | admin
+  banned                  boolean       our "suspended"
+  ban_reason              text
+  ban_expires             timestamptz
   created_at, updated_at
-  CHECK (email IS NOT NULL OR phone IS NOT NULL)
 
-otp_codes
-  id            bigserial PK
-  identifier    text   the email or phone the code was sent to
-  channel       text   email | sms
-  code_hash     text   hashed, never the plain code
-  purpose       text   login
-  expires_at    timestamptz
-  attempts      int    default 0, locked after 5
-  consumed_at   timestamptz
-  created_at
-  INDEX (identifier, created_at DESC)
-
-sessions
-  id            text PK   SHA-256 of the cookie token
-  user_id       uuid FK users
-  expires_at    timestamptz
-  created_at, last_seen_at
-  ip            inet
-  user_agent    text
+sessions                                core + admin plugin
+  id               uuid PK
+  user_id          uuid FK users
+  token            text UNIQUE   the cookie value, opaque
+  expires_at       timestamptz
+  ip_address       text
+  user_agent       text
+  impersonated_by  uuid, nullable   set when an admin impersonates a user
+  created_at, updated_at
   INDEX (user_id)
+
+accounts                                core; links a user to a sign-in method
+  id            uuid PK
+  user_id       uuid FK users
+  provider_id   text    e.g. email-otp, phone-number
+  account_id    text
+  password      text, nullable   unused at launch
+  created_at, updated_at
+  INDEX (user_id)
+
+verifications                           core; holds OTP codes while they are valid
+  id            uuid PK
+  identifier    text    the email or phone the code was sent to
+  value         text    the code, stored hashed (storeOTP: hashed)
+  expires_at    timestamptz
+  created_at, updated_at
+  INDEX (identifier)
 
 addresses
   id            uuid PK
@@ -239,8 +267,9 @@ addresses
 ```
 
 One account has one role.
-A seller account is created by an administrator and linked to a `sellers` row.
-If a person needs to be both a buyer and a seller they use two accounts at launch; this is the simplest rule and can be relaxed later by moving `role` into a join table.
+A seller account is created by an administrator through Better Auth's `createUser` with the `seller` role and linked to a `sellers` row.
+Suspending a buyer or seller is Better Auth's `banUser`, which also revokes every session; the reason is kept in `ban_reason`.
+If a person needs to be both a buyer and a seller they use two accounts at launch; the admin plugin can hold several roles on one account, so this can be relaxed later without a schema change.
 
 ### 5.4 Sellers
 
@@ -366,7 +395,7 @@ product_embeddings
   image_id      uuid FK product_images, nullable, set when kind = image
   model         text
   content_hash  text   hash of the text or image that was embedded
-  embedding     vector(1024)
+  embedding     vector(1024)   Voyage Multimodal 3.5 at 1024 dimensions; changing the model means a re-embed job
   created_at
   UNIQUE (product_id, kind, image_id)
   HNSW INDEX (embedding vector_cosine_ops) WHERE kind = 'text'
@@ -376,6 +405,9 @@ product_embeddings
 Every submission creates a new `product_moderation` row, so the history of approvals and rejections is kept.
 Embeddings live in their own table because vectors are large and would slow down every scan of `products`.
 The `content_hash` column means an embedding is only regenerated when the underlying text or image actually changed, which is what the quotation calls storing embeddings to avoid repeat cost.
+The `text` row holds the vector of the product's text, and each `image` row holds the vector of one product image, both from the same multimodal model.
+Because they share one space, a typed query can match a photo and an uploaded photo can match a description.
+Changing the embedding model means a one-off re-embed job, because vectors from different models cannot be compared.
 
 ### 5.6 Cart and promotions
 
@@ -656,7 +688,7 @@ ai_requests
   feature        text   listing_draft | import_mapping | import_fill | nl_search | image_search | similar | assistant | screening | embedding
   user_id        uuid FK users, nullable
   seller_id      uuid FK sellers, nullable
-  provider       text   deepseek | bedrock | local
+  provider       text   e.g. deepseek | openrouter | local
   model          text
   input_hash     text   hash of the normalised input, used as a cache key
   input_tokens, output_tokens   int
@@ -749,11 +781,15 @@ The row is written in the same transaction as the business change, so an email i
 
 ### 6.1 Login
 
-1. The user enters an email or mobile number.
-2. The server checks `rate_limits`, generates a six-digit code, stores its hash in `otp_codes` with a ten-minute expiry, and queues the email or SMS.
-3. The user enters the code; the server verifies the hash, marks it consumed, creates or finds the user, and inserts a `sessions` row.
+Login is handled by Better Auth, mounted in the web app at `/api/auth/*`.
+
+1. The user enters an email or mobile number and the browser calls Better Auth's email OTP or phone number plugin.
+2. Better Auth generates a six-digit code, stores it hashed in `verifications` with a five-minute expiry, and calls our callback, which queues the email through `email_outbox` or the SMS through the SMS provider.
+   Better Auth's own rate limiting protects these endpoints.
+3. The user enters the code.
+   Better Auth verifies it, allows three attempts, creates the user on first sign-in (with the `buyer` role by default), and writes a `sessions` row.
 4. The browser receives an HttpOnly, Secure, SameSite cookie containing the session token.
-5. On every request the session is looked up by the hash of the token and the user, role, and seller id are set as Postgres session variables for row-level security.
+5. On every request the app reads the session through Better Auth, and the user id, role, and seller id are set as Postgres session variables with `SET LOCAL` for row-level security.
 
 ### 6.2 Listing lifecycle
 
@@ -765,7 +801,7 @@ approved -> archived
 
 1. A seller creates a listing by hand, from photographs with the AI listing builder, or through a catalogue import. Every path produces a product in `draft`.
 2. On submit the product moves to `pending_review`, a `product_moderation` row is created, and a screening job runs.
-3. The screening job runs deterministic checks first (price above MRP, missing images or description, prohibited terms from platform settings), then asks the text model (DeepSeek) whether the title and description describe a prohibited category and the vision model (Bedrock Nova) whether any image is unusable, and stores flags and a risk level on the moderation row.
+3. The screening job runs deterministic checks first (price above MRP, missing images or description, prohibited terms from platform settings), then asks the text model whether the title and description describe a prohibited category and the vision model whether any image is unusable (both DeepSeek V4.1 Flash through OpenRouter), and stores flags and a risk level on the moderation row.
 4. An administrator sees the queue sorted by risk, approves or rejects with a reason, and the decision is written to the moderation row, the product, and `audit_logs`.
 5. On approval the product's GST rate is copied from its category, its search text and summary fields are rebuilt, embeddings are queued, and the product page cache tag is revalidated.
 
@@ -816,9 +852,9 @@ Buyers and sellers download the PDF through a short-lived signed URL.
 ### 6.7 Catalogue import
 
 1. The seller uploads a CSV or XLSX file straight to object storage and a `catalogue_imports` row is created.
-2. A job reads the headers and the first few rows, asks DeepSeek for a suggested mapping from the seller's column names to EcoKart fields, and stores it with a confidence per column.
+2. A job reads the headers and the first few rows, asks the text model for a suggested mapping from the seller's column names to EcoKart fields, and stores it with a confidence per column.
 3. The seller reviews and confirms the mapping in the portal.
-4. A job validates every row deterministically (required fields, price and MRP numeric and sane, stock non-negative, category resolvable), optionally asks DeepSeek to propose missing descriptions or categories for rows that lack them, and creates draft products and variants for valid rows.
+4. A job validates every row deterministically (required fields, price and MRP numeric and sane, stock non-negative, category resolvable), optionally asks the text model to propose missing descriptions or categories for rows that lack them, and creates draft products and variants for valid rows.
 5. Failed rows are written to an error report CSV with row numbers and reasons, and the seller submits the valid drafts for review.
 
 ### 6.8 Search and discovery
@@ -826,8 +862,11 @@ Buyers and sellers download the PDF through a short-lived signed URL.
 All four discovery features end in the same place: one SQL query over `products` with filters and a ranking expression.
 
 - Keyword search: `search_vector @@ websearch_to_tsquery(...)`, ranked by `ts_rank`, with a trigram similarity fallback on `search_text` for typos.
-- Natural-language search: DeepSeek turns the sentence into structured filters and a clean query string (category, brand, price range, attributes), the query string is embedded with Titan, and the results are ordered by cosine distance over the text embeddings with the filters applied. Parsed queries are cached by hash for a day, and if the parser times out the sentence is run as a keyword search instead.
-- Image search: the uploaded photo is embedded with the same Titan model and matched against product image embeddings; results are de-duplicated by product.
+- Natural-language search: the text model turns the sentence into structured filters and a clean query string (category, brand, price range, attributes), the query string is embedded as a search query, and the results are ordered by cosine distance over the product text embeddings with the filters applied.
+  Parsed queries are cached by hash for a day, and if the parser times out the sentence is run as a keyword search instead.
+- Image search: the uploaded photo is resized, embedded with the same multimodal model, and matched against the product image embeddings; results are de-duplicated by product.
+  No vision call is needed at query time, so a photo search costs one embedding call.
+  Product images are embedded once, when the listing is approved.
 - Similar products: nearest neighbours of the product's own text embedding within the same category, computed on demand and cached with the product page.
 
 Every search writes a `search_queries` row, and zero-result queries surface in the admin console as the catalogue gap report.
@@ -835,7 +874,7 @@ Every search writes a `search_queries` row, and zero-result queries surface in t
 ### 6.9 Shopping assistant
 
 The assistant is stateless on the server.
-The browser sends the question and the last few turns; the server retrieves the most relevant approved, in-stock products by embedding similarity plus any products the buyer named, and calls DeepSeek with a strict instruction to answer only from the supplied product data and to say so when it cannot.
+The browser sends the question and the last few turns; the server retrieves the most relevant approved, in-stock products by embedding similarity plus any products the buyer named, and calls the text model with a strict instruction to answer only from the supplied product data and to say so when it cannot.
 The response is requested in JSON mode and validated as a structured object with the answer text, the product ids it cited, an optional two-product comparison, and a declined flag, so the storefront can render product cards and links instead of trusting free text.
 Nothing about the buyer except the question itself is included in the prompt.
 Every call is logged in `ai_requests` and counted against the daily platform limit.
@@ -859,8 +898,9 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 
 - Row-level security is enabled on every table that holds buyer or seller data. The web app connects as a database role that is subject to the policies and sets `app.user_id`, `app.role`, and `app.seller_id` with `SET LOCAL` in each transaction. Buyers can only see their own orders and addresses, sellers only their own products, order lines, ledger, and imports, and administrators see everything. The worker connects as a separate role that bypasses the policies.
 - Application code still checks permissions explicitly; row-level security is the safety net that makes a missed check a bug rather than a data leak.
-- Sessions are opaque random tokens stored hashed, with rotation on login and server-side revocation on suspension.
-- Rate limits apply to OTP sending and verification, login, checkout, search, and every AI endpoint, using the `rate_limits` table with an upsert per window.
+- Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, OTP codes stored hashed, three attempts per code, and suspension through `banUser`, which revokes every session of that user.
+- Better Auth rate limits its own endpoints (OTP sending and verification).
+  Checkout, search, and every AI endpoint use the `rate_limits` table with an upsert per window.
 - Razorpay webhooks are verified with the webhook secret before anything is read from the payload, and the checkout return is verified with the key secret. No card data is ever received by EcoKart.
 - All prices, totals, stock, and permissions are recomputed on the server; the browser is never trusted.
 - Secrets live in environment variables in the hosting platform, never in the repository. Object storage buckets are private and every download is a short-lived signed URL.
@@ -894,20 +934,24 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | GST or invoice format disputes | Invoice data is frozen in `invoices.lines`; the PDF template is data driven so the format can change without touching order data. |
 | SMS DLT approval is late | Email OTP works from day one; SMS OTP is a switch in settings. |
 | AI costs run away | Daily platform and per-seller limits counted from `ai_requests`; results cached by input hash; embeddings regenerated only when content changes. |
-| DeepSeek is slow or unavailable | Every AI call runs in the worker with retries, or behind a short timeout on the two request-time paths (query parsing and the assistant). Keyword search never depends on AI, and natural-language search falls back to keyword search. |
-| DeepSeek cannot read images or embed | Bedrock covers vision and embeddings in the same AWS account; the provider layer in section 3.2 keeps the swap local if the client changes vendors. |
-| Catalogue text leaves the AWS account for DeepSeek | Only catalogue content and the buyer's question are sent, never buyer identity or orders. The client should confirm DeepSeek's data terms are acceptable for its own product data. |
+| The AI provider is slow or unavailable | Every AI call runs in the worker with retries, or behind a short timeout on the request-time paths (query parsing, photo embedding, and the assistant). Keyword search never depends on AI, and natural-language search falls back to keyword search. |
+| OpenRouter is unreachable | The client speaks the OpenAI format, so pointing the base URL at DeepSeek direct with the standby key restores chat and vision in minutes. Embedding jobs wait in the queue and run when the gateway returns; search keeps working on the vectors already stored. |
+| The model returns malformed JSON | DeepSeek offers JSON mode but not enforced schemas, so every reply is validated against a schema and retried once. A second failure fails the job visibly instead of storing bad data. |
+| Catalogue text leaves the AWS account for the AI provider | Only catalogue content and the buyer's question are sent, never buyer identity or orders. The client should confirm the chosen provider's data terms are acceptable for its own product data. |
 | Single developer and a fixed deadline | Modules with one responsibility each; automated tests on checkout, webhook idempotency, stock, and row-level security; everything else verified through the acceptance checklist. |
 
 ## 11. Decisions to confirm before build
 
-| Decision | Recommendation | Alternative |
-| --- | --- | --- |
-| AWS compute shape | ECS Fargate for both web and worker, RDS, S3 + CloudFront, defined with the CDK | App Runner for the web app with a Fargate worker, or a single EC2 host running Docker Compose for the pilot |
-| AI providers | DeepSeek for every text task, Bedrock Titan and Nova for embeddings and photographs | DeepSeek only, with open-weight CLIP or SigLIP embeddings self-hosted in the worker and no photo reading, so the listing builder works from notes only |
-| ORM | Drizzle | Prisma |
-| Auth | Own OTP tables and database sessions | Better Auth or Auth.js with an OTP plugin |
-| Guest cart | Yes, cookie-based, merged into the account on login | Require login before adding to cart |
-| Roles | One role per account; a seller uses a separate seller account | One account can be both buyer and seller |
-| Commission base | Applied to the seller's line total after the coupon discount share | Applied before discounts |
-| Delivery revenue | Delivery charge belongs to the platform | Passed through to sellers |
+| Decision | Status | Choice or recommendation | Alternative |
+| --- | --- | --- | --- |
+| Cloud | Decided 1 October 2026 | AWS, for hosting only | - |
+| AI providers | Decided 2 October 2026 | OpenRouter as the gateway, `deepseek/deepseek-v4.1-flash` for chat and vision, `voyageai/voyage-multimodal-3.5` for embeddings | DeepSeek direct plus a separate embeddings source |
+| AWS compute shape | Open | ECS Fargate for both web and worker, RDS, S3 + CloudFront, defined with the CDK | App Runner for the web app with a Fargate worker, or a single EC2 host running Docker Compose for the pilot |
+| ORM | Open | Drizzle (Better Auth ships a Drizzle adapter, and the repo is scaffolded for it) | Prisma |
+| Auth | Decided 2 October 2026 | Better Auth with the email OTP, phone number, and admin plugins, Drizzle adapter, UUID ids | Own OTP tables and sessions, or Auth.js |
+| Guest cart | Open | Yes, cookie-based, merged into the account on login | Require login before adding to cart |
+| Roles | Open | One role per account; a seller uses a separate seller account | One account can be both buyer and seller |
+| Commission base | Open | Applied to the seller's line total after the coupon discount share | Applied before discounts |
+| Delivery revenue | Open | Delivery charge belongs to the platform | Passed through to sellers |
+
+Open rows are recommendations and are built as written unless the client decides otherwise.
