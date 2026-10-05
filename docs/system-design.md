@@ -137,6 +137,7 @@ apps/
       api/health/route.ts      health check for the load balancer and smoke tests
       api/auth/[...all]/route.ts   Better Auth: sign-in codes, sessions, administrator account endpoints
       api/me/route.ts          the signed-in account, its role, and its seller id
+      api/admin/settings/      administrators read and change platform settings
       api/webhooks/razorpay/route.ts
     scripts/create-admin.ts    `pnpm admin:create`: the first administrator
   worker/                      background worker (@ecokart/worker)
@@ -154,15 +155,18 @@ packages/
       client.ts                Drizzle database on top of the pool
       context.ts               withContext(): one transaction with the row-level security context
       migrate.ts               `pnpm db:migrate`: SQL migrations, database users, job queue tables
+      seed.ts                  `pnpm db:seed`: example data for local development only
       schema/                  Drizzle schema, one file per domain
       migrations/              SQL migrations including RLS policies and indexes
     src/jobs.ts                every job queue and its retry settings, created by `pnpm db:migrate`
+    src/errors.ts              the errors services throw; the web app turns each into one HTTP status
     src/testing/               test database setup and fixtures, used only by tests
     src/lib/
       razorpay.ts  storage.ts  email.ts  sms.ts  cache.ts
       queue.ts       sends pg-boss jobs inside the caller's transaction
       encryption.ts  seals short secrets, such as queued sign-in codes
       config.ts      validates environment variables at startup
+      validation.ts  shared formats: GSTIN, PAN, PIN code, state code, phone, money
       mailpit.ts     local mail catcher, for development and tests only
       ai/
         client.ts      one OpenAI-compatible HTTP client; base URL, key, model from env
@@ -791,6 +795,11 @@ rate_limits
   count         int
 ```
 
+Each setting has a rule its value must follow, checked whenever it is saved or read.
+Settings that only the client can decide (commission, delivery charge, free-delivery threshold, company details) have no default, so anything that needs one stops with a clear "not configured yet" error until an administrator saves it.
+The others have defaults: cash on delivery on, a 30-minute payment timeout, AI limits of 2000 a day for the platform and 100 per seller, and an empty prohibited-terms list.
+Every change is written to `audit_logs`, and `pnpm db:seed` fills in obvious example values for local development only.
+
 Emails go through an outbox table rather than being sent inline.
 The row is written in the same transaction as the business change, so an email is never lost or sent for a change that was rolled back, and the worker retries failures.
 
@@ -965,7 +974,7 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | Filtered vector search returns too few rows | Over-fetch candidates and fall back to keyword search when the filtered vector result is short. |
 | Row-level security breaks with connection pooling | Session variables are set with `SET LOCAL` inside a transaction; the pooler runs in transaction mode. |
 | GST or invoice format disputes | Invoice data is frozen in `invoices.lines`; the PDF template is data driven so the format can change without touching order data. |
-| SMS DLT approval is late | Email OTP works from day one; SMS OTP is a switch in settings. |
+| SMS DLT approval is late | Email OTP works from day one; SMS OTP switches on with the `SMS_PROVIDER` environment variable once a provider is ready. |
 | AI costs run away | Daily platform and per-seller limits counted from `ai_requests`; results cached by input hash; embeddings regenerated only when content changes. |
 | The AI provider is slow or unavailable | Every AI call runs in the worker with retries, or behind a short timeout on the request-time paths (query parsing, photo embedding, and the assistant). Keyword search never depends on AI, and natural-language search falls back to keyword search. |
 | OpenRouter is unreachable | The client speaks the OpenAI format, so pointing the base URL at DeepSeek direct with the standby key restores chat and vision in minutes. Embedding jobs wait in the queue and run when the gateway returns; search keeps working on the vectors already stored. |

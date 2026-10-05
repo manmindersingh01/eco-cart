@@ -48,7 +48,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Add a dependency: `pnpm --filter @ecokart/web add <name>`.
   The version goes into the `catalog` in `pnpm-workspace.yaml` and `package.json` gets `catalog:`.
 - Tests rebuild their own databases (`ecokart_test_core`, `ecokart_test_web`, `ecokart_test_worker`) from the migrations on every run and never touch the development database.
-- Not set up yet: e2e tests, db seed.
+- Example data for local development (example platform settings for now): `pnpm db:seed`; it only fills what is missing and refuses production.
+- Not set up yet: e2e tests.
   Add them here when they exist.
 
 ## Architecture rules
@@ -57,6 +58,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - The worker runs `packages/core` and its own code as TypeScript directly on Node.js, so use only type-level TypeScript syntax (no `enum`, `namespace`, or constructor parameter properties) and import local files with their `.ts` extension.
 - Pages, server actions, and API routes call module services.
   They never write SQL themselves.
+- Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, validation, not configured), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
 - A module owns its tables.
   Other modules call its exported service functions and never query its tables directly.
 - Jobs call the same service functions as the web app, so every business rule has exactly one implementation.
@@ -80,6 +82,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   Later catalogue edits must never change a past order or invoice.
 - Carts store no prices.
   Read price and stock fresh from `product_variants` every time the cart is shown or checked out.
+- Commercial values (commission, delivery charge, free-delivery threshold) and company details come from platform settings through `getSetting`, never from constants in code.
 - The catalogue service updates the summary fields on `products` (`min_price_paise`, `total_stock`, `rating_avg`, `search_text`, and the rest) on every write that affects them.
 - The seller ledger (`seller_ledger_entries`) is append only.
   Fix a mistake with a new `adjustment` entry, never with UPDATE or DELETE.

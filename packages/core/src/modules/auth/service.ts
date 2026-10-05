@@ -1,4 +1,5 @@
 import type { Database } from '../../db/client.ts'
+import { ForbiddenError } from '../../errors.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
 import type { JobQueue } from '../../lib/queue.ts'
 import { recordAuditEntry } from '../audit/service.ts'
@@ -79,10 +80,10 @@ export function createAppAuth({
 }
 
 /** A seller account whose business has not been set up by an administrator. */
-export class SellerAccountNotReadyError extends Error {
+export class SellerAccountNotReadyError extends ForbiddenError {
+  override name = 'SellerAccountNotReadyError'
   constructor() {
     super('Seller account is not set up yet')
-    this.name = 'SellerAccountNotReadyError'
   }
 }
 

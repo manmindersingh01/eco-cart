@@ -32,11 +32,13 @@ cp packages/core/.env.example packages/core/.env
 cp apps/web/.env.example apps/web/.env
 cp apps/worker/.env.example apps/worker/.env
 pnpm db:migrate
+pnpm db:seed
 pnpm dev
 ```
 
 `pnpm db:migrate` creates every table, sets the passwords of the two database users the programs log in as (`ecokart_web` for the web app and `ecokart_worker` for the worker), and installs the job queue tables and queues.
 Run it again whenever you pull new migrations; it does nothing when the database is already up to date.
+`pnpm db:seed` saves example values for the settings only the client can decide, such as the commission rate, so a local copy works; it never overwrites a saved value.
 
 `pnpm db:up` also starts Mailpit, which catches every email and SMS the worker sends locally.
 Read them at http://localhost:8025, for example the code when you sign in.
@@ -58,6 +60,7 @@ Run these from the repository root.
 | `pnpm db:up` | Starts the local database and Mailpit and waits until they are ready |
 | `pnpm db:down` | Stops the local database and Mailpit (the data is kept) |
 | `pnpm db:migrate` | Applies new migrations, sets the database user passwords, and installs or upgrades the job queue tables |
+| `pnpm db:seed` | Saves example data for local development; refuses to run in production |
 | `pnpm db:generate` | Writes a new SQL migration from changes to the Drizzle schema in `packages/core/src/db/schema` |
 | `pnpm auth:schema` | Regenerates the Better Auth tables' schema after its configuration changes |
 | `pnpm admin:create` | Creates an administrator account, or makes an existing account one |

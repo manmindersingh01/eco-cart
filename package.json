@@ -21,6 +21,7 @@
     "db:up": "docker compose up --detach --wait",
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @ecokart/core db:migrate",
+    "db:seed": "pnpm --filter @ecokart/core db:seed",
     "db:generate": "pnpm --filter @ecokart/core db:generate",
     "auth:schema": "pnpm --filter @ecokart/core auth:schema",
     "admin:create": "pnpm --filter @ecokart/web admin:create",

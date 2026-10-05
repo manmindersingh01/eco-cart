@@ -33,7 +33,7 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | --- | --- | --- | --- |
 | 1 | Database foundation: every table, migrations, database roles, row-level security, and the web app and worker running against it | 4, 5, 8 | Done |
 | 2 | Login, sessions, and roles with Better Auth (email OTP, phone OTP, admin plugin), with OTP delivery through the email outbox and its sending job | 5.3, 5.13, 6.1, 8 | Done |
-| 3 | Platform settings and their defaults | 5.13 | Planned |
+| 3 | Platform settings and their defaults | 5.13 | Done |
 | 4 | Seller accounts: create, approve, suspend | 5.4 | Planned |
 | 5 | Category tree with GST rates, and brands | 5.5 | Planned |
 | 6 | Products, variants, stock, and image upload | 5.5, 6.2 | Planned |
@@ -317,6 +317,77 @@ Production values come from the hosting platform's secrets, and the programs ref
 - Better Auth's verification "reservations" do not work with UUID ids (it replaces the reserved id with a random one).
   Only the unproven-account clean-up uses them in our setup, and it is avoided as described above; worth reporting to Better Auth.
 
+## Step 3: Platform settings
+
+Status: Done (5 October 2026).
+
+### Goal
+
+Administrators can read and change the platform settings listed in design doc section 5.13, every change is checked and audited, and later steps read each setting with its correct type.
+Commercial values that only the client can decide are never invented by the code.
+
+For example, the client decides on a 10% commission.
+An administrator saves `commission_bps` as `1000`, the change appears in `audit_logs` with the old and new value, and from then on checkout reads `1000` for every seller without their own rate.
+
+### What gets built
+
+1. **One definition per setting** in `packages/core/src/modules/settings/`, with the value's shape, the rule it must follow, and a default only where a sensible one exists.
+
+   | Key | Value | Default |
+   | --- | --- | --- |
+   | `commission_bps` | Whole number from 0 to 10000 (basis points, so 10% is `1000`) | None: the client decides |
+   | `delivery_charge_paise` | Whole number of paise, 0 or more | None: the client decides |
+   | `free_delivery_threshold_paise` | Whole number of paise, 0 or more; orders at or above it ship free | None: the client decides |
+   | `cod_enabled` | Yes or no | Yes, because the quotation offers cash on delivery |
+   | `payment_timeout_minutes` | Whole number from 5 to 120 | 30 |
+   | `ai_daily_limit_platform` | Whole number of AI calls a day, 0 or more | 2000, to confirm with the client |
+   | `ai_daily_limit_seller` | Whole number of AI calls a day per seller, 0 or more | 100, to confirm with the client |
+   | `prohibited_terms` | A list of up to 500 words or phrases, each up to 100 characters; stored lower case without duplicates | An empty list until the client sends theirs |
+   | `company_details` | Legal and display name, GSTIN, PAN, registered address, support email and phone, and the grievance officer's name, email, and phone | None: the client provides these |
+
+2. **Reading a setting** (`getSetting`) returns the saved value, or the default when nothing is saved.
+   A setting with no default that has never been saved stops the action that needs it with a clear "not configured yet" error, instead of guessing.
+   For example, checkout cannot run until the client's delivery charge is saved.
+   A saved value is checked against its rule again when read, so a hand-edited row cannot slip a bad value into checkout.
+3. **Changing a setting** (`updateSetting`) is for administrators only, checked in the service itself.
+   The new value is checked against its rule, saved, and written to `audit_logs` (action `settings.update`, with the old and new value) in one transaction.
+4. **Administrator API:**
+   - `GET /api/admin/settings` lists every setting with its value, whether that value is saved, a default, or missing, a plain-language description, and who changed it last and when.
+   - `PUT /api/admin/settings/{key}` with `{ "value": ... }` saves one setting and returns it.
+   - Signed out gets 401, a buyer or seller gets 403, an unknown key gets 404, and a value that breaks the rule gets 400 with the reason.
+5. **Shared errors for every API:** `NotFoundError`, `ForbiddenError`, `ValidationError`, and `NotConfiguredError` in `packages/core/src/errors.ts`, turned into HTTP answers in one place in the web app, so every later route answers the same way.
+6. **A development seed,** `pnpm db:seed`, that saves clearly marked example values for the settings the client has not decided yet, so a local copy can run checkout once that exists.
+   It never overwrites a saved value, records itself in `audit_logs` as `system`, and refuses to run when `NODE_ENV=production`.
+   On staging and production, administrators enter the client's real values through the API.
+
+### Smaller decisions made in this step
+
+- **The SMS switch stays an environment variable** (`SMS_PROVIDER`, from step 2) rather than a platform setting.
+  Switching SMS on needs provider keys, which live only in the environment.
+  The risk table in the design doc is updated to say so.
+- **Settings are read from the database on each use, without a cache.**
+  It is one indexed lookup, and a change takes effect on the next request in every web container.
+- **Shared formats and plain messages.**
+  GSTIN, PAN, PIN code, state code, phone number, money, and text rules live in `packages/core/src/lib/validation.ts` with messages such as "must be at most 10000", so the admin console can show them as they are.
+- **The seed logs in as `ecokart_web`** (a new `DATABASE_URL` in `packages/core/.env`) and goes through the settings service as `system`, like any other trusted job, rather than writing as the database owner.
+
+### Not in this step
+
+- The administrator screens; the frontend comes after the backend steps.
+- Settings that later steps need, such as the return window, which those steps add with their own definitions.
+- Content pages (terms, privacy, and the other policies), which are step 16.
+
+### Done when
+
+- On `pnpm dev`, an administrator lists the settings, saves a commission rate, and sees it in the list and in `audit_logs`, while a buyer is refused.
+- Tests prove: defaults and "not configured" answers, the rule for every setting, saving with its audit entry, the permission check, every API answer (401, 403, 404, 400, 200), and that the seed fills only missing values and refuses production.
+- `pnpm check` passes.
+
+### Open points found in this step
+
+- The client needs to send the commission rate, the delivery charge and free-delivery threshold, the prohibited-items list (due 6 October), and the company and grievance officer details (due 12 October).
+- The AI daily limits of 2000 for the platform and 100 per seller are starting points to confirm with the client.
+
 ## Change log
 
 - 5 October 2026: File created and step 1 written.
@@ -329,3 +400,6 @@ Production values come from the hosting platform's secrets, and the programs ref
 - 5 October 2026: Step 1 committed. Step 2 written; the email outbox and its sending job moved into step 2 from step 3.
 - 5 October 2026: Step 2 built.
   While building it: the per-recipient limit moved from the OTP callback into a Better Auth hook; the outbox id is reserved before the insert because of the read policy; administrator-created accounts start with a verified email; and two Better Auth limitations were added to the open points (phone codes stored in plain text, verification reservations with UUID ids).
+- 5 October 2026: Step 2 committed. Step 3 written.
+- 5 October 2026: Step 3 built.
+  While building it: the rules got plain-language messages after the first live run showed the library's wording, and the design doc's risk table now says SMS switches on through `SMS_PROVIDER`.
