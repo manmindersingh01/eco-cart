@@ -6,6 +6,7 @@ import {
   phoneNumber,
   pincode,
   stateCode,
+  strictObject,
   text,
   wholeNumber,
 } from '../../lib/validation.ts'
@@ -33,7 +34,7 @@ const companyDetails = z
     displayName: text(100),
     gstin,
     pan,
-    address: z.strictObject({
+    address: strictObject({
       line1: text(200),
       line2: z
         .string()
@@ -48,7 +49,7 @@ const companyDetails = z
     supportPhone: phoneNumber,
     // Required for marketplaces by the Consumer Protection (E-Commerce)
     // Rules, 2020, and shown on the storefront.
-    grievanceOfficer: z.strictObject({
+    grievanceOfficer: strictObject({
       name: text(100),
       email: z.email('must be an email address'),
       phone: phoneNumber,

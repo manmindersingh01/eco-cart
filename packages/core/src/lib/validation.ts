@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ValidationError } from '../errors.ts'
 
 /*
  * Formats used across India-specific data, kept in one place so settings,
@@ -13,6 +14,19 @@ export const phoneNumber = z
     /^\+[1-9]\d{7,14}$/,
     'must be in international format, like +919812345678',
   )
+
+/** An Indian mobile number, the only kind phone sign-in accepts. */
+export const indianMobile = z
+  .string()
+  .regex(
+    /^\+91[6-9]\d{9}$/,
+    'must be an Indian mobile number, like +919812345678',
+  )
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Whether `value` looks like a database id, before it reaches a query. */
+export const isUuid = (value: string) => UUID.test(value)
 
 /** Two-digit GST state code, for example 27 for Maharashtra. */
 export const stateCode = z
@@ -53,6 +67,19 @@ export const text = (max: number) =>
     .min(1, 'must not be empty')
     .max(max, `must be at most ${max} characters`)
 
+/**
+ * An object that refuses fields it does not know, saying so in plain words,
+ * for example "gstin is not allowed here" when a seller tries to change their
+ * GSTIN through the contacts form.
+ */
+export const strictObject = <Shape extends z.ZodRawShape>(shape: Shape) =>
+  z.strictObject(shape, {
+    error: (issue) =>
+      issue.code === 'unrecognized_keys'
+        ? `${issue.keys.join(', ')} ${issue.keys.length === 1 ? 'is' : 'are'} not allowed here`
+        : undefined,
+  })
+
 /** Plain-language messages for each problem, prefixed with the field name. */
 export function describeIssues(error: z.ZodError): string[] {
   return error.issues.map((issue) =>
@@ -60,4 +87,20 @@ export function describeIssues(error: z.ZodError): string[] {
       ? `${issue.path.join('.')} ${issue.message}`
       : issue.message,
   )
+}
+
+/**
+ * Checks `value` against `schema`, or throws a ValidationError that lists
+ * every problem in plain words under `message`.
+ */
+export function parseInput<S extends z.ZodType>(
+  schema: S,
+  value: unknown,
+  message: string,
+): z.output<S> {
+  const result = schema.safeParse(value)
+  if (!result.success) {
+    throw new ValidationError(message, describeIssues(result.error))
+  }
+  return result.data
 }

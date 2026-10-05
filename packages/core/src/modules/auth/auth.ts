@@ -89,6 +89,20 @@ function codeRecipient(path: string, body: unknown): CodeRecipient | null {
   return null
 }
 
+/** The roles a request asks Better Auth's admin endpoints to give. */
+function requestedRoles(path: string, body: unknown): string[] {
+  if (path !== '/admin/set-role' && path !== '/admin/create-user') return []
+  if (typeof body !== 'object' || body === null) return []
+  const data =
+    'data' in body && typeof body.data === 'object' ? body.data : null
+  const fromData = data && 'role' in data ? data.role : undefined
+  const role = 'role' in body ? body.role : fromData
+  if (typeof role === 'string') return [role]
+  return Array.isArray(role)
+    ? role.filter((r): r is string => typeof r === 'string')
+    : []
+}
+
 export interface AuthDependencies {
   /** A Drizzle database whose schema includes the Better Auth tables. */
   db: Parameters<typeof drizzleAdapter>[0]
@@ -116,6 +130,8 @@ export interface AuthDependencies {
   allowCodeRequest: (recipient: CodeRecipient) => Promise<boolean>
   /** Writes the audit entry for a successful administrator action. */
   recordAdminAction: (entry: AuditEntry) => Promise<void>
+  /** Whether the account owns a seller business (backend spec step 4). */
+  ownsSellerBusiness: (userId: string) => Promise<boolean>
   /**
    * Better Auth checks at runtime that the database has its tables. Only the
    * schema generation config turns this off, because it has no database.
@@ -189,6 +205,26 @@ export function createAuth(dependencies: AuthDependencies) {
       // ignores errors thrown from the email callback, so a refusal there
       // would never reach the caller.
       before: createAuthMiddleware(async (ctx) => {
+        // Seller accounts come only from the seller flow, which also creates
+        // the business, so a seller account always has one (backend spec
+        // step 4).
+        if (requestedRoles(ctx.path, ctx.body).includes('seller')) {
+          throw new APIError('BAD_REQUEST', {
+            message:
+              'Seller accounts are created together with their business in the seller onboarding',
+          })
+        }
+        if (
+          ctx.path === '/admin/set-role' &&
+          typeof ctx.body?.userId === 'string' &&
+          (await dependencies.ownsSellerBusiness(ctx.body.userId))
+        ) {
+          throw new APIError('BAD_REQUEST', {
+            message:
+              'This account owns a seller business, so its role cannot change',
+          })
+        }
+
         const recipient = codeRecipient(ctx.path, ctx.body)
         if (recipient && !(await dependencies.allowCodeRequest(recipient))) {
           throw new APIError('TOO_MANY_REQUESTS', {

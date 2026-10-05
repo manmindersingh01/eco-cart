@@ -48,3 +48,15 @@ export async function requireAdmin(headers: Headers): Promise<{
   }
   return { session, context }
 }
+
+/** A signed-in seller whose business is set up and not suspended, or 401 / 403. */
+export async function requireSeller(headers: Headers): Promise<{
+  session: Session
+  context: Extract<RequestContext, { role: 'seller' }>
+}> {
+  const { session, context } = await requireSignedIn(headers)
+  if (context.role !== 'seller') {
+    throw new ForbiddenError('This needs a seller account')
+  }
+  return { session, context }
+}

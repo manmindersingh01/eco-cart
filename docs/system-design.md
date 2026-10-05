@@ -138,6 +138,8 @@ apps/
       api/auth/[...all]/route.ts   Better Auth: sign-in codes, sessions, administrator account endpoints
       api/me/route.ts          the signed-in account, its role, and its seller id
       api/admin/settings/      administrators read and change platform settings
+      api/admin/sellers/       administrators create, approve, suspend, and reinstate sellers
+      api/seller/profile/      a seller's own business details and support contacts
       api/webhooks/razorpay/route.ts
     scripts/create-admin.ts    `pnpm admin:create`: the first administrator
   worker/                      background worker (@ecokart/worker)
@@ -168,6 +170,8 @@ packages/
       config.ts      validates environment variables at startup
       validation.ts  shared formats: GSTIN, PAN, PIN code, state code, phone, money
       mailpit.ts     local mail catcher, for development and tests only
+      pagination.ts  keyset pagination with exact (microsecond) cursors
+      slug.ts        readable names for web addresses, numbered when taken
       ai/
         client.ts      one OpenAI-compatible HTTP client; base URL, key, model from env
         chat.ts        TextModel and VisionModel on top of the chat client
@@ -288,7 +292,8 @@ addresses
 ```
 
 One account has one role.
-A seller account is created by an administrator through Better Auth's `createUser` with the `seller` role and linked to a `sellers` row.
+A seller account is created by an administrator through the seller onboarding, which creates the owner's account with the `seller` role through Better Auth (its internal `createUser`) and the linked `sellers` row together.
+If the business cannot be saved, the new account is removed again, and Better Auth's own administrator endpoints refuse to hand out the `seller` role, so a seller account always has a business.
 Suspending a buyer or seller is Better Auth's `banUser`, which also revokes every session; the reason is kept in `ban_reason`.
 If a person needs to be both a buyer and a seller they use two accounts at launch; the admin plugin can hold several roles on one account, so this can be relaxed later without a schema change.
 
@@ -919,7 +924,7 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 | CDN in front of everything public | Cached pages, images, static assets | Most storefront traffic never reaches the application. |
 | Denormalised summary fields | `products.min_price_paise`, `total_stock`, `rating_avg`, `search_text` | Listing, search, and category pages read one table with one index. |
 | Purpose-built indexes | Every list the UI shows has a matching composite index (see section 5) | No sequential scans on hot paths. |
-| Keyset pagination | Product lists, order lists, ledgers | Page 200 costs the same as page 1. |
+| Keyset pagination | Product lists, order lists, ledgers, seller lists | Page 200 costs the same as page 1. The cursor keeps the time to the microsecond, so rows created in the same millisecond are never repeated or skipped. |
 | Small category tree in memory | Category filters and breadcrumbs | Descendant category ids are computed in the app from a 60-second cached tree; no recursive queries. |
 | Everything slow goes to the worker | AI calls, embeddings, image resizing, PDFs, emails, imports | Requests stay under a few hundred milliseconds regardless of external service latency. |
 | Pre-sized images on the CDN | Thumbnail, card, and gallery sizes generated at upload | No on-the-fly resizing; immutable cache headers keyed by content hash. |
@@ -931,6 +936,7 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 - Row-level security is enabled on every table that holds buyer or seller data.
   The web app connects as the `ecokart_web` database user, which is subject to the policies, and sets `app.role`, `app.user_id`, `app.seller_id`, and `app.guest_token` with `SET LOCAL` in each transaction.
   Buyers can only see their own orders and addresses, sellers only their own products, order lines, ledger, and imports, guests only their own cart, and administrators see everything.
+  Visitors see a product only while both the product and its seller are approved, so suspending a seller hides all their listings at once.
 - The role `system` is used for work that changes several parties' data at once, such as checkout and payment confirmation, after the service has checked permissions itself.
 - The worker connects as the `ecokart_worker` user, which has a full-access policy on every table.
   An explicit policy, rather than the `BYPASSRLS` attribute, works the same on any PostgreSQL, including managed services such as Amazon RDS that cannot grant that attribute.

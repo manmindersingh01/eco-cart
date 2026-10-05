@@ -36,6 +36,13 @@
       "when": 1791199210947,
       "tag": "0004_auth_rate_limit_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791226710903,
+      "tag": "0005_seller_list_and_visibility",
+      "breakpoints": true
     }
   ]
 }

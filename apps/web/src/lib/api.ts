@@ -1,4 +1,5 @@
 import {
+  ConflictError,
   ForbiddenError,
   NotConfiguredError,
   NotFoundError,
@@ -24,6 +25,7 @@ function errorResponse(error: unknown): Response {
   if (error instanceof NotSignedInError) return answer(401, error.message)
   if (error instanceof ForbiddenError) return answer(403, error.message)
   if (error instanceof NotFoundError) return answer(404, error.message)
+  if (error instanceof ConflictError) return answer(409, error.message)
   if (error instanceof NotConfiguredError) return answer(503, error.message)
   // Anything else is a bug: Next.js logs it and answers 500 without details.
   throw error

@@ -40,3 +40,11 @@ export class ValidationError extends Error {
 export class NotConfiguredError extends Error {
   override name = 'NotConfiguredError'
 }
+
+/**
+ * 409: the request does not fit the current state, for example approving a
+ * seller who is suspended.
+ */
+export class ConflictError extends Error {
+  override name = 'ConflictError'
+}

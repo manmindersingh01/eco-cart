@@ -21,5 +21,6 @@ export const auth = createAuth({
   sendSmsOtp: async () => notForRuntime(),
   allowCodeRequest: async () => notForRuntime(),
   recordAdminAction: async () => notForRuntime(),
+  ownsSellerBusiness: async () => notForRuntime(),
   validateSchema: false,
 })

@@ -1,5 +1,13 @@
 import { sql } from 'drizzle-orm'
-import { char, check, integer, pgTable, text, uuid } from 'drizzle-orm/pg-core'
+import {
+  char,
+  check,
+  index,
+  integer,
+  pgTable,
+  text,
+  uuid,
+} from 'drizzle-orm/pg-core'
 import { users } from './auth.ts'
 import { createdAt, timestamptz, updatedAt, uuidPrimaryKey } from './columns.ts'
 import {
@@ -44,7 +52,14 @@ export const sellers = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  () => [
+  (t) => [
+    // The administrators' seller list: newest first, optionally by status.
+    index('sellers_status_created_at_idx').on(
+      t.status,
+      t.createdAt.desc(),
+      t.id.desc(),
+    ),
+    index('sellers_created_at_idx').on(t.createdAt.desc(), t.id.desc()),
     check(
       'sellers_status_check',
       sql`status in ('pending', 'approved', 'suspended')`,

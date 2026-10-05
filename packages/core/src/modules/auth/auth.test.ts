@@ -400,7 +400,7 @@ describe('administration', () => {
     const response = await call(
       auth,
       '/admin/set-role',
-      { userId: buyer.id, role: 'seller' },
+      { userId: buyer.id, role: 'admin' },
       { cookie: adminCookie, ip: '203.0.113.9' },
     )
     expect(response.status).toBe(200)
@@ -409,7 +409,7 @@ describe('administration', () => {
         actorUserId: admin.id,
         actorRole: 'admin',
         action: 'user.set_role',
-        after: { userId: buyer.id, role: 'seller' },
+        after: { userId: buyer.id, role: 'admin' },
         ip: '203.0.113.9',
       },
     ])
@@ -443,6 +443,43 @@ describe('administration', () => {
       )
       expect({ path, status: response.status }).toEqual({ path, status: 403 })
     }
+  })
+
+  test('the seller role only comes from the seller onboarding', async () => {
+    const buyer = await createTestUser(owner, 'buyer')
+    const viaSetRole = await call(
+      auth,
+      '/admin/set-role',
+      { userId: buyer.id, role: 'seller' },
+      { cookie: adminCookie },
+    )
+    expect(viaSetRole.status).toBe(400)
+    expect(await viaSetRole.json()).toMatchObject({
+      message:
+        'Seller accounts are created together with their business in the seller onboarding',
+    })
+
+    const viaCreateUser = await call(
+      auth,
+      '/admin/create-user',
+      { email: newEmail(), name: 'New seller', role: 'seller' },
+      { cookie: adminCookie },
+    )
+    expect(viaCreateUser.status).toBe(400)
+  })
+
+  test('the role of an account that owns a seller business cannot change', async () => {
+    const { owner: sellerUser } = await createTestSeller(owner)
+    const response = await call(
+      auth,
+      '/admin/set-role',
+      { userId: sellerUser.id, role: 'buyer' },
+      { cookie: adminCookie },
+    )
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      message: 'This account owns a seller business, so its role cannot change',
+    })
   })
 
   test('only the three EcoKart roles can be given', async () => {

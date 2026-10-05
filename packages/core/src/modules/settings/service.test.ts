@@ -285,7 +285,9 @@ describe('seedDevelopmentData', () => {
   test('fills only the missing example values, as the system', async () => {
     await save(admin, 'commission_bps', 1500)
 
-    const filled = await seedDevelopmentData(web, { NODE_ENV: 'development' })
+    const { settings: filled } = await seedDevelopmentData(web, {
+      NODE_ENV: 'development',
+    })
 
     expect(filled).toEqual([
       'delivery_charge_paise',
@@ -299,9 +301,9 @@ describe('seedDevelopmentData', () => {
     expect(await auditFor('delivery_charge_paise')).toEqual([
       expect.objectContaining({ actorUserId: null, actorRole: 'system' }),
     ])
-    expect(await seedDevelopmentData(web, { NODE_ENV: 'development' })).toEqual(
-      [],
-    )
+    expect(
+      (await seedDevelopmentData(web, { NODE_ENV: 'development' })).settings,
+    ).toEqual([])
   })
 
   test('refuses to run in production', async () => {

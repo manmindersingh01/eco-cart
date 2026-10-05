@@ -172,8 +172,10 @@ export const products = pgTable(
       'products_rating_check',
       sql`rating_avg between 0 and 5 and rating_count >= 0`,
     ),
+    // Visitors see a product only while both it and its seller are
+    // approved, so suspending a seller hides all their listings at once.
     webSelect(
-      sql`(status = 'approved' and deleted_at is null) or seller_id = ${currentSellerId} or ${fullAccess}`,
+      sql`(status = 'approved' and deleted_at is null and exists (select 1 from sellers s where s.id = products.seller_id and s.status = 'approved')) or seller_id = ${currentSellerId} or ${fullAccess}`,
     ),
     webInsert(sql`seller_id = ${currentSellerId} or ${fullAccess}`),
     webUpdate(sql`seller_id = ${currentSellerId} or ${fullAccess}`),

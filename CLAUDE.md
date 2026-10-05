@@ -58,7 +58,9 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - The worker runs `packages/core` and its own code as TypeScript directly on Node.js, so use only type-level TypeScript syntax (no `enum`, `namespace`, or constructor parameter properties) and import local files with their `.ts` extension.
 - Pages, server actions, and API routes call module services.
   They never write SQL themselves.
-- Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, validation, not configured), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
+- Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, conflict, validation, not configured), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
+- Services check input with `parseInput` and the shared formats and `strictObject` in `packages/core/src/lib/validation.ts`, so every message is plain language.
+- A service that also changes a Better Auth account (through `AccountDirectory`) takes the database and runs its own transactions in a safe order; other services take a transaction.
 - A module owns its tables.
   Other modules call its exported service functions and never query its tables directly.
 - Jobs call the same service functions as the web app, so every business rule has exactly one implementation.
@@ -127,7 +129,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Every table has `created_at`, and mutable tables also have `updated_at`.
   Use soft delete (`deleted_at`) only for products and addresses.
 - Use UUID primary keys for anything that appears in a URL and `bigserial` for append-only logs.
-- Every list the UI shows needs a matching composite index and keyset pagination.
+- Every list the UI shows needs a matching composite index and keyset pagination with the helpers in `packages/core/src/lib/pagination.ts`, whose cursor keeps microseconds.
   Never use OFFSET.
 - Never edit a migration that has already run anywhere.
   Add a new one.
@@ -140,7 +142,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - The tables `users`, `sessions`, `accounts`, `verifications`, and `auth_rate_limits` belong to Better Auth.
   Generate their schema with its CLI, never hand-edit them, and read or change users and sessions only through the Better Auth API (`getSession`, `createUser`, `setRole`, `banUser`).
   Suspending an account is `banUser`.
-- Accounts that an administrator creates (administrators, and sellers in step 4) are created with `emailVerified: true`, because Better Auth's clean-up for unverified accounts does not work with UUID ids (see the backend spec, step 2).
+- Accounts that an administrator creates (administrators and sellers) are created with `emailVerified: true`, because Better Auth's clean-up for unverified accounts does not work with UUID ids (see the backend spec, step 2).
+- Seller accounts are made only by `createSeller`, together with their business; Better Auth's administrator endpoints refuse the `seller` role and refuse to change the role of an account that owns a business.
 - OTP codes are stored hashed (`storeOTP: "hashed"`), and the OTP delivery callbacks only queue the email or SMS; they never send inline.
 - Object storage buckets are private, and every download is a short-lived signed URL.
 

@@ -5,7 +5,7 @@ import type { JobQueue } from '../../lib/queue.ts'
 import { recordAuditEntry } from '../audit/service.ts'
 import { queueOtpEmail, queueOtpSms } from '../notifications/service.ts'
 import { consumeRateLimit, hashedRateLimitKey } from '../rate-limits/service.ts'
-import { findSellerIdForOwner } from '../sellers/service.ts'
+import { findSellerForOwner } from '../sellers/service.ts'
 import { createAuth, type AccountRole, type Auth } from './auth.ts'
 import type { AuthConfig } from './config.ts'
 
@@ -68,6 +68,12 @@ export function createAppAuth({
         }),
       )
     },
+    async ownsSellerBusiness(userId) {
+      const seller = await withContext(db, { role: 'system' }, (tx) =>
+        findSellerForOwner(tx, userId),
+      )
+      return seller !== null
+    },
     recordAdminAction: (entry) =>
       withContext(
         db,
@@ -84,6 +90,17 @@ export class SellerAccountNotReadyError extends ForbiddenError {
   override name = 'SellerAccountNotReadyError'
   constructor() {
     super('Seller account is not set up yet')
+  }
+}
+
+/**
+ * A suspended seller. Suspension also bans the account and ends its sessions,
+ * so this only matters if that second step failed.
+ */
+export class SellerSuspendedError extends ForbiddenError {
+  override name = 'SellerSuspendedError'
+  constructor() {
+    super('This seller account is suspended')
   }
 }
 
@@ -107,13 +124,14 @@ export async function resolveRequestContext(
 
   // An ordinary signed-in context is enough: the sellers policy lets a user
   // read the seller business they own.
-  const sellerId = await withContext(
+  const seller = await withContext(
     db,
     { role: 'buyer', userId: user.id },
-    (tx) => findSellerIdForOwner(tx, user.id),
+    (tx) => findSellerForOwner(tx, user.id),
   )
-  if (!sellerId) throw new SellerAccountNotReadyError()
-  return { role: 'seller', userId: user.id, sellerId }
+  if (!seller) throw new SellerAccountNotReadyError()
+  if (seller.status === 'suspended') throw new SellerSuspendedError()
+  return { role: 'seller', userId: user.id, sellerId: seller.id }
 }
 
 /**

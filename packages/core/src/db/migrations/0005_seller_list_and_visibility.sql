@@ -1,0 +1,3 @@
+CREATE INDEX "sellers_status_created_at_idx" ON "sellers" USING btree ("status","created_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "sellers_created_at_idx" ON "sellers" USING btree ("created_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+ALTER POLICY "web_select" ON "products" TO ecokart_web USING ((status = 'approved' and deleted_at is null and exists (select 1 from sellers s where s.id = products.seller_id and s.status = 'approved')) or seller_id = app.seller_id() or app.has_full_access());

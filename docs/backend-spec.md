@@ -34,7 +34,7 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | 1 | Database foundation: every table, migrations, database roles, row-level security, and the web app and worker running against it | 4, 5, 8 | Done |
 | 2 | Login, sessions, and roles with Better Auth (email OTP, phone OTP, admin plugin), with OTP delivery through the email outbox and its sending job | 5.3, 5.13, 6.1, 8 | Done |
 | 3 | Platform settings and their defaults | 5.13 | Done |
-| 4 | Seller accounts: create, approve, suspend | 5.4 | Planned |
+| 4 | Seller accounts: create, approve, suspend | 5.3, 5.4 | Done |
 | 5 | Category tree with GST rates, and brands | 5.5 | Planned |
 | 6 | Products, variants, stock, and image upload | 5.5, 6.2 | Planned |
 | 7 | Listing moderation: submit, deterministic screening, approve, reject | 6.2 | Planned |
@@ -388,6 +388,95 @@ An administrator saves `commission_bps` as `1000`, the change appears in `audit_
 - The client needs to send the commission rate, the delivery charge and free-delivery threshold, the prohibited-items list (due 6 October), and the company and grievance officer details (due 12 October).
 - The AI daily limits of 2000 for the platform and 100 per seller are starting points to confirm with the client.
 
+## Step 4: Seller accounts
+
+Status: Done (6 October 2026).
+
+### Goal
+
+An administrator creates a seller business together with its owner's sign-in account, approves it, and can suspend and reinstate it.
+The seller signs in with an email code, sees their own business details, and can update their support contacts.
+A suspended seller can no longer sign in or act, and their listings disappear from the storefront.
+
+For example, the client's pilot seller Green Basket is created by an administrator with the owner's email `ravi@greenbasket.in`.
+Ravi signs in with a code, and his requests run as `seller` with Green Basket's seller id.
+If Green Basket is suspended for fake listings, Ravi is signed out everywhere, cannot sign in again, and buyers stop seeing Green Basket's products, until an administrator reinstates it.
+
+### What gets built
+
+1. **Seller lifecycle** in `packages/core/src/modules/sellers/`:
+
+   ```
+   (created) -> pending -> approved -> suspended -> approved (reinstated)
+   ```
+
+   - **Create** (administrators): owner email, name, and optional mobile; display name, legal name, GSTIN, PAN, address, support email and phone, invoice prefix, and an optional commission rate that overrides the platform one.
+     It creates the owner's Better Auth account with the role `seller` and the `sellers` row with status `pending`.
+     If the business row cannot be saved, the new account is removed again, so there is never a seller account without a business.
+     An email that already has an account is refused, because one account has one role.
+   - **Approve** (administrators): `pending` to `approved`, recording `approved_at`.
+     Approval needs a GSTIN and a PAN, because every sale needs a GST invoice from the seller.
+   - **Suspend** (administrators, with a reason): `approved` or `pending` to `suspended`, keeping the reason in `suspended_reason`, and Better Auth's ban on the owner's account, which also ends all their sessions.
+   - **Reinstate** (administrators): `suspended` to `approved`, clearing the reason and lifting the ban.
+   - **Edit** (administrators): any business detail, except that the invoice prefix is fixed once the first invoice exists.
+   - **Edit own contacts** (the seller): display name, support email, and support phone only.
+     Legal and tax details stay with administrators, because they print on invoices.
+2. **Checks on every detail:** GSTIN and PAN formats, the PAN inside the GSTIN, the GSTIN's first two digits matching the state of the address, PIN code, phone numbers, a unique invoice prefix of 1 to 6 capital letters or digits, and a commission between 0% and 100%.
+3. **A seller's web address name (slug)** is made from the display name, for example `green-basket`, with `-2`, `-3` added if it is taken.
+   It does not change when the display name changes, so links keep working.
+4. **Request context:** a `pending` seller can sign in and use the portal; a `suspended` seller is refused with 403 even if a session somehow survived.
+5. **Storefront visibility:** the row-level security rule for products also requires the seller to be `approved`, so a suspended seller's listings vanish from every public query, including variants and images, which follow their product.
+6. **Account role guard:** Better Auth's administrator endpoints can no longer give an account the `seller` role, or change the role of an account that owns a seller business.
+   Seller accounts are made only through the seller flow above, so a seller account always has a business.
+7. **Audit entries** for `seller.create`, `seller.update`, `seller.approve`, `seller.suspend`, and `seller.reinstate` (administrator), and `seller.update_contacts` (the seller), each with the before and after values.
+8. **API:**
+
+   | Method and path | Who | What |
+   | --- | --- | --- |
+   | `POST /api/admin/sellers` | Administrator | Create a seller and its owner account |
+   | `GET /api/admin/sellers?status=&cursor=` | Administrator | List sellers, newest first, 20 a page, optionally by status |
+   | `GET /api/admin/sellers/{id}` | Administrator | One seller with its owner's email, phone, and ban state |
+   | `PATCH /api/admin/sellers/{id}` | Administrator | Edit business details |
+   | `POST /api/admin/sellers/{id}/approve` | Administrator | Approve |
+   | `POST /api/admin/sellers/{id}/suspend` | Administrator | Suspend with `{ "reason": "..." }` |
+   | `POST /api/admin/sellers/{id}/reinstate` | Administrator | Reinstate |
+   | `GET /api/seller/profile` | The seller | Their own business details |
+   | `PATCH /api/seller/profile` | The seller | Their display name and support contacts |
+
+9. **Keyset pagination** for the seller list, with new indexes on `(status, created_at, id)` and `(created_at, id)`.
+   The page cursor is an opaque string, and the same helper serves every later list.
+10. **Example sellers in `pnpm db:seed`:** three approved example sellers with owner accounts (`seller1@ecokart.test` and so on) for local development, created through the same service.
+
+### Smaller decisions made in this step
+
+- **Accounts are created and banned through Better Auth's internal adapter** (`createUser`, `updateUser`, `deleteUserSessions`), the same calls Better Auth's own `createUser` and `banUser` endpoints make.
+  This keeps the seller service independent of HTTP requests, and our own audit entries name the administrator who acted.
+- **The business row and the Better Auth account are saved in two steps,** because Better Auth uses its own database calls.
+  The order is: check everything, create the account, save the business with its audit entry in one transaction, and remove the account if that transaction fails.
+  For suspension, the business is suspended first and the account banned second; if the ban failed, the request context still refuses the seller.
+- **A new 409 answer** (`ConflictError`) for actions that do not fit the current state, such as approving a suspended seller.
+- **Fields that are not allowed get a plain message,** for example "gstin is not allowed here" when a seller sends it through the contacts form, instead of the validation library's own wording.
+- **The page cursor keeps microseconds.**
+  PostgreSQL records times to the microsecond and JavaScript only to the millisecond, so a cursor rounded to milliseconds would skip or repeat sellers created in the same millisecond; a test proves the cursor does neither.
+
+### Not in this step
+
+- Sellers signing themselves up; administrators create every seller at launch.
+- Emails telling a seller their account was created, approved, or suspended; the outbox templates for these are a post-launch suggestion.
+- What happens to a suspended seller's open orders; administrators handle those by hand, with the order tools from step 13.
+- Bank details for payouts, which are recorded by administrators in the ledger step (step 15).
+
+### Done when
+
+- On `pnpm dev`, through the real API: an administrator creates a seller, the owner signs in with an email code and sees a `pending` profile, the administrator approves it, the seller updates their support phone, the administrator suspends it and the seller's session stops working, and reinstating lets them sign in again.
+- Tests prove each lifecycle step and its audit entry, every validation rule, that a failed business save removes the new account, that a duplicate email or invoice prefix is refused, the slug numbering, the role guard on Better Auth's endpoints, that a suspended seller's approved products are hidden from visitors, the list's filters and pages, and every API answer.
+- `pnpm check` passes.
+
+### Open points found in this step
+
+- Approval requires a GSTIN.
+  If the client wants to onboard sellers without one (some small sellers are exempt), their invoices need a different format, decided with the chartered accountant in step 14.
+
 ## Change log
 
 - 5 October 2026: File created and step 1 written.
@@ -403,3 +492,6 @@ An administrator saves `commission_bps` as `1000`, the change appears in `audit_
 - 5 October 2026: Step 2 committed. Step 3 written.
 - 5 October 2026: Step 3 built.
   While building it: the rules got plain-language messages after the first live run showed the library's wording, and the design doc's risk table now says SMS switches on through `SMS_PROVIDER`.
+- 6 October 2026: Step 3 committed. Step 4 written.
+- 6 October 2026: Step 4 built.
+  While building it: a 409 answer for wrong-state actions, plain messages for fields that are not allowed, and an exact page cursor.
