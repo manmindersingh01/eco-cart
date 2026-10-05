@@ -140,6 +140,10 @@ apps/
       api/admin/settings/      administrators read and change platform settings
       api/admin/sellers/       administrators create, approve, suspend, and reinstate sellers
       api/seller/profile/      a seller's own business details and support contacts
+      api/categories/          the visible category tree, for anyone
+      api/brands/              active brands A to Z, for anyone
+      api/admin/categories/    administrators build and change the category tree
+      api/admin/brands/        administrators keep the list of brands
       api/webhooks/razorpay/route.ts
     scripts/create-admin.ts    `pnpm admin:create`: the first administrator
   worker/                      background worker (@ecokart/worker)
@@ -151,7 +155,9 @@ packages/
       auth/  catalogue/  cart/  checkout/  orders/  payments/  ledger/
       invoices/  returns/  search/  ai/  imports/  notifications/
       moderation/  settings/  audit/  sellers/  rate-limits/
-        (each module: service.ts, queries.ts, jobs.ts, types.ts)
+        (each module: service.ts, queries.ts, jobs.ts, types.ts; the
+         catalogue splits its services by topic: categories.ts, brands.ts,
+         tree.ts for the in-memory category tree, and later products.ts)
     src/db/
       pool.ts                  database connection pool
       client.ts                Drizzle database on top of the pool
@@ -324,17 +330,17 @@ sellers
 categories
   id                uuid PK
   parent_id         uuid FK categories, nullable
-  name, slug        slug UNIQUE
-  depth             int
-  gst_rate_bps      int    the client's chartered accountant approves this per category
-  default_hsn_code  text
+  name, slug        slug UNIQUE; name UNIQUE among siblings, ignoring capital letters
+  depth             int    0 to 2: three levels at most
+  gst_rate_bps      int    the client's chartered accountant approves this per category; one of the current GST rates
+  default_hsn_code  text   4, 6, or 8 digits
   sort_order        int
-  is_active         boolean
+  is_active         boolean  an inactive category hides everything below it
   created_at, updated_at
 
 brands
   id        uuid PK
-  name      text
+  name      text   UNIQUE ignoring capital letters
   slug      text UNIQUE
   is_active boolean
 
@@ -349,7 +355,7 @@ products
   highlights          jsonb   array of short bullet strings
   attributes          jsonb   object, e.g. {"material": "bamboo"}
   option_names        text[]  e.g. {Size, Colour}; variants carry the values
-  hsn_code            text
+  hsn_code            text    4, 6, or 8 digits
   gst_rate_bps        int     copied from the category at approval, can be overridden
   status              text    draft | pending_review | approved | rejected | archived
   rejection_reason    text
@@ -1003,5 +1009,6 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | Roles | Open | One role per account; a seller uses a separate seller account | One account can be both buyer and seller |
 | Commission base | Open | Applied to the seller's line total after the coupon discount share | Applied before discounts |
 | Delivery revenue | Open | Delivery charge belongs to the platform | Passed through to sellers |
+| GST rates that depend on price | Open | Clothing and footwear are taxed at 5% up to ₹2,500 a piece and 18% above it. An optional price limit and higher rate on the category, applied to each order line from its own price at checkout. Needs the chartered accountant's agreement before products are built (backend spec, step 5). | A rate per product set by hand, or separate categories per price band |
 
 Open rows are recommendations and are built as written unless the client decides otherwise.

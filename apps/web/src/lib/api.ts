@@ -61,3 +61,17 @@ export function clientIp(request: Request): string | null {
     ?.trim()
   return forwarded || request.headers.get('x-real-ip') || null
 }
+
+/** `?cursor=...&limit=20` from a list request, as list services take them. */
+export function pageQuery(request: Request): {
+  cursor?: string
+  limit?: number
+} {
+  const query = new URL(request.url).searchParams
+  const cursor = query.get('cursor')
+  const limit = query.get('limit')
+  return {
+    ...(cursor ? { cursor } : {}),
+    ...(limit === null ? {} : { limit: Number(limit) }),
+  }
+}

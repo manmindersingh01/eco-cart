@@ -28,6 +28,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** Whether `value` looks like a database id, before it reaches a query. */
 export const isUuid = (value: string) => UUID.test(value)
 
+/** The id of a row, for example `parentId`; `what` names it in the message. */
+export const idOf = (what: string) =>
+  z.string({ error: `must be ${what} id` }).refine(isUuid, `must be ${what} id`)
+
 /** Two-digit GST state code, for example 27 for Maharashtra. */
 export const stateCode = z
   .string()
@@ -46,6 +50,43 @@ export const gstin = z
   .regex(
     /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/,
     'must be a GSTIN, like 27AAACE1234F1Z5',
+  )
+
+/**
+ * The GST rates in force since GST 2.0 (22 September 2025), in basis points:
+ * 0%, 0.25% (rough diamonds), 3% (gold and silver), 5%, 18%, and 40%. A rate
+ * outside this list is almost always one copied from an old rate sheet, such
+ * as the 12% and 28% that GST 2.0 removed. Orders keep whatever rate they
+ * were placed with, so this list only guards new catalogue data.
+ */
+export const GST_RATES_BPS: readonly number[] = [0, 25, 300, 500, 1800, 4000]
+
+const asPercent = (bps: number) => `${bps / 100}%`
+
+export const gstRateBps = z
+  .number({ error: 'must be a number' })
+  .refine(
+    (value) => GST_RATES_BPS.includes(value),
+    `must be one of the current GST rates in basis points: ${GST_RATES_BPS.map(
+      (bps) => `${bps} (${asPercent(bps)})`,
+    ).join(', ')}`,
+  )
+
+/** HSN codes on GST invoices have 4, 6, or 8 digits. */
+export const hsnCode = z
+  .string()
+  .regex(
+    /^(\d{4}|\d{6}|\d{8})$/,
+    'must be an HSN code of 4, 6, or 8 digits, like 4419',
+  )
+
+/** A web address name, like kitchen-and-dining (see lib/slug.ts). */
+export const slug = z
+  .string()
+  .max(60, 'must be at most 60 characters')
+  .regex(
+    /^[a-z0-9]+(-[a-z0-9]+)*$/,
+    'must be lowercase letters and digits joined by single hyphens, like kitchen-and-dining',
   )
 
 /** A whole number within limits, with messages an administrator can read. */

@@ -56,3 +56,33 @@ export {
 } from './modules/sellers/service.ts'
 export type { SellerStatus, SellerView } from './modules/sellers/types.ts'
 export type { Page } from './lib/pagination.ts'
+export {
+  createCategory,
+  deleteCategory,
+  getCategoryTree,
+  getFullCategoryTree,
+  loadCategoryTree,
+  updateCategory,
+} from './modules/catalogue/categories.ts'
+export {
+  createBrand,
+  deleteBrand,
+  listAllBrands,
+  listBrands,
+  updateBrand,
+} from './modules/catalogue/brands.ts'
+export {
+  buildCategoryTree,
+  MAX_CATEGORY_DEPTH,
+  type CategoryTree,
+} from './modules/catalogue/tree.ts'
+export type {
+  BrandListOptions,
+  BrandView,
+  CategoryNode,
+  CategoryView,
+  NewBrand,
+  NewCategory,
+  PublicBrand,
+  PublicCategory,
+} from './modules/catalogue/types.ts'

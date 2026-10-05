@@ -15,6 +15,7 @@ import {
 import { encodeCursor } from '../../lib/pagination.ts'
 import { startJobQueue, type JobQueue } from '../../lib/queue.ts'
 import { lastEmailedCode } from '../../testing/codes.ts'
+import { validationIssues } from '../../testing/errors.ts'
 import {
   createTestCategory,
   createTestProduct,
@@ -111,18 +112,6 @@ function sellerInput(overrides: Record<string, unknown> = {}) {
     commissionBps: null,
     ...overrides,
   }
-}
-
-/** The reasons a call was refused; fails the test if it was not. */
-async function validationIssues(attempt: Promise<unknown>): Promise<string[]> {
-  const error = await attempt.then(
-    () => null,
-    (caught: unknown) => caught,
-  )
-  if (!(error instanceof ValidationError)) {
-    throw new Error(`Expected a ValidationError, got ${String(error)}`)
-  }
-  return error.issues
 }
 
 const auditFor = (sellerId: string) =>

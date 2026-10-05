@@ -9,6 +9,7 @@ import {
   pgTable,
   text,
   unique,
+  uniqueIndex,
   uuid,
   vector,
   type AnyPgColumn,
@@ -52,26 +53,47 @@ export const categories = pgTable(
   },
   (t) => [
     index('categories_parent_id_sort_order_idx').on(t.parentId, t.sortOrder),
-    check('categories_depth_check', sql`depth >= 0`),
+    // Siblings never share a name, ignoring case; top-level categories count
+    // as siblings of each other.
+    uniqueIndex('categories_parent_id_name_unique').on(
+      sql`coalesce(${t.parentId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      sql`lower(${t.name})`,
+    ),
+    // Three levels at most, for example Home & Kitchen > Kitchen & Dining >
+    // Bamboo Kitchenware (backend spec, step 5).
+    check('categories_depth_check', sql`depth between 0 and 2`),
+    check(
+      'categories_depth_parent_check',
+      sql`(parent_id is null) = (depth = 0)`,
+    ),
+    check('categories_slug_check', sql`slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
     check(
       'categories_gst_rate_bps_check',
       sql`gst_rate_bps between 0 and 10000`,
     ),
     check(
       'categories_default_hsn_code_check',
-      sql`default_hsn_code ~ '^[0-9]{4,8}$'`,
+      sql`default_hsn_code ~ '^([0-9]{4}|[0-9]{6}|[0-9]{8})$'`,
     ),
   ],
 )
 
-export const brands = pgTable('brands', {
-  id: uuidPrimaryKey(),
-  name: text('name').notNull(),
-  slug: text('slug').notNull().unique(),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-})
+export const brands = pgTable(
+  'brands',
+  {
+    id: uuidPrimaryKey(),
+    name: text('name').notNull(),
+    slug: text('slug').notNull().unique(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // One brand per name ignoring case, and the A to Z order of brand lists.
+    uniqueIndex('brands_name_unique').on(sql`lower(${t.name})`),
+    check('brands_slug_check', sql`slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+  ],
+)
 
 // A product is visible to whoever may see it under the products policies, so
 // child tables reuse that rule instead of repeating it.
@@ -161,7 +183,10 @@ export const products = pgTable(
       'products_status_check',
       sql`status in ('draft', 'pending_review', 'approved', 'rejected', 'archived')`,
     ),
-    check('products_hsn_code_check', sql`hsn_code ~ '^[0-9]{4,8}$'`),
+    check(
+      'products_hsn_code_check',
+      sql`hsn_code ~ '^([0-9]{4}|[0-9]{6}|[0-9]{8})$'`,
+    ),
     check('products_gst_rate_bps_check', sql`gst_rate_bps between 0 and 10000`),
     check('products_total_stock_check', sql`total_stock >= 0`),
     check(

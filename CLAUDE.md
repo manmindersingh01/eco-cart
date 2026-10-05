@@ -48,7 +48,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Add a dependency: `pnpm --filter @ecokart/web add <name>`.
   The version goes into the `catalog` in `pnpm-workspace.yaml` and `package.json` gets `catalog:`.
 - Tests rebuild their own databases (`ecokart_test_core`, `ecokart_test_web`, `ecokart_test_worker`) from the migrations on every run and never touch the development database.
-- Example data for local development (example platform settings for now): `pnpm db:seed`; it only fills what is missing and refuses production.
+- Example data for local development (platform settings, three approved sellers, a category tree, and brands): `pnpm db:seed`; it only fills what is missing and refuses production.
 - Not set up yet: e2e tests.
   Add them here when they exist.
 
@@ -61,6 +61,10 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, conflict, validation, not configured), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
 - Services check input with `parseInput` and the shared formats and `strictObject` in `packages/core/src/lib/validation.ts`, so every message is plain language.
 - A service that also changes a Better Auth account (through `AccountDirectory`) takes the database and runs its own transactions in a safe order; other services take a transaction.
+- The catalogue module splits its services by topic (`categories.ts`, `brands.ts`, `tree.ts`, and later `products.ts`) instead of one `service.ts`.
+- Read the category tree with `loadCategoryTree` and the functions in `modules/catalogue/tree.ts` (children, breadcrumbs, everything below a category).
+  Never write a recursive query for it.
+  Every change to the tree locks the `categories` table first, so two administrators can never create a loop together.
 - A module owns its tables.
   Other modules call its exported service functions and never query its tables directly.
 - Jobs call the same service functions as the web app, so every business rule has exactly one implementation.
@@ -78,6 +82,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Money is an integer number of paise in a `bigint` column named `*_paise`.
   Never use floats or decimals for money, in SQL or in TypeScript.
 - Tax rates are basis points in `*_bps` columns, so 18% is `1800`.
+  New catalogue data may only use the current GST rates in `GST_RATES_BPS` (`packages/core/src/lib/validation.ts`), and HSN codes have 4, 6, or 8 digits.
 - Prices are tax inclusive.
   GST is back-calculated at order time and frozen on the order line.
 - Orders and invoices snapshot everything they show: title, SKU, options, price, MRP, GST rate, HSN code, address, and commission rate.

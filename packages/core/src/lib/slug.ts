@@ -1,6 +1,8 @@
 /*
  * The readable names used in web addresses, for example /sellers/green-basket.
- * A slug never changes once given out, so links keep working.
+ * A seller's slug never changes once given out, so links keep working. An
+ * administrator may choose a new one for a category or brand, which moves its
+ * page to a new address.
  */
 
 const MAX_LENGTH = 60

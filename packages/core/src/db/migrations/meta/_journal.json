@@ -43,6 +43,20 @@
       "when": 1791226710903,
       "tag": "0005_seller_list_and_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791231044043,
+      "tag": "0006_category_and_brand_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791231052242,
+      "tag": "0007_category_and_brand_delete",
+      "breakpoints": true
     }
   ]
 }

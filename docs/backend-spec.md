@@ -35,7 +35,7 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | 2 | Login, sessions, and roles with Better Auth (email OTP, phone OTP, admin plugin), with OTP delivery through the email outbox and its sending job | 5.3, 5.13, 6.1, 8 | Done |
 | 3 | Platform settings and their defaults | 5.13 | Done |
 | 4 | Seller accounts: create, approve, suspend | 5.3, 5.4 | Done |
-| 5 | Category tree with GST rates, and brands | 5.5 | Planned |
+| 5 | Category tree with GST rates, and brands | 5.5 | Done |
 | 6 | Products, variants, stock, and image upload | 5.5, 6.2 | Planned |
 | 7 | Listing moderation: submit, deterministic screening, approve, reject | 6.2 | Planned |
 | 8 | Catalogue import from CSV and Excel with a row-level error report | 5.11, 6.7 | Planned |
@@ -477,6 +477,117 @@ If Green Basket is suspended for fake listings, Ravi is signed out everywhere, c
 - Approval requires a GSTIN.
   If the client wants to onboard sellers without one (some small sellers are exempt), their invoices need a different format, decided with the chartered accountant in step 14.
 
+## Step 5: Category tree with GST rates, and brands
+
+Status: Done (6 October 2026).
+
+### Goal
+
+Administrators build the category tree that every product sits in, with the GST rate and default HSN code that the client's chartered accountant approves for each category.
+They also keep the list of brands.
+Anyone can read the active categories and brands, which the seller portal (step 6) and the storefront (step 9) build on.
+
+For example, an administrator creates Home & Kitchen, then Kitchen & Dining inside it, then Bamboo Kitchenware inside that, with GST at 5% and HSN code 4419.
+A bamboo spatula listed in Bamboo Kitchenware later gets that rate and HSN code by default (steps 6 and 7).
+
+### What gets built
+
+1. **Categories** in `packages/core/src/modules/catalogue/categories.ts`:
+   - **Create** (administrators): name, an optional parent, GST rate, an optional default HSN code, a sort order, and an optional web address name (slug).
+   - **Up to three levels,** for example Home & Kitchen > Kitchen & Dining > Bamboo Kitchenware.
+     A category's depth comes from its parent and is never typed in.
+   - **Names are unique among siblings,** ignoring capital letters, so Kitchen & Dining cannot have two Bottles.
+     The same name under different parents is fine.
+   - **Edit** (administrators): name, slug, GST rate, default HSN code, sort order, active or not, and the parent.
+     Changing the parent moves the category with everything below it.
+     A move is refused if it would put a category inside itself or below one of its own subcategories, or make the tree deeper than three levels.
+   - **Deactivate** by editing `isActive`: the category and everything below it disappear from the public tree, without losing anything.
+   - **Delete** (administrators): only a category with no subcategories and no products, so a mistake can be removed.
+     A category in use is deactivated instead.
+   - Changes to the tree happen one at a time (a table lock inside the transaction), so two administrators moving categories at the same moment can never create a loop.
+2. **GST rate and HSN checks:**
+   - The rate is in basis points and must be one of the current GST rates: 0%, 0.25%, 3%, 5%, 18%, or 40% (the rates since GST 2.0 on 22 September 2025).
+     For example 1200 (12%) is refused, because that rate no longer exists, which catches a rate copied from an old rate sheet.
+   - An HSN code has 4, 6, or 8 digits, the lengths GST invoices use.
+     The database checks on `categories.default_hsn_code` and `products.hsn_code` are tightened to match (they allowed 4 to 8).
+3. **Reading the tree:** one query loads every category, and plain functions work on the result in memory: children in display order, the path from the top (for breadcrumbs), every category below a given one (for category pages and filters), and finding a category by slug.
+   This follows design doc section 7: no recursive queries.
+   The public tree leaves out inactive categories and everything below them.
+4. **Brands** in `packages/core/src/modules/catalogue/brands.ts`:
+   - **Create** (administrators): name and an optional slug.
+     Names are unique ignoring capital letters, so "Bamboo Co" and "bamboo co" cannot both exist.
+   - **Edit** (administrators): name, slug, and active or not.
+     An inactive brand is hidden from the public list.
+   - **Delete** (administrators): only a brand no product uses.
+   - Only administrators manage brands at launch; sellers choose from the list (step 6).
+5. **Slugs:** a category or brand gets a slug from its name, for example `kitchen-and-dining`.
+   A taken slug is numbered (`accessories`, `accessories-2`), because two branches may each have an Accessories, and two brand names may differ only in punctuation ("Green Leaf" and "Green Leaf.").
+   An administrator may choose a slug instead, at creation or later, using lowercase letters, digits, and hyphens.
+   Changing a slug changes the page's web address, so the admin console should warn before it does.
+6. **Audit entries** for `category.create`, `category.update`, `category.delete`, `brand.create`, `brand.update`, and `brand.delete`, each with the values before and after.
+7. **API:**
+
+   | Method and path | Who | What |
+   | --- | --- | --- |
+   | `GET /api/categories` | Anyone | The active tree, with each category's GST rate and default HSN code |
+   | `GET /api/admin/categories` | Administrator | The whole tree, including inactive categories |
+   | `POST /api/admin/categories` | Administrator | Create a category |
+   | `PATCH /api/admin/categories/{id}` | Administrator | Edit or move a category |
+   | `DELETE /api/admin/categories/{id}` | Administrator | Delete an unused category |
+   | `GET /api/brands?q=&cursor=` | Anyone | Active brands A to Z, 20 a page, optionally only names containing `q` |
+   | `GET /api/admin/brands?q=&cursor=` | Administrator | All brands A to Z, including inactive ones |
+   | `POST /api/admin/brands` | Administrator | Create a brand |
+   | `PATCH /api/admin/brands/{id}` | Administrator | Edit a brand |
+   | `DELETE /api/admin/brands/{id}` | Administrator | Delete an unused brand |
+
+8. **A to Z pages:** the pagination helper gains a second order, alphabetical by a unique text key.
+   Brands are ordered by their name in small letters, which the unique name index already covers.
+9. **Database changes in one migration:** depth limited to three levels and consistent with the parent; the unique sibling-name and brand-name indexes; the tighter HSN checks; and permission for the web app to delete categories and brands.
+10. **Example data in `pnpm db:seed`:** a small example tree and a few brands for local development.
+    Their rates are examples only; the real rates come from the client's chartered accountant.
+
+### Smaller decisions made in this step
+
+- **The catalogue module splits its services by topic** (`categories.ts`, `brands.ts`, and later `products.ts`) instead of one `service.ts`, because one file for the whole catalogue would grow to thousands of lines.
+  Design doc section 4 says so.
+- **The list of GST rates lives in code,** not in platform settings.
+  It is the law, not a commercial choice, and it changes rarely (the last time was GST 2.0).
+- **The whole tree is one answer, not pages,** because it is small and every menu needs all of it (design doc section 7).
+- **Categories and brands have no row-level security** (step 1), so the services check that the caller is an administrator before every change.
+- **Brand slugs are numbered like category slugs** instead of refusing a name whose slug is taken.
+  A name written only in another script, such as Devanagari, has no Latin letters to make a slug from, so refusing would block every second such brand.
+  Brand names stay unique ignoring capital letters; near-duplicates that differ only in punctuation are for administrators to tidy.
+- **A to Z cursors carry their own marker,** so a cursor from a newest-first list (such as the seller list) is refused with a 400 instead of returning a wrong page.
+- **The database repeats the tree rules** (three levels, depth matching the parent, unique sibling names, slug format, HSN length), so a hand-written SQL change cannot break the tree either.
+  Only "no loops" is left to the service and its table lock, because a CHECK constraint cannot look at other rows.
+- **Moving a category records the old and new parent and depth** in its audit entry.
+
+### Not in this step
+
+- Caching the tree in the web app and refreshing cached pages when a category or brand changes.
+  Step 9 builds the storefront pages, decides how Next.js caching is switched on, and makes category and brand changes refresh the cache.
+- Which categories a product may be listed in (for example only active categories at the bottom of the tree), and copying the rate and HSN code onto products: steps 6 and 7.
+- Loading the client's full tree.
+  It is entered through the API once the tree and the approved rates arrive; a one-off loading command can be added if it turns out to be long.
+- Sellers suggesting new brands: a post-launch suggestion.
+
+### Done when
+
+- On `pnpm dev`, through the real API: an administrator builds a three-level tree, a fourth level is refused, a category moves with its subcategories, a 12% rate is refused, and a visitor reads the active tree without a deactivated branch.
+  An administrator adds brands, a duplicate name is refused, and a visitor pages through the brands.
+- Tests prove every rule above: depth and loops on create and move, sibling names, rates, HSN codes, slugs, delete only when unused, the in-memory tree functions, brand pages and search, the audit entries, administrators only, and every API answer.
+- `pnpm check` passes.
+
+### Open points found in this step
+
+- **Some GST rates depend on the price.**
+  Clothing and footwear are taxed at 5% up to ₹2,500 a piece (before tax) and 18% above it, so one rate per category cannot describe them.
+  The recommended fix is an optional price limit and higher rate on the category, applied to each order line at checkout from its own price, because sizes of the same product can sit on either side of the limit.
+  This changes design doc section 5.5 and the order line snapshot, so it needs the client's and the chartered accountant's agreement before step 6.
+- When a category's rate changes, what happens to products already approved in it is decided in step 7, where approval copies the rate.
+- Three levels is a recommendation; the client's tree may need a fourth, which is a small migration.
+- The chartered accountant should confirm the list of GST rates above.
+
 ## Change log
 
 - 5 October 2026: File created and step 1 written.
@@ -495,3 +606,6 @@ If Green Basket is suspended for fake listings, Ravi is signed out everywhere, c
 - 6 October 2026: Step 3 committed. Step 4 written.
 - 6 October 2026: Step 4 built.
   While building it: a 409 answer for wrong-state actions, plain messages for fields that are not allowed, and an exact page cursor.
+- 6 October 2026: Step 4 committed. Step 5 written.
+- 6 October 2026: Step 5 built.
+  While building it: brand slugs are numbered like category slugs, A to Z page cursors cannot be mixed up with newest-first ones, the database repeats the tree rules, and the design doc records price-dependent GST rates as an open decision (section 11).

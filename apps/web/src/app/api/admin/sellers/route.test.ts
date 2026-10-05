@@ -8,6 +8,7 @@ import {
 } from '@/app/api/seller/profile/route'
 import { closePool } from '@/lib/db'
 import { closeJobQueue } from '@/lib/queue'
+import { apiRequest as request, withId } from '@/testing/requests'
 import { signInWithEmail } from '@/testing/sign-in'
 import { POST as approve } from './[id]/approve/route'
 import { POST as reinstate } from './[id]/reinstate/route'
@@ -20,7 +21,6 @@ const ownerPool = createPool(
   'sellers-route-test',
 )
 const owner = createDatabase(ownerPool)
-const base = 'http://localhost:3000/api'
 
 let adminCookie: string
 let buyerCookie: string
@@ -39,23 +39,6 @@ afterAll(async () => {
   await closePool()
   await ownerPool.end()
 })
-
-const request = (
-  path: string,
-  options: { method?: string; cookie?: string; body?: unknown } = {},
-) =>
-  new Request(`${base}${path}`, {
-    method: options.method ?? 'GET',
-    headers: {
-      'content-type': 'application/json',
-      ...(options.cookie ? { cookie: options.cookie } : {}),
-    },
-    ...(options.body === undefined
-      ? {}
-      : { body: JSON.stringify(options.body) }),
-  })
-
-const withId = (id: string) => ({ params: Promise.resolve({ id }) })
 
 const letters = () =>
   Array.from({ length: 6 }, () =>

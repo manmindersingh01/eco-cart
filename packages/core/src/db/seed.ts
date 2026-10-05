@@ -2,6 +2,11 @@ import { randomBytes } from 'node:crypto'
 import { requireEnv } from '../env.ts'
 import { createAccountDirectory } from '../modules/auth/accounts.ts'
 import { createAppAuth } from '../modules/auth/service.ts'
+import { createBrand, listAllBrands } from '../modules/catalogue/brands.ts'
+import {
+  createCategory,
+  loadCategoryTree,
+} from '../modules/catalogue/categories.ts'
 import { approveSeller, createSeller } from '../modules/sellers/service.ts'
 import type { NewSeller } from '../modules/sellers/types.ts'
 import {
@@ -44,6 +49,77 @@ export const DEVELOPMENT_SETTINGS: { [K in SettingKey]?: SettingValue<K> } = {
     },
   },
 }
+
+/** A category of the example tree, with the categories inside it. */
+export interface ExampleCategory {
+  name: string
+  gstRateBps: number
+  defaultHsnCode?: string
+  children?: ExampleCategory[]
+}
+
+/**
+ * A small example tree, three levels deep. The rates and HSN codes are
+ * plausible examples only, not tax advice; the real ones come from the
+ * client's chartered accountant.
+ */
+export const DEVELOPMENT_CATEGORIES: ExampleCategory[] = [
+  {
+    name: 'Home & Kitchen',
+    gstRateBps: 1800,
+    children: [
+      {
+        name: 'Kitchen & Dining',
+        gstRateBps: 1800,
+        children: [
+          {
+            name: 'Bamboo Kitchenware',
+            gstRateBps: 500,
+            defaultHsnCode: '4419',
+          },
+          { name: 'Steel Bottles', gstRateBps: 500, defaultHsnCode: '7323' },
+        ],
+      },
+      {
+        name: 'Storage & Organisation',
+        gstRateBps: 1800,
+        children: [
+          { name: 'Jute Bags', gstRateBps: 500, defaultHsnCode: '6305' },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'Personal Care',
+    gstRateBps: 1800,
+    children: [
+      {
+        name: 'Oral Care',
+        gstRateBps: 500,
+        children: [
+          {
+            name: 'Bamboo Toothbrushes',
+            gstRateBps: 500,
+            defaultHsnCode: '9603',
+          },
+        ],
+      },
+      {
+        name: 'Bath & Body',
+        gstRateBps: 500,
+        children: [
+          { name: 'Handmade Soaps', gstRateBps: 500, defaultHsnCode: '3401' },
+        ],
+      },
+    ],
+  },
+]
+
+export const DEVELOPMENT_BRANDS = [
+  'Bamboo Home',
+  'Khadi Threads',
+  'Terra Earthware',
+]
 
 /** Three approved example sellers; owners sign in with these emails. */
 export const DEVELOPMENT_SELLERS: NewSeller[] = [
@@ -110,6 +186,10 @@ export interface SeedResult {
   settings: SettingKey[]
   /** Owner emails of the sellers created. */
   sellers: string[]
+  /** Names of the categories created. */
+  categories: string[]
+  /** Names of the brands created. */
+  brands: string[]
 }
 
 /**
@@ -127,7 +207,52 @@ export async function seedDevelopmentData(
   return {
     settings: await seedSettings(db),
     sellers: await seedSellers(db),
+    categories: await seedCategories(db),
+    brands: await seedBrands(db),
   }
+}
+
+async function seedCategories(db: Database): Promise<string[]> {
+  return withContext(db, { role: 'system' }, async (tx) => {
+    const created: string[] = []
+    const tree = await loadCategoryTree(tx)
+    const add = async (
+      examples: ExampleCategory[],
+      parentId: string | null,
+    ): Promise<void> => {
+      for (const { children = [], ...example } of examples) {
+        const existing = tree
+          .childrenOf(parentId)
+          .find((category) => category.name === example.name)
+        if (existing) {
+          await add(children, existing.id)
+          continue
+        }
+        const category = await createCategory(
+          tx,
+          { role: 'system' },
+          { ...example, parentId },
+        )
+        created.push(example.name)
+        await add(children, category.id)
+      }
+    }
+    await add(DEVELOPMENT_CATEGORIES, null)
+    return created
+  })
+}
+
+async function seedBrands(db: Database): Promise<string[]> {
+  return withContext(db, { role: 'system' }, async (tx) => {
+    const created: string[] = []
+    for (const name of DEVELOPMENT_BRANDS) {
+      const { items } = await listAllBrands(tx, { role: 'system' }, { q: name })
+      if (items.some((brand) => brand.name === name)) continue
+      await createBrand(tx, { role: 'system' }, { name })
+      created.push(name)
+    }
+    return created
+  })
 }
 
 async function seedSellers(db: Database): Promise<string[]> {
@@ -181,7 +306,7 @@ async function seedSettings(db: Database): Promise<SettingKey[]> {
 if (import.meta.main) {
   const pool = createPool(requireEnv('DATABASE_URL'), 'ecokart-seed')
   try {
-    const { settings, sellers } = await seedDevelopmentData(
+    const { settings, sellers, categories, brands } = await seedDevelopmentData(
       createDatabase(pool),
     )
     console.info(
@@ -193,6 +318,16 @@ if (import.meta.main) {
       sellers.length === 0
         ? 'Sellers: the example sellers already exist'
         : `Sellers: created and approved ${sellers.join(', ')}; sign in with those emails`,
+    )
+    console.info(
+      categories.length === 0
+        ? 'Categories: the example tree already exists'
+        : `Categories: created ${categories.join(', ')}`,
+    )
+    console.info(
+      brands.length === 0
+        ? 'Brands: the example brands already exist'
+        : `Brands: created ${brands.join(', ')}`,
     )
   } catch (error) {
     console.error('Seeding failed', error)

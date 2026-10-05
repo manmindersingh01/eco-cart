@@ -4,7 +4,13 @@ import { createDatabase } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
 import { createPool, type DatabasePool } from '../../db/pool.ts'
 import { auditLogs, platformSettings } from '../../db/schema/index.ts'
-import { DEVELOPMENT_SETTINGS, seedDevelopmentData } from '../../db/seed.ts'
+import {
+  DEVELOPMENT_BRANDS,
+  DEVELOPMENT_CATEGORIES,
+  DEVELOPMENT_SETTINGS,
+  seedDevelopmentData,
+  type ExampleCategory,
+} from '../../db/seed.ts'
 import { requireEnv } from '../../env.ts'
 import {
   ForbiddenError,
@@ -281,19 +287,27 @@ describe('listSettings', () => {
   })
 })
 
+/** Every name in the example tree, parents before their children. */
+const exampleNames = (list: ExampleCategory[]): string[] =>
+  list.flatMap(({ name, children = [] }) => [name, ...exampleNames(children)])
+
 describe('seedDevelopmentData', () => {
   test('fills only the missing example values, as the system', async () => {
     await save(admin, 'commission_bps', 1500)
 
-    const { settings: filled } = await seedDevelopmentData(web, {
-      NODE_ENV: 'development',
-    })
+    const {
+      settings: filled,
+      categories,
+      brands,
+    } = await seedDevelopmentData(web, { NODE_ENV: 'development' })
 
     expect(filled).toEqual([
       'delivery_charge_paise',
       'free_delivery_threshold_paise',
       'company_details',
     ])
+    expect(categories).toEqual(exampleNames(DEVELOPMENT_CATEGORIES))
+    expect(brands).toEqual(DEVELOPMENT_BRANDS)
     expect(await read('commission_bps')).toBe(1500)
     expect(await read('delivery_charge_paise')).toBe(
       DEVELOPMENT_SETTINGS.delivery_charge_paise,
@@ -301,9 +315,11 @@ describe('seedDevelopmentData', () => {
     expect(await auditFor('delivery_charge_paise')).toEqual([
       expect.objectContaining({ actorUserId: null, actorRole: 'system' }),
     ])
-    expect(
-      (await seedDevelopmentData(web, { NODE_ENV: 'development' })).settings,
-    ).toEqual([])
+    const again = await seedDevelopmentData(web, { NODE_ENV: 'development' })
+    expect(again.settings).toEqual([])
+    // The example tree and brands are added once; a second run finds them.
+    expect(again.categories).toEqual([])
+    expect(again.brands).toEqual([])
   })
 
   test('refuses to run in production', async () => {

@@ -11,6 +11,7 @@ import {
 import {
   afterCursor,
   exactTime,
+  newestFirstCursor,
   pageSize,
   toPage,
   type Page,
@@ -566,6 +567,7 @@ export async function listSellers(
       }
       return { ...row, status: rowStatus }
     },
+    newestFirstCursor,
   )
 }
 

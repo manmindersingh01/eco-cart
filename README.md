@@ -38,7 +38,8 @@ pnpm dev
 
 `pnpm db:migrate` creates every table, sets the passwords of the two database users the programs log in as (`ecokart_web` for the web app and `ecokart_worker` for the worker), and installs the job queue tables and queues.
 Run it again whenever you pull new migrations; it does nothing when the database is already up to date.
-`pnpm db:seed` saves example values for the settings only the client can decide, such as the commission rate, and creates three approved example sellers whose owners sign in as `seller1@ecokart.test`, `seller2@ecokart.test`, and `seller3@ecokart.test`.
+`pnpm db:seed` saves example values for the settings only the client can decide, such as the commission rate, creates three approved example sellers whose owners sign in as `seller1@ecokart.test`, `seller2@ecokart.test`, and `seller3@ecokart.test`, and adds an example category tree and a few brands.
+The example GST rates are not tax advice; the real ones come from the client's chartered accountant.
 It never overwrites what already exists.
 
 `pnpm db:up` also starts Mailpit, which catches every email and SMS the worker sends locally.

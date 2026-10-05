@@ -1,15 +1,13 @@
 /**
- * The constraint behind a unique-violation error (PostgreSQL code 23505),
- * looking through Drizzle's wrapping error, or null for any other error.
- * Lets a service turn, for example, a taken invoice prefix into a clear
- * message even when two administrators race for it.
+ * The constraint behind a PostgreSQL error with `code`, looking through
+ * Drizzle's wrapping error, or null for any other error.
  */
-export function uniqueViolation(error: unknown): string | null {
+function violatedConstraint(error: unknown, code: string): string | null {
   let current: unknown = error
   while (typeof current === 'object' && current !== null) {
     if (
       'code' in current &&
-      current.code === '23505' &&
+      current.code === code &&
       'constraint' in current &&
       typeof current.constraint === 'string'
     ) {
@@ -19,3 +17,18 @@ export function uniqueViolation(error: unknown): string | null {
   }
   return null
 }
+
+/**
+ * The constraint behind a unique-violation error (PostgreSQL code 23505).
+ * Lets a service turn, for example, a taken invoice prefix into a clear
+ * message even when two administrators race for it.
+ */
+export const uniqueViolation = (error: unknown): string | null =>
+  violatedConstraint(error, '23505')
+
+/**
+ * The constraint behind a foreign-key error (PostgreSQL code 23503), for
+ * example deleting a category that a product was just listed in.
+ */
+export const foreignKeyViolation = (error: unknown): string | null =>
+  violatedConstraint(error, '23503')

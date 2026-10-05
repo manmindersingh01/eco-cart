@@ -82,6 +82,7 @@ export async function createTestProduct(
   options: {
     sellerId: string
     categoryId: string
+    brandId?: string
     status?: 'draft' | 'pending_review' | 'approved' | 'rejected' | 'archived'
   },
 ) {
@@ -91,6 +92,7 @@ export async function createTestProduct(
     .values({
       sellerId: options.sellerId,
       categoryId: options.categoryId,
+      brandId: options.brandId ?? null,
       title: `Bamboo bottle ${suffix}`,
       slug: `bamboo-bottle-${suffix}`,
       status: options.status ?? 'approved',
