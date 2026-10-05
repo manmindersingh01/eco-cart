@@ -17,6 +17,8 @@ One developer builds it, and production launch is Saturday 31 October 2026.
 ## Where the truth lives
 
 - `docs/system-design.md` is the source of truth for architecture, tables, and flows.
+- `docs/backend-spec.md` is the backend build plan.
+  Before building a backend step, write what it will build into its section; if anything changes while building, update the section and its change log in the same change.
   Before writing code for a feature, read its section: 4 code layout, 5 data model, 6.1 login, 6.2 listings, 6.3 checkout and payment, 6.4 dispatch, 6.5 returns, 6.6 invoices, 6.7 imports, 6.8 search, 6.9 assistant, 8 security.
 - `EcoKart_One_Month_Delivery_Timeline.pdf` has the milestones, the client inputs, and the launch priorities.
 - The decisions in section 11 of the design doc are recommendations until the client confirms them.
@@ -32,6 +34,10 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 
 - Install: `pnpm install`
 - Local database (PostgreSQL 16 with pgvector on port 5434): `pnpm db:up`, stop with `pnpm db:down`
+- Apply migrations, set the `ecokart_web` and `ecokart_worker` passwords, and install the pg-boss tables: `pnpm db:migrate` (reads `packages/core/.env`)
+- Write a new migration after changing the Drizzle schema: `pnpm db:generate`.
+  For SQL that Drizzle cannot express (grants, triggers, functions), use `pnpm --filter @ecokart/core exec drizzle-kit generate --custom --name=<name>` and fill in the file.
+- Regenerate the Better Auth tables after changing its plugins: `pnpm auth:schema`, then `pnpm db:generate`
 - Web app and worker together: `pnpm dev` (web on http://localhost:3000)
 - Worker only: `pnpm --filter @ecokart/worker dev`
 - Everything CI runs, in order: `pnpm check` (format check, lint, typecheck, test, build)
@@ -39,7 +45,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Tests in one package: `pnpm --filter @ecokart/core test`
 - Add a dependency: `pnpm --filter @ecokart/web add <name>`.
   The version goes into the `catalog` in `pnpm-workspace.yaml` and `package.json` gets `catalog:`.
-- Not set up yet: e2e tests, db migrate, db seed.
+- Tests rebuild their own databases (`ecokart_test_core`, `ecokart_test_web`, `ecokart_test_worker`) from the migrations on every run and never touch the development database.
+- Not set up yet: e2e tests, db seed.
   Add them here when they exist.
 
 ## Architecture rules
@@ -98,11 +105,15 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 ## Database and security
 
 - Every table holding buyer or seller data has row-level security (RLS).
-  Set `app.user_id`, `app.role`, and `app.seller_id` with `SET LOCAL` inside the transaction, never plain `SET`, because the connection pooler runs in transaction mode.
+  Run buyer and seller work through `withContext` (`packages/core/src/db/context.ts`), which sets `app.role`, `app.user_id`, `app.seller_id`, and `app.guest_token` with `set_config(..., true)`, the parameterised `SET LOCAL`.
+  Never use plain `SET`, because the connection pooler runs in transaction mode.
+- Use the `system` context role only for work that changes several parties' data at once (checkout, payment confirmation, order expiry, cancellation, refunds), and only after the service has checked permissions itself.
 - RLS is the safety net, not the check.
   Application code still checks permissions explicitly.
-- The worker uses a separate database role that bypasses RLS.
-  Never use that role from the web app.
+- The web app logs in as `ecokart_web` and the worker as `ecokart_worker`, which has a full-access `worker_all` policy on every RLS table.
+  Never use the worker user from the web app, and never let either program log in as the database owner.
+- A new table needs, in its migration, RLS policies (or a reason it has none in the spec), grants for both users, and an `updated_at` trigger if it has that column.
+  `packages/core/src/db/schema-rules.test.ts` fails if one is missing.
 - Status columns are `text` with a `CHECK` constraint listing allowed values.
   Adding a state means a new migration.
 - Every table has `created_at`, and mutable tables also have `updated_at`.

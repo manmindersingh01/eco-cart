@@ -4,18 +4,29 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts"
   },
   "scripts": {
     "typecheck": "tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node --env-file-if-exists=.env src/db/migrate.ts",
+    "auth:schema": "auth generate --config src/modules/auth/schema-config.ts --output src/db/schema/auth.ts --yes && prettier --write src/db/schema/auth.ts"
   },
   "dependencies": {
-    "pg": "catalog:"
+    "@better-auth/drizzle-adapter": "catalog:",
+    "better-auth": "catalog:",
+    "drizzle-orm": "catalog:",
+    "pg": "catalog:",
+    "pg-boss": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
+    "auth": "catalog:",
+    "drizzle-kit": "catalog:",
+    "prettier": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

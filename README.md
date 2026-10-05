@@ -2,6 +2,7 @@
 
 EcoKart is a multi-vendor marketplace for India with a storefront for buyers, a portal for sellers, and a console for administrators.
 The architecture, data model, and main flows are described in [docs/system-design.md](docs/system-design.md).
+The backend is built step by step following [docs/backend-spec.md](docs/backend-spec.md).
 
 ## What is in this repository
 
@@ -27,16 +28,21 @@ pnpm reads `devEngines.runtime` in `package.json` and downloads the right Node.j
 ```bash
 pnpm install
 pnpm db:up
+cp packages/core/.env.example packages/core/.env
 cp apps/web/.env.example apps/web/.env
 cp apps/worker/.env.example apps/worker/.env
+pnpm db:migrate
 pnpm dev
 ```
+
+`pnpm db:migrate` creates every table, sets the passwords of the two database users the programs log in as (`ecokart_web` for the web app and `ecokart_worker` for the worker), and installs the job queue tables.
+Run it again whenever you pull new migrations; it does nothing when the database is already up to date.
 
 Then open http://localhost:3000.
 The health check at http://localhost:3000/api/health shows whether the web app can reach the database.
 
 The local database listens on port 5434, so it does not clash with a PostgreSQL server already running on 5432.
-To use another port, set `POSTGRES_PORT` before `pnpm db:up` and change `DATABASE_URL` in both `.env` files to match.
+To use another port, set `POSTGRES_PORT` before `pnpm db:up`, change the database URLs in all three `.env` files to match, and set `TEST_DATABASE_SERVER_URL` (for example `postgres://ecokart:ecokart@localhost:5435/postgres`) when running tests.
 
 ## Commands
 
@@ -47,10 +53,13 @@ Run these from the repository root.
 | `pnpm dev` | Starts the web app and the worker, reloading on every change |
 | `pnpm db:up` | Starts the local database and waits until it is ready |
 | `pnpm db:down` | Stops the local database (the data is kept) |
+| `pnpm db:migrate` | Applies new migrations, sets the database user passwords, and installs or upgrades the job queue tables |
+| `pnpm db:generate` | Writes a new SQL migration from changes to the Drizzle schema in `packages/core/src/db/schema` |
+| `pnpm auth:schema` | Regenerates the Better Auth tables' schema after its configuration changes |
 | `pnpm check` | Runs everything CI runs: format check, lint, typecheck, test, build |
 | `pnpm typecheck` | Type-checks every package |
 | `pnpm lint` | Lints with Oxlint, including type-aware rules |
-| `pnpm test` | Runs every package's tests (needs the local database) |
+| `pnpm test` | Runs every package's tests against fresh `ecokart_test_*` databases (needs the local database server) |
 | `pnpm build` | Builds the web app for production |
 | `pnpm format` | Formats code and config files with Prettier (Markdown is formatted by hand) |
 

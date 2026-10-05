@@ -10,11 +10,12 @@ export type DatabasePool = Pool
 export function createPool(
   connectionString: string,
   applicationName: string,
+  { maxConnections = 10 }: { maxConnections?: number } = {},
 ): DatabasePool {
   return new Pool({
     connectionString,
     application_name: applicationName,
-    max: 10,
+    max: maxConnections,
   })
 }
 

@@ -5,11 +5,16 @@ packages:
 # Every dependency version lives in the catalog below, so each package.json
 # references it with "catalog:" and the whole workspace shares one version.
 catalog:
+  '@better-auth/drizzle-adapter': ^1.7.7
   '@tailwindcss/postcss': ^4.3.3
   '@types/node': ^24.19.0
   '@types/pg': ^8.23.1
   '@types/react': ^19.3.0
   '@types/react-dom': ^19.3.0
+  auth: ^1.7.7
+  better-auth: ^1.7.7
+  drizzle-kit: ^0.31.11
+  drizzle-orm: ^0.45.3
   next: ^16.3.7
   oxlint: ^1.86.0
   oxlint-tsgolint: ^7.0.2003
@@ -23,3 +28,8 @@ catalog:
   vitest: ^5.0.2
 catalogMode: strict
 catalogPrune: true
+
+# esbuild (pulled in by drizzle-kit) only re-checks its platform binary in its
+# install script, and pnpm already installs that binary as an optional package.
+allowBuilds:
+  esbuild: false

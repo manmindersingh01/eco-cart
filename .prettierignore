@@ -3,3 +3,7 @@ pnpm-lock.yaml
 # Markdown is written by hand in compact style (see docs/system-design.md),
 # and padding every table would turn small edits into large diffs.
 *.md
+
+# Written by drizzle-kit on every `pnpm db:generate`; reformatting them would
+# only create churn the next time it rewrites them.
+packages/core/src/db/migrations/meta

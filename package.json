@@ -20,6 +20,9 @@
     "format:check": "prettier --check .",
     "db:up": "docker compose up --detach --wait postgres",
     "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @ecokart/core db:migrate",
+    "db:generate": "pnpm --filter @ecokart/core db:generate",
+    "auth:schema": "pnpm --filter @ecokart/core auth:schema",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {

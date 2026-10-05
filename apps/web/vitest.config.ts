@@ -1,5 +1,8 @@
 import { fileURLToPath } from 'node:url'
+import { testDatabase } from '@ecokart/core/testing'
 import { defineConfig } from 'vitest/config'
+
+const database = testDatabase('web')
 
 export default defineConfig({
   resolve: {
@@ -8,11 +11,10 @@ export default defineConfig({
     },
   },
   test: {
+    // Rebuilds ecokart_test_web from the real migrations before every run.
+    globalSetup: ['./vitest.global-setup.ts'],
     env: {
-      // CI provides its own database; locally this is the compose.yaml one.
-      DATABASE_URL:
-        process.env.DATABASE_URL ??
-        'postgres://ecokart:ecokart@localhost:5434/ecokart',
+      DATABASE_URL: database.webUrl,
     },
   },
 })

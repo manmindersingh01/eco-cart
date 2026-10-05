@@ -1,2 +1,5 @@
+export { createDatabase, type Database, type Transaction } from './db/client.ts'
+export { withContext, type RequestContext } from './db/context.ts'
 export { checkDatabase, createPool, type DatabasePool } from './db/pool.ts'
+export * as schema from './db/schema/index.ts'
 export { requireEnv } from './env.ts'

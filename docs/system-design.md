@@ -66,7 +66,7 @@ Each of those can be added later if measurements show a need, and the code is st
 | ECR | Stores the one Docker image that both services run |
 | ECS Fargate, service `web` | Next.js app behind an Application Load Balancer; two tasks in production, one in staging |
 | ECS Fargate, service `worker` | The job runner; one task, no load balancer, scheduled jobs come from pg-boss cron inside it |
-| RDS for PostgreSQL 16 | Single instance in staging, Multi-AZ in production, private subnet, automated backups, `vector`, `pg_trgm`, and `citext` extensions enabled |
+| RDS for PostgreSQL 16 | Single instance in staging, Multi-AZ in production, private subnet, automated backups, `vector` and `pg_trgm` extensions enabled |
 | S3 | One private bucket per environment for images, import files, and invoice PDFs |
 | CloudFront | One distribution in front of the ALB for public page caching and TLS, and one in front of the bucket with origin access control |
 | Route 53 + ACM | DNS and certificates |
@@ -148,8 +148,12 @@ packages/
         (each module: service.ts, queries.ts, jobs.ts, types.ts)
     src/db/
       pool.ts                  database connection pool
+      client.ts                Drizzle database on top of the pool
+      context.ts               withContext(): one transaction with the row-level security context
+      migrate.ts               `pnpm db:migrate`: SQL migrations, database users, job queue tables
       schema/                  Drizzle schema, one file per domain
       migrations/              SQL migrations including RLS policies and indexes
+    src/testing/               test database setup and fixtures, used only by tests
     src/lib/
       razorpay.ts  storage.ts  email.ts  sms.ts  cache.ts
       ai/
@@ -183,7 +187,8 @@ Three rules keep this maintainable.
 - Prices are tax inclusive, as they are shown to buyers. GST is back-calculated at order time and frozen on the order line.
 - Orders snapshot everything they need: product title, SKU, options, price, MRP, GST rate, HSN code, address, and commission rate. Later catalogue edits never change a past order or invoice.
 - Primary keys are UUIDs for entities exposed in URLs and `bigserial` for append-only logs.
-- Every table has `created_at`; mutable tables also have `updated_at`. Soft delete (`deleted_at`) is used only where history matters (products, addresses).
+- Every table has `created_at`; mutable tables also have `updated_at`, kept current by a database trigger.
+  Soft delete (`deleted_at`) is used only where history matters (products, addresses).
 - Status columns are `text` with a `CHECK` constraint listing the allowed values, so adding a state is a migration and not a type change.
 - Products carry denormalised summary fields (minimum price, total stock, rating average) so listing and search pages never join variants or reviews.
 
@@ -211,6 +216,8 @@ The first four tables are created and maintained by Better Auth.
 Its CLI generates their Drizzle schema, and application code never reads or writes them directly; it goes through the Better Auth API.
 They use UUID ids (`advanced.database.generateId: "uuid"`) and plural snake_case names (`usePlural`) so they look like the rest of the database.
 They carry no row-level security policies, because Better Auth is the only code that touches them.
+Their time columns are `timestamp` without a time zone holding UTC, because that is what the Better Auth CLI generates; every other table uses `timestamptz`.
+A CHECK constraint on `users.role` allows only `buyer`, `seller`, and `admin`.
 
 ```
 users                                   core + phone number plugin + admin plugin
@@ -234,7 +241,7 @@ sessions                                core + admin plugin
   expires_at       timestamptz
   ip_address       text
   user_agent       text
-  impersonated_by  uuid, nullable   set when an admin impersonates a user
+  impersonated_by  text, nullable   set when an admin impersonates a user
   created_at, updated_at
   INDEX (user_id)
 
@@ -259,7 +266,7 @@ addresses
   id            uuid PK
   user_id       uuid FK users
   full_name, phone, line1, line2, landmark, city
-  state_code    char(2)   Indian state code, used for GST place of supply
+  state_code    char(2)   two-digit GST state code (e.g. 27 for Maharashtra), used for GST place of supply
   pincode       char(6)
   is_default    boolean
   created_at, updated_at, deleted_at
@@ -896,7 +903,15 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 
 ## 8. Security
 
-- Row-level security is enabled on every table that holds buyer or seller data. The web app connects as a database role that is subject to the policies and sets `app.user_id`, `app.role`, and `app.seller_id` with `SET LOCAL` in each transaction. Buyers can only see their own orders and addresses, sellers only their own products, order lines, ledger, and imports, and administrators see everything. The worker connects as a separate role that bypasses the policies.
+- Row-level security is enabled on every table that holds buyer or seller data.
+  The web app connects as the `ecokart_web` database user, which is subject to the policies, and sets `app.role`, `app.user_id`, `app.seller_id`, and `app.guest_token` with `SET LOCAL` in each transaction.
+  Buyers can only see their own orders and addresses, sellers only their own products, order lines, ledger, and imports, guests only their own cart, and administrators see everything.
+- The role `system` is used for work that changes several parties' data at once, such as checkout and payment confirmation, after the service has checked permissions itself.
+- The worker connects as the `ecokart_worker` user, which has a full-access policy on every table.
+  Amazon RDS cannot grant the `BYPASSRLS` attribute, so an explicit policy gives the same result everywhere.
+- Only the database owner, used by `pnpm db:migrate`, can change the table structure.
+  Neither the web nor the worker user can update or delete the seller ledger, order events, or audit log, and a trigger refuses those changes even to the owner.
+- The full list of row-level security rules is in `docs/backend-spec.md`, step 1.
 - Application code still checks permissions explicitly; row-level security is the safety net that makes a missed check a bug rather than a data leak.
 - Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, OTP codes stored hashed, three attempts per code, and suspension through `banUser`, which revokes every session of that user.
 - Better Auth rate limits its own endpoints (OTP sending and verification).
