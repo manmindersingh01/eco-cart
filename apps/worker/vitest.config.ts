@@ -9,8 +9,17 @@ export default defineConfig({
     globalSetup: ['./vitest.global-setup.ts'],
     env: {
       DATABASE_URL: database.workerUrl,
-      // Only for the test that sends a job the way the web app will.
+      // For the tests that send jobs and sign in the way the web app does.
       WEB_DATABASE_URL: database.webUrl,
+      BETTER_AUTH_URL: 'http://localhost:3000',
+      BETTER_AUTH_SECRET: 'development-only-secret-for-tests',
+      // The Mailpit catcher from compose.yaml, or CI's service container.
+      MAILPIT_URL: process.env.MAILPIT_URL ?? 'http://localhost:8025',
+      EMAIL_PROVIDER: 'mailpit',
+      EMAIL_FROM: 'EcoKart <no-reply@ecokart.test>',
+      SMS_PROVIDER: 'mailpit',
+      // "development-only-encryption-key!" in base64.
+      MESSAGE_ENCRYPTION_KEY: 'ZGV2ZWxvcG1lbnQtb25seS1lbmNyeXB0aW9uLWtleSE=',
     },
   },
 })

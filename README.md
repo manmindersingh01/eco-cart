@@ -35,8 +35,12 @@ pnpm db:migrate
 pnpm dev
 ```
 
-`pnpm db:migrate` creates every table, sets the passwords of the two database users the programs log in as (`ecokart_web` for the web app and `ecokart_worker` for the worker), and installs the job queue tables.
+`pnpm db:migrate` creates every table, sets the passwords of the two database users the programs log in as (`ecokart_web` for the web app and `ecokart_worker` for the worker), and installs the job queue tables and queues.
 Run it again whenever you pull new migrations; it does nothing when the database is already up to date.
+
+`pnpm db:up` also starts Mailpit, which catches every email and SMS the worker sends locally.
+Read them at http://localhost:8025, for example the code when you sign in.
+To make yourself an administrator, run `pnpm admin:create --email you@example.com --name "Your Name"` and sign in with that email.
 
 Then open http://localhost:3000.
 The health check at http://localhost:3000/api/health shows whether the web app can reach the database.
@@ -51,15 +55,16 @@ Run these from the repository root.
 | Command | What it does |
 | --- | --- |
 | `pnpm dev` | Starts the web app and the worker, reloading on every change |
-| `pnpm db:up` | Starts the local database and waits until it is ready |
-| `pnpm db:down` | Stops the local database (the data is kept) |
+| `pnpm db:up` | Starts the local database and Mailpit and waits until they are ready |
+| `pnpm db:down` | Stops the local database and Mailpit (the data is kept) |
 | `pnpm db:migrate` | Applies new migrations, sets the database user passwords, and installs or upgrades the job queue tables |
 | `pnpm db:generate` | Writes a new SQL migration from changes to the Drizzle schema in `packages/core/src/db/schema` |
 | `pnpm auth:schema` | Regenerates the Better Auth tables' schema after its configuration changes |
+| `pnpm admin:create` | Creates an administrator account, or makes an existing account one |
 | `pnpm check` | Runs everything CI runs: format check, lint, typecheck, test, build |
 | `pnpm typecheck` | Type-checks every package |
 | `pnpm lint` | Lints with Oxlint, including type-aware rules |
-| `pnpm test` | Runs every package's tests against fresh `ecokart_test_*` databases (needs the local database server) |
+| `pnpm test` | Runs every package's tests against fresh `ecokart_test_*` databases (needs `pnpm db:up`) |
 | `pnpm build` | Builds the web app for production |
 | `pnpm format` | Formats code and config files with Prettier (Markdown is formatted by hand) |
 

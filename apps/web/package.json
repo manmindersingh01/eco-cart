@@ -8,10 +8,12 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "next typegen && tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "admin:create": "node --env-file-if-exists=.env scripts/create-admin.ts"
   },
   "dependencies": {
     "@ecokart/core": "workspace:*",
+    "better-auth": "catalog:",
     "next": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"

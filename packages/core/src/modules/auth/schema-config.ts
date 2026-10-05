@@ -15,7 +15,11 @@ export const auth = createAuth({
   db: drizzle.mock(),
   baseURL: 'http://localhost:3000',
   secret: 'schema-generation-only-not-a-real-secret',
+  // On, so the generated schema includes everything phone sign-in needs.
+  smsOtpEnabled: true,
   sendEmailOtp: async () => notForRuntime(),
   sendSmsOtp: async () => notForRuntime(),
+  allowCodeRequest: async () => notForRuntime(),
+  recordAdminAction: async () => notForRuntime(),
   validateSchema: false,
 })

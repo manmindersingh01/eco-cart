@@ -15,6 +15,13 @@ export default defineConfig({
     globalSetup: ['./vitest.global-setup.ts'],
     env: {
       DATABASE_URL: database.webUrl,
+      // For test fixtures and reading queued codes back.
+      MIGRATION_DATABASE_URL: database.migrationUrl,
+      BETTER_AUTH_URL: 'http://localhost:3000',
+      BETTER_AUTH_SECRET: 'development-only-secret-for-tests',
+      // "development-only-encryption-key!" in base64.
+      MESSAGE_ENCRYPTION_KEY: 'ZGV2ZWxvcG1lbnQtb25seS1lbmNyeXB0aW9uLWtleSE=',
+      SMS_PROVIDER: 'mailpit',
     },
   },
 })

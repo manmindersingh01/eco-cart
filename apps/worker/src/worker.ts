@@ -1,16 +1,36 @@
+import {
+  createDatabase,
+  createPool,
+  loadNotificationConfig,
+  registerNotificationJobs,
+} from '@ecokart/core'
 import { PgBoss } from 'pg-boss'
 
+export interface WorkerOptions {
+  databaseUrl: string
+  notifications: ReturnType<typeof loadNotificationConfig>
+}
+
+export interface RunningWorker {
+  boss: PgBoss
+  /** Lets running jobs finish (pg-boss waits up to 30 seconds), then closes. */
+  stop(): Promise<void>
+}
+
 /**
- * Starts the pg-boss job queue as the ecokart_worker database user.
+ * Starts the pg-boss job queue as the ecokart_worker database user and
+ * registers every module's jobs.
  *
- * The queue tables are installed and upgraded by `pnpm db:migrate`, because
- * this user may not change tables. With `migrate: false`, start() checks that
- * the tables exist at the expected version and fails with a clear error
- * otherwise.
+ * The queue tables and the queues themselves are created by
+ * `pnpm db:migrate`, because this user may not change tables. With
+ * `migrate: false`, start() checks that the tables exist at the expected
+ * version and fails with a clear error otherwise.
  */
-export async function startWorker(databaseUrl: string): Promise<PgBoss> {
+export async function startWorker(
+  options: WorkerOptions,
+): Promise<RunningWorker> {
   const boss = new PgBoss({
-    connectionString: databaseUrl,
+    connectionString: options.databaseUrl,
     application_name: 'ecokart-worker',
     migrate: false,
   })
@@ -29,9 +49,18 @@ export async function startWorker(databaseUrl: string): Promise<PgBoss> {
     throw explainStartFailure(error)
   }
 
-  // Each module registers its queues and job handlers here as it is built.
+  // Job handlers read and write through Drizzle on their own small pool.
+  const pool = createPool(options.databaseUrl, 'ecokart-worker-jobs')
+  const db = createDatabase(pool)
+  await registerNotificationJobs(boss, { db, ...options.notifications })
 
-  return boss
+  return {
+    boss,
+    async stop() {
+      await boss.stop()
+      await pool.end()
+    },
+  }
 }
 
 // pg-boss's own messages when its tables are missing or older than the code.

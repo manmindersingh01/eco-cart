@@ -27,7 +27,7 @@ The system has five moving parts.
 | --- | --- | --- |
 | Next.js web app | Storefront, seller portal, admin console, API routes, Razorpay webhook | One or more stateless containers |
 | Worker process | Background jobs: AI drafts, embeddings, imports, invoice PDFs, emails, order expiry | A plain Node.js program written in TypeScript, one container built from the same codebase |
-| PostgreSQL | All data, full-text search, vector search (pgvector), and the job queue (pg-boss) | Managed Postgres with pgvector enabled |
+| PostgreSQL | All data, full-text search, vector search (pgvector), and the job queue (pg-boss) | PostgreSQL 16 with pgvector in a Docker container, the same image as local development (not Amazon RDS for now) |
 | Object storage + CDN | Product images, import files, invoice PDFs, static assets | Private S3 bucket behind CloudFront |
 | External services | Razorpay; AI through OpenRouter (DeepSeek V4.1 Flash for chat and vision, Voyage Multimodal 3.5 for embeddings); a transactional email provider; an SMS provider | Client-owned accounts |
 
@@ -56,8 +56,8 @@ Each of those can be added later if measurements show a need, and the code is st
 | AI embeddings | `voyageai/voyage-multimodal-3.5` through OpenRouter at 1024 dimensions | DeepSeek has no embeddings endpoint, and this model embeds text and images into one space. One index serves semantic search, image search, and similar products, and an uploaded photo is embedded directly without a vision call. |
 | Media | Direct browser upload to S3 with presigned URLs; worker resizes into fixed sizes | Uploads never pass through the web app. Images are served from CloudFront with immutable cache headers. |
 | Payments | Razorpay hosted checkout, Orders API, and signature-verified webhooks | Fixed by the quotation. No card data ever touches EcoKart. |
-| Email and SMS | A transactional email API (Resend or Amazon SES, one adapter either way); an Indian SMS provider with DLT approval (MSG91 or similar) for OTP | Email OTP works from day one; SMS OTP switches on when DLT approval arrives. |
-| Hosting | AWS Mumbai, hosting only: ECS Fargate for the web and worker containers, RDS PostgreSQL with pgvector, S3 + CloudFront, Secrets Manager | Client-owned account as the quotation requires. Infrastructure is defined as code, and staging and production are two environments of the same definition. |
+| Email and SMS | A transactional email API (Resend or Amazon SES, one adapter either way); an Indian SMS provider with DLT approval (MSG91 or similar) for OTP. Locally, both go to Mailpit, a mail catcher in Docker. | Email OTP works from day one; SMS OTP switches on when DLT approval arrives. |
+| Hosting | AWS Mumbai, hosting only: ECS Fargate for the web and worker containers, PostgreSQL with pgvector in Docker, S3 + CloudFront, Secrets Manager | Client-owned account as the quotation requires. Infrastructure is defined as code, and staging and production are two environments of the same definition. |
 
 ### 3.1 AWS deployment shape
 
@@ -66,7 +66,7 @@ Each of those can be added later if measurements show a need, and the code is st
 | ECR | Stores the one Docker image that both services run |
 | ECS Fargate, service `web` | Next.js app behind an Application Load Balancer; two tasks in production, one in staging |
 | ECS Fargate, service `worker` | The job runner; one task, no load balancer, scheduled jobs come from pg-boss cron inside it |
-| RDS for PostgreSQL 16 | Single instance in staging, Multi-AZ in production, private subnet, automated backups, `vector` and `pg_trgm` extensions enabled |
+| PostgreSQL 16 in Docker | The `pgvector/pgvector` image from `compose.yaml` with its data on a persistent volume, in a private subnet, with the `vector` and `pg_trgm` extensions. Decided 5 October 2026 instead of Amazon RDS, for now. Where the container runs and how it is backed up are settled with the compute shape and the backup plan (section 11). |
 | S3 | One private bucket per environment for images, import files, and invoice PDFs |
 | CloudFront | One distribution in front of the ALB for public page caching and TLS, and one in front of the bucket with origin access control |
 | Route 53 + ACM | DNS and certificates |
@@ -77,7 +77,7 @@ Each of those can be added later if measurements show a need, and the code is st
 AWS is used for hosting only.
 The AI, email, and SMS providers are ordinary HTTPS APIs called from the web and worker tasks, with their keys in Secrets Manager.
 Infrastructure is defined with the AWS CDK in the same repository, so the staging and production environments cannot drift apart.
-Each container keeps its own small application-side connection pool; RDS Proxy is added only if the number of tasks grows large.
+Each container keeps its own small application-side connection pool; a separate connection pooler such as PgBouncer is added only if the number of tasks grows large.
 
 ### 3.2 AI provider layer
 
@@ -135,7 +135,10 @@ apps/
       seller/                  seller portal
       admin/                   admin console
       api/health/route.ts      health check for the load balancer and smoke tests
+      api/auth/[...all]/route.ts   Better Auth: sign-in codes, sessions, administrator account endpoints
+      api/me/route.ts          the signed-in account, its role, and its seller id
       api/webhooks/razorpay/route.ts
+    scripts/create-admin.ts    `pnpm admin:create`: the first administrator
   worker/                      background worker (@ecokart/worker)
     src/main.ts                process entry: reads settings, starts, stops gracefully
     src/worker.ts              starts pg-boss and registers every module's jobs
@@ -144,7 +147,7 @@ packages/
     src/modules/
       auth/  catalogue/  cart/  checkout/  orders/  payments/  ledger/
       invoices/  returns/  search/  ai/  imports/  notifications/
-      moderation/  settings/  audit/
+      moderation/  settings/  audit/  sellers/  rate-limits/
         (each module: service.ts, queries.ts, jobs.ts, types.ts)
     src/db/
       pool.ts                  database connection pool
@@ -153,14 +156,19 @@ packages/
       migrate.ts               `pnpm db:migrate`: SQL migrations, database users, job queue tables
       schema/                  Drizzle schema, one file per domain
       migrations/              SQL migrations including RLS policies and indexes
+    src/jobs.ts                every job queue and its retry settings, created by `pnpm db:migrate`
     src/testing/               test database setup and fixtures, used only by tests
     src/lib/
       razorpay.ts  storage.ts  email.ts  sms.ts  cache.ts
+      queue.ts       sends pg-boss jobs inside the caller's transaction
+      encryption.ts  seals short secrets, such as queued sign-in codes
+      config.ts      validates environment variables at startup
+      mailpit.ts     local mail catcher, for development and tests only
       ai/
         client.ts      one OpenAI-compatible HTTP client; base URL, key, model from env
         chat.ts        TextModel and VisionModel on top of the chat client
         embed.ts       Embedder on top of the embeddings client
-compose.yaml                   local PostgreSQL 16 with pgvector for development
+compose.yaml                   local PostgreSQL 16 with pgvector, and Mailpit, for development
 ```
 
 Both programs are Node.js.
@@ -196,7 +204,7 @@ Three rules keep this maintainable.
 
 | Domain | Tables |
 | --- | --- |
-| Identity | `users`, `sessions`, `accounts`, `verifications` (the four managed by Better Auth), `addresses` |
+| Identity | `users`, `sessions`, `accounts`, `verifications`, `auth_rate_limits` (the five managed by Better Auth), `addresses` |
 | Sellers | `sellers` |
 | Catalogue | `categories`, `brands`, `products`, `product_variants`, `product_images`, `product_moderation`, `product_embeddings` |
 | Cart and promotions | `carts`, `cart_items`, `coupons` |
@@ -208,7 +216,8 @@ Three rules keep this maintainable.
 | AI and search | `ai_requests`, `search_queries` |
 | Platform | `platform_settings`, `content_pages`, `email_outbox`, `audit_logs`, `rate_limits` |
 
-That is 36 tables, four of them owned by Better Auth, plus the schema that pg-boss creates for itself.
+That is 37 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
+Better Auth keeps its rate-limit counters in `auth_rate_limits`; our own `rate_limits` table, with a different shape, serves checkout, search, and AI.
 
 ### 5.3 Identity
 
@@ -216,6 +225,7 @@ The first four tables are created and maintained by Better Auth.
 Its CLI generates their Drizzle schema, and application code never reads or writes them directly; it goes through the Better Auth API.
 They use UUID ids (`advanced.database.generateId: "uuid"`) and plural snake_case names (`usePlural`) so they look like the rest of the database.
 They carry no row-level security policies, because Better Auth is the only code that touches them.
+Better Auth also creates `auth_rate_limits` for its rate-limit counters.
 Their time columns are `timestamp` without a time zone holding UTC, because that is what the Better Auth CLI generates; every other table uses `timestamptz`.
 A CHECK constraint on `users.role` allows only `buyer`, `seller`, and `admin`.
 
@@ -791,12 +801,18 @@ The row is written in the same transaction as the business change, so an email i
 Login is handled by Better Auth, mounted in the web app at `/api/auth/*`.
 
 1. The user enters an email or mobile number and the browser calls Better Auth's email OTP or phone number plugin.
-2. Better Auth generates a six-digit code, stores it hashed in `verifications` with a five-minute expiry, and calls our callback, which queues the email through `email_outbox` or the SMS through the SMS provider.
-   Better Auth's own rate limiting protects these endpoints.
-3. The user enters the code.
-   Better Auth verifies it, allows three attempts, creates the user on first sign-in (with the `buyer` role by default), and writes a `sessions` row.
-4. The browser receives an HttpOnly, Secure, SameSite cookie containing the session token.
-5. On every request the app reads the session through Better Auth, and the user id, role, and seller id are set as Postgres session variables with `SET LOCAL` for row-level security.
+   Mobile numbers must be Indian (`+91` and ten digits starting with 6 to 9), and phone sign-in stays off until an SMS provider is configured.
+2. Before a code is made, two limits are checked: five code requests a minute from one IP address (Better Auth, counted in `auth_rate_limits`), and five codes an hour for one email address or number from anywhere (our `rate_limits`, with the address hashed).
+3. Better Auth generates a six-digit code with a five-minute expiry, stores it in `verifications` (hashed for email), and calls our callback.
+   The callback queues the email through `email_outbox`, or the SMS as a job, with the code encrypted; the worker decrypts it, sends the message, and then removes the code.
+4. The user enters the code.
+   Better Auth verifies it, allows three attempts, creates the user on first sign-in (with the `buyer` role by default; a phone-only account gets a placeholder email under the reserved `.invalid` domain), and writes a `sessions` row.
+5. The browser receives the `ecokart.session_token` cookie: HttpOnly, SameSite Lax, and Secure on https.
+6. On every request the app reads the session through Better Auth, looks up the seller id for a seller account, and runs the request's queries through `withContext`, which sets the user id, role, and seller id with `SET LOCAL` for row-level security.
+
+The first administrator is created with `pnpm admin:create`.
+Administrators manage accounts through Better Auth's admin endpoints: create accounts, set roles, ban and unban, and revoke sessions, each written to `audit_logs`.
+They cannot impersonate users, delete them, or set passwords or emails.
 
 ### 6.2 Listing lifecycle
 
@@ -908,14 +924,16 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
   Buyers can only see their own orders and addresses, sellers only their own products, order lines, ledger, and imports, guests only their own cart, and administrators see everything.
 - The role `system` is used for work that changes several parties' data at once, such as checkout and payment confirmation, after the service has checked permissions itself.
 - The worker connects as the `ecokart_worker` user, which has a full-access policy on every table.
-  Amazon RDS cannot grant the `BYPASSRLS` attribute, so an explicit policy gives the same result everywhere.
+  An explicit policy, rather than the `BYPASSRLS` attribute, works the same on any PostgreSQL, including managed services such as Amazon RDS that cannot grant that attribute.
 - Only the database owner, used by `pnpm db:migrate`, can change the table structure.
   Neither the web nor the worker user can update or delete the seller ledger, order events, or audit log, and a trigger refuses those changes even to the owner.
 - The full list of row-level security rules is in `docs/backend-spec.md`, step 1.
 - Application code still checks permissions explicitly; row-level security is the safety net that makes a missed check a bug rather than a data leak.
 - Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, OTP codes stored hashed, three attempts per code, and suspension through `banUser`, which revokes every session of that user.
-- Better Auth rate limits its own endpoints (OTP sending and verification).
+- Better Auth rate limits its own endpoints (OTP sending and verification), with the counters in the database so the limits hold across web containers.
+  A second limit caps the codes sent to any one email address or phone number.
   Checkout, search, and every AI endpoint use the `rate_limits` table with an upsert per window.
+- Sign-in codes waiting to be sent are encrypted with `MESSAGE_ENCRYPTION_KEY` and removed once sent.
 - Razorpay webhooks are verified with the webhook secret before anything is read from the payload, and the checkout return is verified with the key secret. No card data is ever received by EcoKart.
 - All prices, totals, stock, and permissions are recomputed on the server; the browser is never trusted.
 - Secrets live in environment variables in the hosting platform, never in the repository. Object storage buckets are private and every download is a short-lived signed URL.
@@ -924,13 +942,13 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 
 ## 9. How it grows
 
-The launch deployment is two small web tasks, one worker task, one RDS instance (two to four vCPUs), and one bucket.
+The launch deployment is two small web tasks, one worker task, one PostgreSQL server in Docker (two to four vCPUs), and one bucket.
 That comfortably handles thousands of orders a day and a catalogue in the hundreds of thousands.
 
 When measurements show pressure, the steps are, in order, and none of them changes the code structure.
 
 1. Raise the desired count of the `web` service, or enable ECS auto scaling on CPU. The app is stateless, so this is a slider.
-2. Grow the RDS instance class, then add a read replica and point storefront reads at it.
+2. Give the database a larger server, then add a read replica and point storefront reads at it. Moving to a managed service such as Amazon RDS at this point needs no code change, only a new connection string.
 3. Add ElastiCache Redis for page fragment caching and rate limiting if the database shows cache-miss pressure.
 4. Raise the desired count of the `worker` service; pg-boss distributes jobs across tasks automatically.
 5. Move search to a dedicated engine (Meilisearch or Typesense) only if the catalogue passes a few million products or search latency matters more than simplicity. The search module is the only code that changes.
@@ -961,7 +979,9 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | --- | --- | --- | --- |
 | Cloud | Decided 1 October 2026 | AWS, for hosting only | - |
 | AI providers | Decided 2 October 2026 | OpenRouter as the gateway, `deepseek/deepseek-v4.1-flash` for chat and vision, `voyageai/voyage-multimodal-3.5` for embeddings | DeepSeek direct plus a separate embeddings source |
-| AWS compute shape | Open | ECS Fargate for both web and worker, RDS, S3 + CloudFront, defined with the CDK | App Runner for the web app with a Fargate worker, or a single EC2 host running Docker Compose for the pilot |
+| Database hosting | Decided 5 October 2026 | PostgreSQL in Docker, the same image as local development, for now | Amazon RDS, with managed backups and Multi-AZ failover |
+| Database backups | Open | Continuous WAL archiving plus a nightly base backup to the private S3 bucket (for example with pgBackRest), and a tested restore before launch. With Docker, backups are ours to run. | Move to Amazon RDS, which takes backups itself |
+| AWS compute shape | Open | ECS Fargate for the web and worker, the database container on its own host with a persistent volume, S3 + CloudFront, defined with the CDK | App Runner for the web app with a Fargate worker, or a single EC2 host running Docker Compose for the pilot |
 | ORM | Open | Drizzle (Better Auth ships a Drizzle adapter, and the repo is scaffolded for it) | Prisma |
 | Auth | Decided 2 October 2026 | Better Auth with the email OTP, phone number, and admin plugins, Drizzle adapter, UUID ids | Own OTP tables and sessions, or Auth.js |
 | Guest cart | Open | Yes, cookie-based, merged into the account on login | Require login before adding to cart |

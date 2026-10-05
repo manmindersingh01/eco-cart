@@ -22,6 +22,20 @@
       "when": 1791197458352,
       "tag": "0002_grants_and_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791199210649,
+      "tag": "0003_auth_rate_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791199210947,
+      "tag": "0004_auth_rate_limit_grants",
+      "breakpoints": true
     }
   ]
 }

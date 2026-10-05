@@ -24,8 +24,9 @@ export const isOrderBuyer = (column: string) =>
   sql`exists (select 1 from orders o where o.id = ${sql.raw(column)} and o.user_id = ${currentUserId})`
 
 /**
- * The worker runs trusted background jobs for every buyer and seller. Amazon
- * RDS cannot grant BYPASSRLS, so the worker gets an explicit policy instead.
+ * The worker runs trusted background jobs for every buyer and seller. It gets
+ * an explicit policy instead of BYPASSRLS, which managed databases such as
+ * Amazon RDS cannot grant, so the schema works on any PostgreSQL.
  */
 export const workerPolicy = () =>
   pgPolicy('worker_all', {

@@ -1,7 +1,12 @@
-import { requireEnv } from '@ecokart/core'
+import { loadNotificationConfig, requireEnv } from '@ecokart/core'
 import { startWorker } from './worker.ts'
 
-const boss = await startWorker(requireEnv('DATABASE_URL'))
+// Settings are read once, so a missing or wrong one stops the worker here
+// with a clear message instead of failing on the first job.
+const worker = await startWorker({
+  databaseUrl: requireEnv('DATABASE_URL'),
+  notifications: loadNotificationConfig(),
+})
 console.info('Worker started')
 
 // ECS sends SIGTERM before replacing a task. Stopping gracefully lets running
@@ -9,7 +14,7 @@ console.info('Worker started')
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
   console.info(`Received ${signal}, waiting for running jobs to finish`)
   try {
-    await boss.stop()
+    await worker.stop()
     console.info('Worker stopped')
   } catch (error) {
     console.error('Worker did not stop cleanly', error)

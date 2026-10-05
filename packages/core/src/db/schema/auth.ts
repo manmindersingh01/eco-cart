@@ -2,8 +2,10 @@ import { relations, sql } from 'drizzle-orm'
 import {
   pgTable,
   text,
+  bigint,
   timestamp,
   boolean,
+  integer,
   uuid,
   index,
 } from 'drizzle-orm/pg-core'
@@ -94,6 +96,15 @@ export const verifications = pgTable(
   },
   (table) => [index('verifications_identifier_idx').on(table.identifier)],
 )
+
+export const authRateLimits = pgTable('auth_rate_limits', {
+  id: uuid('id')
+    .default(sql`pg_catalog.gen_random_uuid()`)
+    .primaryKey(),
+  key: text('key').notNull().unique(),
+  count: integer('count').notNull(),
+  lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
+})
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),

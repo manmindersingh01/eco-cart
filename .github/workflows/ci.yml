@@ -19,7 +19,7 @@ jobs:
 
     services:
       postgres:
-        # Same major version and extensions as production (RDS PostgreSQL 16).
+        # The same image as compose.yaml and the production database container.
         image: pgvector/pgvector:0.8.6-pg16
         env:
           POSTGRES_USER: ecokart
@@ -33,10 +33,18 @@ jobs:
           --health-timeout 5s
           --health-retries 15
 
+      # The local mail catcher from compose.yaml; tests send real messages to
+      # it and read them back.
+      mailpit:
+        image: axllent/mailpit:v1.31.4
+        ports:
+          - 8025:8025
+
     env:
       # Each package's tests create and migrate their own ecokart_test_*
       # database on this server (packages/core/src/testing/urls.ts).
       TEST_DATABASE_SERVER_URL: postgres://ecokart:ecokart@localhost:5432/postgres
+      MAILPIT_URL: http://localhost:8025
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

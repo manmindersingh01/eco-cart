@@ -6,7 +6,9 @@ import { promisify } from 'node:util'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { Client } from 'pg'
+import { PgBoss } from 'pg-boss'
 import { requireEnv } from '../env.ts'
+import { QUEUES } from '../jobs.ts'
 import { scramSha256Verifier } from './scram.ts'
 
 const MIGRATIONS_FOLDER = fileURLToPath(
@@ -32,7 +34,8 @@ export interface MigrateOptions {
  * 1. applies new SQL migrations from src/db/migrations,
  * 2. lets ecokart_web and ecokart_worker log in with the given passwords,
  * 3. installs or upgrades the pg-boss job queue tables,
- * 4. grants both users access to the job queue tables.
+ * 4. creates every job queue and brings its retry settings up to date,
+ * 5. grants both users access to the job queue tables.
  * Safe to run again; it changes nothing that is already up to date.
  */
 export async function migrateDatabase(options: MigrateOptions): Promise<void> {
@@ -60,6 +63,8 @@ export async function migrateDatabase(options: MigrateOptions): Promise<void> {
     log('Database users ecokart_web and ecokart_worker can log in')
 
     log(await migrateJobQueue(options.migrationUrl))
+    await ensureQueues(options.migrationUrl)
+    log(`Job queues ready: ${QUEUES.map((queue) => queue.name).join(', ')}`)
     await grantJobQueue(client)
   } finally {
     await client.end()
@@ -109,6 +114,33 @@ async function migrateJobQueue(migrationUrl: string): Promise<string> {
     { env: { ...process.env, PGBOSS_DATABASE_URL: migrationUrl } },
   )
   return stdout.trim()
+}
+
+/**
+ * Creates each queue in src/jobs.ts, or updates the retry settings of one
+ * that already exists, so a change to those settings ships with a deploy.
+ */
+async function ensureQueues(migrationUrl: string): Promise<void> {
+  const boss = new PgBoss({
+    connectionString: migrationUrl,
+    application_name: 'ecokart-migrate',
+    max: 1,
+    migrate: false,
+    supervise: false,
+    schedule: false,
+  })
+  // Errors from these calls reject the promises below; this listener only
+  // stops pg-boss from treating a background error as unhandled.
+  boss.on('error', () => {})
+  await boss.start()
+  try {
+    for (const { name, options } of QUEUES) {
+      if (await boss.getQueue(name)) await boss.updateQueue(name, options)
+      else await boss.createQueue(name, options)
+    }
+  } finally {
+    await boss.stop()
+  }
 }
 
 /**

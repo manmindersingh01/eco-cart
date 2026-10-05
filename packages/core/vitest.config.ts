@@ -11,6 +11,8 @@ export default defineConfig({
       DATABASE_URL: database.webUrl,
       WORKER_DATABASE_URL: database.workerUrl,
       MIGRATION_DATABASE_URL: database.migrationUrl,
+      // The Mailpit catcher from compose.yaml, or CI's service container.
+      MAILPIT_URL: process.env.MAILPIT_URL ?? 'http://localhost:8025',
     },
   },
 })

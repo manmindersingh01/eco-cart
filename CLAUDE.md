@@ -24,6 +24,7 @@ One developer builds it, and production launch is Saturday 31 October 2026.
 - The decisions in section 11 of the design doc are recommendations until the client confirms them.
   Build with the recommended option (Docker plus pg-boss, Drizzle, guest cart, one role per account) unless told otherwise.
   Already decided by the client: AWS for hosting only, OpenRouter for AI, Better Auth for authentication.
+  Decided 5 October 2026: the database is PostgreSQL in Docker (the `compose.yaml` image), not Amazon RDS, for now.
 - If a change would contradict the design doc, stop and ask first.
   Once a new decision is agreed, update the design doc in the same change so code and doc never drift apart.
 
@@ -33,11 +34,12 @@ This is a pnpm 12 workspace.
 pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, so never install Node.js separately for this project.
 
 - Install: `pnpm install`
-- Local database (PostgreSQL 16 with pgvector on port 5434): `pnpm db:up`, stop with `pnpm db:down`
+- Local services (PostgreSQL 16 with pgvector on port 5434, and Mailpit, which catches every email and SMS, at http://localhost:8025): `pnpm db:up`, stop with `pnpm db:down`
 - Apply migrations, set the `ecokart_web` and `ecokart_worker` passwords, and install the pg-boss tables: `pnpm db:migrate` (reads `packages/core/.env`)
 - Write a new migration after changing the Drizzle schema: `pnpm db:generate`.
   For SQL that Drizzle cannot express (grants, triggers, functions), use `pnpm --filter @ecokart/core exec drizzle-kit generate --custom --name=<name>` and fill in the file.
 - Regenerate the Better Auth tables after changing its plugins: `pnpm auth:schema`, then `pnpm db:generate`
+- First administrator: `pnpm admin:create --email <email> --name <name>`, then sign in with the code that arrives in Mailpit
 - Web app and worker together: `pnpm dev` (web on http://localhost:3000)
 - Worker only: `pnpm --filter @ecokart/worker dev`
 - Everything CI runs, in order: `pnpm check` (format check, lint, typecheck, test, build)
@@ -114,6 +116,9 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   Never use the worker user from the web app, and never let either program log in as the database owner.
 - A new table needs, in its migration, RLS policies (or a reason it has none in the spec), grants for both users, and an `updated_at` trigger if it has that column.
   `packages/core/src/db/schema-rules.test.ts` fails if one is missing.
+- `INSERT ... RETURNING` must also pass the table's read policy, so a context that may add rows but not read them (for example a visitor queueing an email in `email_outbox`) reserves the id with `nextval` and inserts without `RETURNING`.
+- Background jobs are sent with `JobQueue.send(tx, ...)` inside the business transaction, and every queue is listed in `packages/core/src/jobs.ts` so `pnpm db:migrate` creates it.
+- Short secrets that wait in the database, such as sign-in codes, are sealed with `sealSecret` (`MESSAGE_ENCRYPTION_KEY`) and removed once used.
 - Status columns are `text` with a `CHECK` constraint listing allowed values.
   Adding a state means a new migration.
 - Every table has `created_at`, and mutable tables also have `updated_at`.
@@ -129,9 +134,10 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   Never commit `.env` files, keys, or tokens, and never log OTP codes, session tokens, or webhook secrets.
 - Authentication is Better Auth (decided 2 October 2026) with the `emailOTP`, `phoneNumber`, and `admin` plugins and the Drizzle adapter (`provider: "pg"`, `usePlural: true`, `advanced.database.generateId: "uuid"`).
   Its configuration lives in `packages/core/src/modules/auth/`, and it is mounted at `apps/web/src/app/api/auth/[...all]/route.ts`.
-- The tables `users`, `sessions`, `accounts`, and `verifications` belong to Better Auth.
+- The tables `users`, `sessions`, `accounts`, `verifications`, and `auth_rate_limits` belong to Better Auth.
   Generate their schema with its CLI, never hand-edit them, and read or change users and sessions only through the Better Auth API (`getSession`, `createUser`, `setRole`, `banUser`).
   Suspending an account is `banUser`.
+- Accounts that an administrator creates (administrators, and sellers in step 4) are created with `emailVerified: true`, because Better Auth's clean-up for unverified accounts does not work with UUID ids (see the backend spec, step 2).
 - OTP codes are stored hashed (`storeOTP: "hashed"`), and the OTP delivery callbacks only queue the email or SMS; they never send inline.
 - Object storage buckets are private, and every download is a short-lived signed URL.
 

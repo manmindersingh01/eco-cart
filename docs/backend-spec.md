@@ -32,8 +32,8 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | Step | What it delivers | Design doc | Status |
 | --- | --- | --- | --- |
 | 1 | Database foundation: every table, migrations, database roles, row-level security, and the web app and worker running against it | 4, 5, 8 | Done |
-| 2 | Login, sessions, and roles with Better Auth (email OTP, phone OTP, admin plugin) | 5.3, 6.1 | Planned |
-| 3 | Platform settings, audit log, and the email outbox with its sending job | 5.13 | Planned |
+| 2 | Login, sessions, and roles with Better Auth (email OTP, phone OTP, admin plugin), with OTP delivery through the email outbox and its sending job | 5.3, 5.13, 6.1, 8 | Done |
+| 3 | Platform settings and their defaults | 5.13 | Planned |
 | 4 | Seller accounts: create, approve, suspend | 5.4 | Planned |
 | 5 | Category tree with GST rates, and brands | 5.5 | Planned |
 | 6 | Products, variants, stock, and image upload | 5.5, 6.2 | Planned |
@@ -85,13 +85,13 @@ The web app and the worker start against it with their own restricted database u
 
 | User | Used by | Can change table structure | Row-level security |
 | --- | --- | --- | --- |
-| Database owner (`ecokart` locally, the RDS master user in AWS) | `pnpm db:migrate` only | Yes | Not applied, because it owns the tables |
+| Database owner (`ecokart`, the user `compose.yaml` creates) | `pnpm db:migrate` only | Yes | Not applied, because it owns the tables |
 | `ecokart_web` | Web app | No | Applied: sees only what the current request may see |
 | `ecokart_worker` | Worker | No | A `worker_all` policy on every table allows every row |
 
 The design doc said the worker uses a role that bypasses the policies.
-On Amazon RDS the master user cannot create a role with the `BYPASSRLS` attribute, so the worker gets the same effect from an explicit full-access policy on each table.
-This works the same way locally, in CI, and on RDS.
+The worker gets that effect from an explicit full-access policy on each table rather than the `BYPASSRLS` attribute.
+The policy works on any PostgreSQL, including managed services such as Amazon RDS whose admin user cannot grant `BYPASSRLS`, so a later move stays a configuration change.
 
 Each user gets only the table privileges it needs.
 For example, neither user can UPDATE or DELETE rows in `seller_ledger_entries`, `order_events`, or `audit_logs`, and triggers also block UPDATE and DELETE on those three tables for every user, including the owner.
@@ -201,9 +201,131 @@ The four Better Auth tables also have none, as the design doc says, because only
 - An OTP email queued in `email_outbox` would hold the code in plain text in the payload.
   Step 2 will make sure the code is never stored readable, for example by keeping it out of the stored payload.
 
+## Step 2: Login, sessions, and roles
+
+Status: Done (5 October 2026).
+
+### Goal
+
+A buyer, seller, or administrator signs in with a one-time code (OTP) sent to their email, or to their mobile once SMS is switched on.
+Every later request knows who they are and runs with the matching row-level security context from step 1.
+
+For example, Asha types her email on the sign-in page, receives a six-digit code, types it in, and is signed in as a buyer.
+When she opens her orders, the database is asked as `ecokart_web` with `app.role = buyer` and `app.user_id` set to her id, so it can only return her own orders.
+
+### What gets built
+
+1. **Better Auth mounted at `/api/auth/*`** in the web app, using the configuration from step 1 plus:
+   - **Email OTP:** six digits, valid for five minutes, three attempts, stored hashed.
+     The first sign-in with a new email creates the account with the role `buyer`.
+   - **Phone OTP:** for Indian mobile numbers only (`+91` followed by ten digits starting with 6 to 9).
+     A phone-only account gets a placeholder email such as `919812345678@phone.ecokart.invalid`, which can never receive mail.
+     Phone sign-in stays switched off (its endpoints answer 404) until an SMS provider is configured.
+   - **Three roles from the admin plugin:** `buyer`, `seller`, and `admin`.
+     Administrators may create users, look users up, set roles, ban and unban, and list and revoke sessions.
+     They may not impersonate users, delete users, or set passwords or emails, because nothing in the quotation needs those and each is a risk.
+   - **Endpoints we do not use are switched off:** password reset and phone-plus-password sign-in (EcoKart has no passwords), and email change (it belongs to the profile work later).
+   - **The session cookie** is `ecokart.session_token`: HttpOnly, SameSite Lax, and Secure on https.
+     Sessions last seven days and are extended once a day while in use, which are Better Auth's defaults.
+   - **Rate limits in every environment,** counted in the database so they hold across web containers:
+     five code requests and ten sign-in attempts per minute per IP address, and Better Auth's default of 100 requests per ten seconds elsewhere.
+     Better Auth keeps these counters in its own `auth_rate_limits` table, generated by its CLI.
+   - **A limit per recipient:** at most five codes per email address or phone number per hour, counted in our `rate_limits` table with the address hashed, so one inbox or phone cannot be flooded from many IP addresses.
+2. **OTP delivery that never sends inside the request and never stores a readable code.**
+   - Email: Better Auth's callback writes an `email_outbox` row (template `otp`) and a `notifications.send-email` job in one transaction.
+   - SMS: the callback writes a `notifications.send-sms` job.
+   - The code is encrypted (AES-256-GCM, key `MESSAGE_ENCRYPTION_KEY`) before it is stored in either place.
+     Better Auth stores its own copy of an email code hashed, so for email a copy of the database alone never reveals a working code.
+     Better Auth's phone plugin keeps its copy of a phone code in plain text for the code's five minutes; see the open points.
+   - The worker decrypts the code, sends the message, and then removes the code from the outbox row.
+     A code that has already expired is not sent.
+   - A failed email is retried with growing delays, up to five attempts, and then marked `failed`.
+3. **Email and SMS senders,** chosen by environment variables:
+   - `EMAIL_PROVIDER=mailpit` delivers to Mailpit, a mail catcher that runs in Docker next to the database, with an inbox at http://localhost:8025.
+   - `SMS_PROVIDER=none` keeps phone sign-in off.
+     `SMS_PROVIDER=mailpit` delivers each SMS to Mailpit as an email to `<number>@sms.mailpit.test`, so phone sign-in can be tried locally.
+   - The production providers (Resend or Amazon SES for email, MSG91 or similar for SMS) are added when the client chooses them and supplies keys.
+     Any other value stops the program at startup, so nothing can go live with the local catcher.
+4. **Job queues,** created by `pnpm db:migrate` with their retry settings, so the web app can send a job before the worker has ever started.
+   The web app sends jobs as `ecokart_web` and the worker runs them as `ecokart_worker`.
+5. **Request context from the session.**
+   `getRequestContext` reads the Better Auth session and returns `anonymous`, `buyer`, `admin`, or `seller` with the seller id from the `sellers` table.
+   A seller account without a `sellers` row is refused with 403 "Seller account is not set up yet".
+6. **`GET /api/me`** returns the signed-in user's id, name, email, phone number, role, and seller id, or 401 when signed out.
+7. **Audit entries for account administration.**
+   Every successful administrator call (create user, set role, ban, unban, revoke sessions) writes an `audit_logs` row with the administrator, the action, the target user, and the IP address.
+8. **The first administrator.**
+   `pnpm admin:create --email <email> --name <name>` creates an account with the role `admin`, or promotes an existing one, and writes an audit entry as `system`.
+   That person then signs in with an email code like everyone else.
+
+### Environment variables
+
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `BETTER_AUTH_URL` | Web | The site's public address, for cookies and origin checks |
+| `BETTER_AUTH_SECRET` | Web | Signs session cookies; at least 32 characters |
+| `MESSAGE_ENCRYPTION_KEY` | Web, worker | Encrypts codes waiting to be sent; 32 random bytes in base64 |
+| `SMS_PROVIDER` | Web, worker | `none` or `mailpit` |
+| `EMAIL_PROVIDER` | Worker | `mailpit` |
+| `EMAIL_FROM` | Worker | Sender shown on emails, for example `EcoKart <no-reply@ecokart.in>` |
+| `MAILPIT_URL` | Worker | Mailpit's address, http://localhost:8025 locally |
+
+The `.env.example` files hold local development values.
+Production values come from the hosting platform's secrets, and the programs refuse to start in production with the example secrets.
+
+### Smaller decisions made in this step
+
+- **The email outbox and its sending job move into this step** from step 3, because sign-in cannot work without them.
+  Step 3 is now platform settings only.
+- **Better Auth gets a 37th table,** `auth_rate_limits`, for its rate-limit counters.
+  Our `rate_limits` table has a different shape and serves checkout, search, and AI, so the two are kept apart.
+- **Mailpit joins `compose.yaml`,** so `pnpm db:up` starts the database and the mail catcher together, and CI runs Mailpit as a service too.
+- **New modules:** `notifications` (outbox and senders), `audit` (writing audit entries), `sellers` (for now only finding a seller account's seller id), and `rate-limits` (the fixed-window counter in `rate_limits`).
+- **The per-recipient limit runs before Better Auth makes a code,** in a Better Auth "before" hook.
+  Better Auth logs and then ignores any error thrown from the email callback and still answers "success", so a refusal raised there would never reach the visitor.
+  The same behaviour means that if writing the outbox row ever fails, the visitor is told the code was sent; the error is in the web app's log.
+- **The outbox id is reserved before the row is written.**
+  Only administrators may read `email_outbox`, and PostgreSQL also applies the read rule to `INSERT ... RETURNING`, so a visitor's request reserves the id with `nextval` and writes the row without reading it back.
+- **Accounts created by an administrator start with their email marked verified.**
+  Better Auth otherwise runs an "unproven account" clean-up on their first sign-in, whose lock does not work with UUID ids and logs a warning.
+  These accounts have no earlier sessions or sign-in links to clean up, and their first sign-in still needs a code sent to that mailbox.
+  Seller accounts in step 4 are created the same way.
+
+### Not in this step
+
+- Sign-in pages and any other screens; the frontend comes after the backend steps.
+- Profile editing, and linking an email and a phone number to one account.
+- The production email and SMS providers, which wait for the client's choice and keys.
+- Seller onboarding (step 4) and the guest cart cookie (step 11).
+- A job that clears old rows from `rate_limits`; it comes with checkout, the first heavy user of that table.
+
+### Done when
+
+- On `pnpm dev`, through the real HTTP API: a new email asks for a code, the code arrives in Mailpit, signing in with it works, and `/api/me` reports the role `buyer`.
+- The same works for a mobile number with `SMS_PROVIDER=mailpit`.
+- `pnpm admin:create` makes an administrator who can sign in and set another user's role, which writes an audit entry, while a buyer calling the same endpoint is refused.
+- Tests prove: the email and phone flows; codes are stored encrypted and removed after sending; expired codes are not sent; failed emails retry and then fail; a wrong code three times uses up the code; a banned user cannot sign in and loses their sessions; both kinds of rate limit; the request context for each role; the administrator permissions and audit entries; and that the switched-off endpoints answer 404.
+- `pnpm check` passes.
+
+### Open points found in this step
+
+- The client needs to choose the email provider (Resend or Amazon SES) and supply its keys and a verified sending domain.
+- SMS needs a provider account and DLT approval in India, and the OTP message must match an approved DLT template word for word.
+- When the hosting is set up, Better Auth must be told which proxy headers carry the visitor's IP address, or every visitor will share one rate limit.
+- Before SMS goes live, phone codes should be stored hashed.
+  Better Auth's phone plugin has no option for this, so it needs its own `verifyOTP` that keeps a hash and counts attempts, or a fix in Better Auth.
+- Better Auth's verification "reservations" do not work with UUID ids (it replaces the reserved id with a random one).
+  Only the unproven-account clean-up uses them in our setup, and it is avoided as described above; worth reporting to Better Auth.
+
 ## Change log
 
 - 5 October 2026: File created and step 1 written.
 - 5 October 2026: Step 1 built.
   While building it: the append-only triggers cover `order_events` and `audit_logs` as well as the ledger; invoice prefixes are limited to 6 characters; `sessions.impersonated_by` follows Better Auth's generated `text` type; the worker explains how to fix a database without the job queue tables.
   The design doc was updated in the same change (sections 3.1, 4, 5.1, 5.3, and 8).
+- 5 October 2026: The database runs as PostgreSQL in Docker, not Amazon RDS, for now.
+  Step 1 needed no code change, because the worker's full-access policy and the migration command work on both.
+  Design doc sections 2, 3, 3.1, 8, 9, and 11 updated; database backups are a new open decision there.
+- 5 October 2026: Step 1 committed. Step 2 written; the email outbox and its sending job moved into step 2 from step 3.
+- 5 October 2026: Step 2 built.
+  While building it: the per-recipient limit moved from the OTP callback into a Better Auth hook; the outbox id is reserved before the insert because of the read policy; administrator-created accounts start with a verified email; and two Better Auth limitations were added to the open points (phone codes stored in plain text, verification reservations with UUID ids).

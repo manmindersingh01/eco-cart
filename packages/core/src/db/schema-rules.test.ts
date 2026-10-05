@@ -15,6 +15,7 @@ const TABLES_WITHOUT_RLS = new Set([
   'sessions',
   'accounts',
   'verifications',
+  'auth_rate_limits',
   'categories',
   'brands',
   'coupons',
@@ -27,6 +28,7 @@ const BETTER_AUTH_TABLES = new Set([
   'sessions',
   'accounts',
   'verifications',
+  'auth_rate_limits',
 ])
 
 const client = new Client({
@@ -68,8 +70,8 @@ async function columns(): Promise<
 }
 
 describe('schema rules', () => {
-  test('the database has all 36 tables from the design', async () => {
-    expect(await publicTables()).toHaveLength(36)
+  test('the database has all 37 tables from the design', async () => {
+    expect(await publicTables()).toHaveLength(37)
   })
 
   test('every table with buyer or seller data has row-level security', async () => {
@@ -123,8 +125,14 @@ describe('schema rules', () => {
     )
     const missing = (await publicTables())
       .map((table) => table.name)
-      // payment_events records its creation time as received_at.
-      .filter((name) => name !== 'payment_events' && !withCreatedAt.has(name))
+      // payment_events records its creation time as received_at, and
+      // Better Auth decides the columns of its own tables.
+      .filter(
+        (name) =>
+          name !== 'payment_events' &&
+          !BETTER_AUTH_TABLES.has(name) &&
+          !withCreatedAt.has(name),
+      )
     expect(missing).toEqual([])
   })
 

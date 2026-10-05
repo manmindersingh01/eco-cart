@@ -32,6 +32,7 @@ describe('migrateDatabase', () => {
       'Database schema is up to date',
       'Database users ecokart_web and ecokart_worker can log in',
       expect.stringMatching(/^pg-boss schema "pgboss" is already at version/),
+      'Job queues ready: notifications.send-email, notifications.send-sms',
     ])
   })
 
