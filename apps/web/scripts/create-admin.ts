@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util'
 import {
+  ConflictError,
   createAppAuth,
   createDatabase,
   createPool,
@@ -46,7 +47,12 @@ try {
   }
   console.info(`${messages[result]}: ${values.email}`)
 } catch (error) {
-  console.error('Could not create the administrator', error)
+  // An expected refusal needs only its reason; anything else is a bug.
+  if (error instanceof ConflictError) {
+    console.error(`Could not create the administrator: ${error.message}`)
+  } else {
+    console.error('Could not create the administrator', error)
+  }
   process.exitCode = 1
 } finally {
   await pool.end()

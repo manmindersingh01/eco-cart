@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+  email,
   gstin,
   indianMobile,
   pan,
@@ -23,7 +24,7 @@ export const businessDetails = strictObject({
   city: text(100),
   stateCode,
   pincode,
-  supportEmail: z.email('must be an email address'),
+  supportEmail: email,
   supportPhone: phoneNumber,
   invoicePrefix: z
     .string()
@@ -34,8 +35,13 @@ export const businessDetails = strictObject({
 export type BusinessDetails = z.infer<typeof businessDetails>
 
 export const newSeller = businessDetails.extend({
+  // A seller can be created before its tax details are known; approval
+  // needs them, and the platform commission applies without a rate.
+  gstin: gstin.nullable().default(null),
+  pan: pan.nullable().default(null),
+  commissionBps: wholeNumber(0, 10_000).nullable().default(null),
   owner: strictObject({
-    email: z.email('must be an email address'),
+    email,
     name: text(100),
     phoneNumber: indianMobile.nullable().default(null),
   }),

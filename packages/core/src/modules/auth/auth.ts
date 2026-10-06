@@ -232,6 +232,27 @@ export function createAuth(dependencies: AuthDependencies) {
               'Too many codes were requested for this address. Try again in an hour.',
           })
         }
+
+        // Every account an administrator creates starts with its email
+        // verified, because Better Auth's clean-up of unverified accounts
+        // does not work with UUID ids (backend spec step 2). Better Auth's
+        // own endpoint would otherwise leave it unverified.
+        if (ctx.path === '/admin/create-user') {
+          const data: unknown = ctx.body?.data
+          return {
+            context: {
+              body: {
+                ...ctx.body,
+                data: {
+                  ...(typeof data === 'object' ? data : {}),
+                  emailVerified: true,
+                },
+              },
+            },
+          }
+        }
+        // Every other request goes ahead unchanged.
+        return undefined
       }),
       after: createAuthMiddleware(async (ctx) => {
         const action = AUDITED_ADMIN_ACTIONS[ctx.path]

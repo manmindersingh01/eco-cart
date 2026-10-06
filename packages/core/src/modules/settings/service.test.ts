@@ -1,12 +1,13 @@
-import { and, desc, eq, gt } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import { createDatabase } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
 import { createPool, type DatabasePool } from '../../db/pool.ts'
-import { auditLogs, platformSettings } from '../../db/schema/index.ts'
+import { auditLogs, platformSettings, sellers } from '../../db/schema/index.ts'
 import {
   DEVELOPMENT_BRANDS,
   DEVELOPMENT_CATEGORIES,
+  DEVELOPMENT_SELLERS,
   DEVELOPMENT_SETTINGS,
   seedDevelopmentData,
   type ExampleCategory,
@@ -213,6 +214,8 @@ describe('updateSetting', () => {
     ['cod_enabled', 'yes'],
     ['payment_timeout_minutes', 4],
     ['payment_timeout_minutes', 121],
+    ['ai_daily_limit_platform', -1],
+    ['ai_daily_limit_platform', 2.5],
     ['ai_daily_limit_seller', -1],
     ['prohibited_terms', ['ivory', '']],
     ['prohibited_terms', 'ivory'],
@@ -226,6 +229,25 @@ describe('updateSetting', () => {
     expect(
       (await validationIssues(save(admin, key, value))).length,
     ).toBeGreaterThan(0)
+  })
+
+  test('refuses company details whose GSTIN belongs to another state, in plain words', async () => {
+    expect(
+      await validationIssues(
+        save(admin, 'company_details', {
+          ...company,
+          address: { ...company.address, stateCode: '27' },
+        }),
+      ),
+    ).toEqual(['gstin must start with the state code of the address'])
+    expect(
+      await validationIssues(
+        save(admin, 'company_details', {
+          ...company,
+          website: 'https://ecokart.test',
+        }),
+      ),
+    ).toEqual(['website is not allowed here'])
   })
 
   test('explains what is wrong in plain words', async () => {
@@ -297,6 +319,7 @@ describe('seedDevelopmentData', () => {
 
     const {
       settings: filled,
+      sellers: seededSellers,
       categories,
       brands,
     } = await seedDevelopmentData(web, { NODE_ENV: 'development' })
@@ -305,6 +328,23 @@ describe('seedDevelopmentData', () => {
       'delivery_charge_paise',
       'free_delivery_threshold_paise',
       'company_details',
+    ])
+    expect(seededSellers).toEqual(
+      DEVELOPMENT_SELLERS.map((seller) => seller.owner.email),
+    )
+    const approved = await owner
+      .select({ status: sellers.status })
+      .from(sellers)
+      .where(
+        inArray(
+          sellers.invoicePrefix,
+          DEVELOPMENT_SELLERS.map((seller) => seller.invoicePrefix),
+        ),
+      )
+    expect(approved).toEqual([
+      { status: 'approved' },
+      { status: 'approved' },
+      { status: 'approved' },
     ])
     expect(categories).toEqual(exampleNames(DEVELOPMENT_CATEGORIES))
     expect(brands).toEqual(DEVELOPMENT_BRANDS)
@@ -317,6 +357,7 @@ describe('seedDevelopmentData', () => {
     ])
     const again = await seedDevelopmentData(web, { NODE_ENV: 'development' })
     expect(again.settings).toEqual([])
+    expect(again.sellers).toEqual([])
     // The example tree and brands are added once; a second run finds them.
     expect(again.categories).toEqual([])
     expect(again.brands).toEqual([])

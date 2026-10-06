@@ -5,6 +5,8 @@ import { createDatabase } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
 import { createPool, type DatabasePool } from '../../db/pool.ts'
 import {
+  cartItems,
+  carts,
   products,
   productImages,
   productVariants,
@@ -320,6 +322,35 @@ describe('createProduct', () => {
     ])
   })
 
+  test('limits highlights, attributes, stock, and the number of variants', async () => {
+    const attributes = Object.fromEntries(
+      Array.from({ length: 31 }, (_, i) => [`property ${i}`, 'value']),
+    )
+    const variants = Array.from({ length: 101 }, (_, i) => ({
+      sku: `V-${i}`,
+      options: { Bristles: `Kind ${i}` },
+      pricePaise: 100,
+      mrpPaise: 100,
+      stock: i === 0 ? 1_000_001 : 1,
+    }))
+    expect(
+      await validationIssues(
+        create(
+          toothbrush({
+            highlights: Array.from({ length: 9 }, (_, i) => `Point ${i}`),
+            attributes,
+            variants,
+          }),
+        ),
+      ),
+    ).toEqual([
+      'highlights can have at most 8 items',
+      'attributes can have at most 30 entries',
+      'variants.0.stock must be at most 1000000',
+      'variants can have at most 100 variants',
+    ])
+  })
+
   test('lists products only in an active category at the bottom of the tree', async () => {
     const parent = await as(admin, (tx) =>
       createCategory(tx, admin, {
@@ -352,6 +383,21 @@ describe('createProduct', () => {
     expect(
       await validationIssues(create(toothbrush({ brandId: inactiveBrand.id }))),
     ).toEqual(['brandId is not active'])
+  })
+
+  test('a seller still waiting for approval can already create drafts', async () => {
+    const { owner: user, seller: business } = await createTestSeller(
+      owner,
+      'pending',
+    )
+    const pending: SellerContext = {
+      role: 'seller',
+      userId: user.id,
+      sellerId: business.id,
+    }
+    await expect(create(toothbrush(), pending)).resolves.toMatchObject({
+      status: 'draft',
+    })
   })
 
   test.each<[string, RequestContext]>([
@@ -506,6 +552,40 @@ describe('the catalogue keeps search text and the tree in step', () => {
     )
   })
 
+  test('moving a category rebuilds the search text of its products', async () => {
+    const from = await as(admin, (tx) =>
+      createCategory(tx, admin, {
+        name: `Home ${randomUUID().slice(0, 8)}`,
+        gstRateBps: 1800,
+      }),
+    )
+    const to = await as(admin, (tx) =>
+      createCategory(tx, admin, {
+        name: `Care ${randomUUID().slice(0, 8)}`,
+        gstRateBps: 1800,
+      }),
+    )
+    const leaf = await as(admin, (tx) =>
+      createCategory(tx, admin, {
+        name: 'Brushes',
+        parentId: from.id,
+        gstRateBps: 500,
+      }),
+    )
+    const product = await create(
+      toothbrush({ categoryId: leaf.id, highlights: [] }),
+    )
+    expect(await searchText(product.id)).toBe(
+      `Bamboo Toothbrush, Pack of 4 ${from.name} Brushes`,
+    )
+    await as(admin, (tx) =>
+      updateCategory(tx, admin, leaf.id, { parentId: to.id }),
+    )
+    expect(await searchText(product.id)).toBe(
+      `Bamboo Toothbrush, Pack of 4 ${to.name} Brushes`,
+    )
+  })
+
   test('a category with products cannot get subcategories', async () => {
     const own = await as(admin, (tx) =>
       createCategory(tx, admin, {
@@ -585,6 +665,101 @@ describe('variants', () => {
       'variant.sku is already used by another variant',
       "variant.options are the same as another variant's",
     ])
+  })
+
+  test('adding or deleting a variant is a listing change', async () => {
+    const product = await create(toothbrush())
+    const extra = {
+      sku: 'BTB-HARD',
+      options: { Bristles: 'Hard' },
+      pricePaise: 100,
+      mrpPaise: 100,
+      stock: 1,
+    }
+    for (const status of ['pending_review', 'approved', 'archived']) {
+      await setStatus(product.id, status)
+      await expect(
+        as(seller, (tx) => addVariant(tx, photos, seller, product.id, extra)),
+      ).rejects.toThrow(ConflictError)
+      await expect(
+        as(seller, (tx) =>
+          deleteVariant(
+            tx,
+            photos,
+            seller,
+            product.id,
+            product.variants[1]!.id,
+          ),
+        ),
+      ).rejects.toThrow(ConflictError)
+    }
+  })
+
+  test('a product without option names keeps its one variant, and any product at most 100', async () => {
+    const single = await create(
+      toothbrush({
+        optionNames: [],
+        variants: [{ sku: 'ONE', pricePaise: 100, mrpPaise: 100, stock: 1 }],
+      }),
+    )
+    expect(
+      await validationIssues(
+        as(seller, (tx) =>
+          addVariant(tx, photos, seller, single.id, {
+            sku: 'TWO',
+            pricePaise: 100,
+            mrpPaise: 100,
+            stock: 1,
+          }),
+        ),
+      ),
+    ).toEqual(['A product without option names has exactly one variant'])
+
+    const full = await create(
+      toothbrush({
+        variants: Array.from({ length: 100 }, (_, i) => ({
+          sku: `V-${i}`,
+          options: { Bristles: `Kind ${i}` },
+          pricePaise: 100,
+          mrpPaise: 100,
+          stock: 1,
+        })),
+      }),
+    )
+    expect(
+      await validationIssues(
+        as(seller, (tx) =>
+          addVariant(tx, photos, seller, full.id, {
+            sku: 'V-100',
+            options: { Bristles: 'Kind 100' },
+            pricePaise: 100,
+            mrpPaise: 100,
+            stock: 1,
+          }),
+        ),
+      ),
+    ).toEqual(['A product can have at most 100 variants'])
+  })
+
+  test('a variant in a cart is deactivated, not deleted', async () => {
+    const product = await create(toothbrush())
+    const buyer = await createTestUser(owner, 'buyer')
+    const [cart] = await owner
+      .insert(carts)
+      .values({ userId: buyer.id })
+      .returning()
+    await owner.insert(cartItems).values({
+      cartId: cart!.id,
+      variantId: product.variants[0]!.id,
+      quantity: 2,
+    })
+    await expect(
+      as(seller, (tx) =>
+        deleteVariant(tx, photos, seller, product.id, product.variants[0]!.id),
+      ),
+    ).rejects.toThrow(
+      'This variant is in an order or a cart; deactivate it instead',
+    )
   })
 
   test('deletes a variant, but never the last one or one that was ordered', async () => {

@@ -1,5 +1,5 @@
 import type { Database } from '../../db/client.ts'
-import { ForbiddenError } from '../../errors.ts'
+import { ConflictError, ForbiddenError } from '../../errors.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
 import type { JobQueue } from '../../lib/queue.ts'
 import { recordAuditEntry } from '../audit/service.ts'
@@ -169,6 +169,16 @@ export async function ensureAdministrator(
   }
   const { user } = existing
   if ('role' in user && user.role === 'admin') return 'unchanged'
+  // One account has one role, and a seller account always has its business
+  // (backend spec step 4), so its owner cannot become an administrator.
+  const business = await withContext(db, { role: 'system' }, (tx) =>
+    findSellerForOwner(tx, user.id),
+  )
+  if (business) {
+    throw new ConflictError(
+      'This account owns a seller business, so it cannot become an administrator; use another email address',
+    )
+  }
   await context.internalAdapter.updateUser(user.id, { role: 'admin' })
   await withContext(db, { role: 'system' }, (tx) =>
     recordAuditEntry(tx, {

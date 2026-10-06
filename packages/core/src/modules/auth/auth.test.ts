@@ -394,6 +394,20 @@ describe('administration', () => {
     )
   })
 
+  test("never promotes a seller business's owner", async () => {
+    const { owner: sellerUser } = await createTestSeller(owner)
+    await expect(
+      ensureAdministrator(auth, web, { email: sellerUser.email, name: 'x' }),
+    ).rejects.toThrow(
+      'This account owns a seller business, so it cannot become an administrator; use another email address',
+    )
+    const [still] = await owner
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, sellerUser.id))
+    expect(still).toEqual({ role: 'seller' })
+  })
+
   test('an administrator sets a role, and it is audited with who and from where', async () => {
     const buyer = await createTestUser(owner, 'buyer')
     const admin = (await sessionFor(adminCookie))!.user
@@ -466,6 +480,28 @@ describe('administration', () => {
       { cookie: adminCookie },
     )
     expect(viaCreateUser.status).toBe(400)
+  })
+
+  test('an account an administrator creates starts with its email verified', async () => {
+    const email = newEmail()
+    const response = await call(
+      auth,
+      '/admin/create-user',
+      // Even when the request says otherwise.
+      {
+        email,
+        name: 'Meera Iyer',
+        role: 'admin',
+        data: { emailVerified: false },
+      },
+      { cookie: adminCookie },
+    )
+    expect(response.status).toBe(200)
+    const [created] = await owner
+      .select({ emailVerified: users.emailVerified, role: users.role })
+      .from(users)
+      .where(eq(users.email, email))
+    expect(created).toEqual({ emailVerified: true, role: 'admin' })
   })
 
   test('the role of an account that owns a seller business cannot change', async () => {

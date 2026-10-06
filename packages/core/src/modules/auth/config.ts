@@ -13,7 +13,7 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv = process.env) {
       BETTER_AUTH_URL: z.url(),
       BETTER_AUTH_SECRET: secretString(env, 32),
       MESSAGE_ENCRYPTION_KEY: encryptionKey(env),
-      SMS_PROVIDER: smsProvider,
+      SMS_PROVIDER: smsProvider(env),
     }),
     env,
   )

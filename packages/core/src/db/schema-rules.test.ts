@@ -9,7 +9,7 @@ import { requireEnv } from '../env.ts'
  */
 
 // Tables without buyer or seller data, where the application checks
-// permissions (backend spec step 1). Better Auth's four are also here.
+// permissions (backend spec step 1). Better Auth's five are also here.
 const TABLES_WITHOUT_RLS = new Set([
   'users',
   'sessions',

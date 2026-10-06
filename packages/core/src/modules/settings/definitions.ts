@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+  email,
   gstin,
   pan,
   paise,
@@ -28,36 +29,40 @@ interface SettingDefinition<S extends z.ZodType> {
 const define = <S extends z.ZodType>(definition: SettingDefinition<S>) =>
   definition
 
-const companyDetails = z
-  .strictObject({
-    legalName: text(200),
-    displayName: text(100),
-    gstin,
-    pan,
-    address: strictObject({
-      line1: text(200),
-      line2: z
-        .string()
-        .trim()
-        .max(200, 'must be at most 200 characters')
-        .nullable(),
-      city: text(100),
-      stateCode,
-      pincode,
-    }),
-    supportEmail: z.email('must be an email address'),
-    supportPhone: phoneNumber,
-    // Required for marketplaces by the Consumer Protection (E-Commerce)
-    // Rules, 2020, and shown on the storefront.
-    grievanceOfficer: strictObject({
-      name: text(100),
-      email: z.email('must be an email address'),
-      phone: phoneNumber,
-    }),
-  })
+const companyDetails = strictObject({
+  legalName: text(200),
+  displayName: text(100),
+  gstin,
+  pan,
+  address: strictObject({
+    line1: text(200),
+    line2: z
+      .string()
+      .trim()
+      .max(200, 'must be at most 200 characters')
+      .nullable(),
+    city: text(100),
+    stateCode,
+    pincode,
+  }),
+  supportEmail: email,
+  supportPhone: phoneNumber,
+  // Required for marketplaces by the Consumer Protection (E-Commerce)
+  // Rules, 2020, and shown on the storefront.
+  grievanceOfficer: strictObject({
+    name: text(100),
+    email,
+    phone: phoneNumber,
+  }),
+})
   .refine((details) => details.gstin.slice(2, 12) === details.pan, {
     path: ['gstin'],
     message: 'must contain the PAN as its 3rd to 12th characters',
+  })
+  // The same rule as for sellers: a GSTIN belongs to one state.
+  .refine((details) => details.gstin.startsWith(details.address.stateCode), {
+    path: ['gstin'],
+    message: 'must start with the state code of the address',
   })
 
 export type CompanyDetails = z.output<typeof companyDetails>
@@ -79,7 +84,7 @@ const definitions = {
   }),
   cod_enabled: define({
     description: 'Whether buyers may choose cash on delivery.',
-    schema: z.boolean({ error: 'must be true or false' }),
+    schema: z.boolean(),
     default: true,
   }),
   payment_timeout_minutes: define({
@@ -102,7 +107,7 @@ const definitions = {
     description:
       'Words and phrases that flag a listing for review. Matching ignores upper and lower case.',
     schema: z
-      .array(text(100), { error: 'must be a list of words or phrases' })
+      .array(text(100))
       .max(500, 'can hold at most 500 terms')
       .transform((terms) => [
         ...new Set(terms.map((term) => term.toLowerCase())),

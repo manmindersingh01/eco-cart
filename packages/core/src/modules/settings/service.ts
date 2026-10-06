@@ -8,7 +8,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../errors.ts'
-import { describeIssues } from '../../lib/validation.ts'
+import { describeIssues, plainErrors } from '../../lib/validation.ts'
 import { recordAuditEntry } from '../audit/service.ts'
 import {
   isSettingKey,
@@ -114,7 +114,9 @@ export async function updateSetting(
   if (!isSettingKey(key)) {
     throw new NotFoundError(`There is no platform setting called ${key}`)
   }
-  const result = settingDefinitions[key].schema.safeParse(value)
+  const result = settingDefinitions[key].schema.safeParse(value, {
+    error: plainErrors,
+  })
   if (!result.success) {
     throw new ValidationError(
       `That value is not allowed for ${key}`,

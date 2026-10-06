@@ -4,7 +4,13 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { createDatabase } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
 import { createPool, type DatabasePool } from '../../db/pool.ts'
-import { auditLogs, products, sellers } from '../../db/schema/index.ts'
+import {
+  auditLogs,
+  productImages,
+  products,
+  productVariants,
+  sellers,
+} from '../../db/schema/index.ts'
 import { requireEnv } from '../../env.ts'
 import {
   ConflictError,
@@ -219,6 +225,16 @@ describe('createSeller', () => {
       'gstin must start with the state code of the address (29)',
     ],
     [
+      'a malformed PAN',
+      { gstin: null, pan: 'AABC1234K' },
+      'pan must be a PAN, like AAACE1234F',
+    ],
+    [
+      'a support email that is not an email address',
+      { supportEmail: 'help-at-greenbasket' },
+      'supportEmail must be an email address',
+    ],
+    [
       'a five-digit PIN code',
       { pincode: '41100' },
       'pincode must be a six-digit PIN code',
@@ -345,12 +361,20 @@ describe('approveSeller', () => {
     )
   })
 
-  test('needs a GSTIN and a PAN', async () => {
-    const seller = await createSeller(
-      services,
-      admin,
-      sellerInput({ gstin: null, pan: null }),
-    )
+  test('needs a GSTIN and a PAN, which may be left out at creation', async () => {
+    const {
+      gstin: _gstin,
+      pan: _pan,
+      commissionBps: _commission,
+      ...withoutTaxDetails
+    } = sellerInput()
+    const seller = await createSeller(services, admin, withoutTaxDetails)
+    expect(seller).toMatchObject({
+      status: 'pending',
+      gstin: null,
+      pan: null,
+      commissionBps: null,
+    })
     expect(
       await validationIssues(approveSeller(web, admin, seller.id)),
     ).toEqual([
@@ -390,6 +414,17 @@ describe('suspension', () => {
       banned: true,
       banReason: 'Seller suspended: Fake listings',
     })
+    // Signing in again is refused while suspended.
+    await authPost('/email-otp/send-verification-otp', {
+      email: input.owner.email,
+      type: 'sign-in',
+    })
+    const signInAgain = await authPost('/sign-in/email-otp', {
+      email: input.owner.email,
+      otp: await lastEmailedCode(owner, input.owner.email, encryptionKey),
+    })
+    expect(signInAgain.status).toBe(403)
+    expect(await signInAgain.json()).toMatchObject({ code: 'BANNED_USER' })
     // Even with a session that somehow survived, the seller cannot act.
     await expect(resolveRequestContext(web, sellerUser)).rejects.toThrow(
       SellerSuspendedError,
@@ -408,7 +443,7 @@ describe('suspension', () => {
     const seller = await createSeller(services, admin, sellerInput())
     expect(
       await validationIssues(suspendSeller(services, admin, seller.id, {})),
-    ).toEqual(['reason must be text'])
+    ).toEqual(['reason is required'])
   })
 
   test('reinstating lifts the ban and returns the seller to where it was', async () => {
@@ -418,6 +453,12 @@ describe('suspension', () => {
     await suspendSeller(services, admin, approved.id, { reason: 'Checking' })
     const back = await reinstateSeller(services, admin, approved.id)
     expect(back).toMatchObject({ status: 'approved', suspendedReason: null })
+    expect((await auditFor(approved.id)).at(-1)).toMatchObject({
+      action: 'seller.reinstate',
+      actorUserId: admin.userId,
+      before: { status: 'suspended', reason: 'Checking' },
+      after: { status: 'approved' },
+    })
     expect((await accounts.findById(approved.ownerUserId))?.banned).toBe(false)
     expect(await sessionFor(await signIn(input.owner.email))).not.toBeNull()
 
@@ -429,7 +470,7 @@ describe('suspension', () => {
     )
   })
 
-  test('hides the seller’s listings from visitors until reinstated', async () => {
+  test('hides the seller’s listings, variants, and photos from visitors until reinstated', async () => {
     const seller = await createSeller(services, admin, sellerInput())
     await approveSeller(web, admin, seller.id)
     const category = await createTestCategory(owner)
@@ -437,24 +478,42 @@ describe('suspension', () => {
       sellerId: seller.id,
       categoryId: category.id,
     })
+    await owner.insert(productImages).values({
+      productId: product.id,
+      storageKey: `images/${crypto.randomUUID()}`,
+      status: 'ready',
+      contentHash: 'a'.repeat(64),
+      width: 800,
+      height: 800,
+    })
+    /** How many product, variant, and photo rows a visitor sees. */
     const visible = () =>
-      withContext(
-        web,
-        { role: 'anonymous' },
-        async (tx) =>
-          (
-            await tx
-              .select({ id: products.id })
-              .from(products)
-              .where(eq(products.id, product.id))
-          ).length,
-      )
+      withContext(web, { role: 'anonymous' }, async (tx) => [
+        (
+          await tx
+            .select({ id: products.id })
+            .from(products)
+            .where(eq(products.id, product.id))
+        ).length,
+        (
+          await tx
+            .select({ id: productVariants.id })
+            .from(productVariants)
+            .where(eq(productVariants.productId, product.id))
+        ).length,
+        (
+          await tx
+            .select({ id: productImages.id })
+            .from(productImages)
+            .where(eq(productImages.productId, product.id))
+        ).length,
+      ])
 
-    expect(await visible()).toBe(1)
+    expect(await visible()).toEqual([1, 1, 1])
     await suspendSeller(services, admin, seller.id, { reason: 'Checking' })
-    expect(await visible()).toBe(0)
+    expect(await visible()).toEqual([0, 0, 0])
     await reinstateSeller(services, admin, seller.id)
-    expect(await visible()).toBe(1)
+    expect(await visible()).toEqual([1, 1, 1])
   })
 })
 
@@ -488,6 +547,18 @@ describe('updateSeller', () => {
         updateSeller(web, admin, seller.id, { gstin: null }),
       ),
     ).toEqual(['gstin is needed while the seller is approved'])
+  })
+
+  test('refuses an invoice prefix another seller uses', async () => {
+    const first = await createSeller(services, admin, sellerInput())
+    const second = await createSeller(services, admin, sellerInput())
+    expect(
+      await validationIssues(
+        updateSeller(web, admin, second.id, {
+          invoicePrefix: first.invoicePrefix,
+        }),
+      ),
+    ).toEqual(['invoicePrefix is already used by another seller'])
   })
 
   test('fixes the invoice prefix once the first invoice exists', async () => {

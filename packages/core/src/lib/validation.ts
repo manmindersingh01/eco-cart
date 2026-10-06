@@ -28,9 +28,25 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** Whether `value` looks like a database id, before it reaches a query. */
 export const isUuid = (value: string) => UUID.test(value)
 
+/**
+ * A message for a value of the wrong type that still lets a missing value
+ * read "is required" (see plainErrors).
+ */
+const unlessMissing =
+  (message: string) =>
+  (issue: { input?: unknown }): string | undefined =>
+    issue.input === undefined ? undefined : message
+
 /** The id of a row, for example `parentId`; `what` names it in the message. */
 export const idOf = (what: string) =>
-  z.string({ error: `must be ${what} id` }).refine(isUuid, `must be ${what} id`)
+  z
+    .string({ error: unlessMissing(`must be ${what} id`) })
+    .refine(isUuid, `must be ${what} id`)
+
+/** An email address. */
+export const email = z.email({
+  error: unlessMissing('must be an email address'),
+})
 
 /** Two-digit GST state code, for example 27 for Maharashtra. */
 export const stateCode = z
@@ -64,7 +80,7 @@ export const GST_RATES_BPS: readonly number[] = [0, 25, 300, 500, 1800, 4000]
 const asPercent = (bps: number) => `${bps / 100}%`
 
 export const gstRateBps = z
-  .number({ error: 'must be a number' })
+  .number()
   .refine(
     (value) => GST_RATES_BPS.includes(value),
     `must be one of the current GST rates in basis points: ${GST_RATES_BPS.map(
@@ -92,7 +108,7 @@ export const slug = z
 /** A whole number within limits, with messages an administrator can read. */
 export const wholeNumber = (min: number, max = Number.MAX_SAFE_INTEGER) =>
   z
-    .number({ error: 'must be a number' })
+    .number()
     .int('must be a whole number')
     .min(min, `must be at least ${min}`)
     .max(max, `must be at most ${max}`)
@@ -103,7 +119,7 @@ export const paise = wholeNumber(0)
 /** Trimmed text that is not empty and not longer than `max` characters. */
 export const text = (max: number) =>
   z
-    .string({ error: 'must be text' })
+    .string()
     .trim()
     .min(1, 'must not be empty')
     .max(max, `must be at most ${max} characters`)
@@ -120,6 +136,32 @@ export const strictObject = <Shape extends z.ZodRawShape>(shape: Shape) =>
         ? `${issue.keys.join(', ')} ${issue.keys.length === 1 ? 'is' : 'are'} not allowed here`
         : undefined,
   })
+
+const TYPE_WORDS: Record<string, string> = {
+  string: 'text',
+  number: 'a number',
+  int: 'a whole number',
+  boolean: 'true or false',
+  object: 'an object',
+  record: 'an object',
+  array: 'a list',
+}
+
+/**
+ * Plain words for a value that is missing, of the wrong type, or not one of
+ * the allowed choices, for every schema without a message of its own: "is
+ * required", "must be text", "must be one of home, office". Without it the validation library's own wording ("Invalid
+ * input: expected string, received undefined") would reach people.
+ */
+export const plainErrors: z.core.$ZodErrorMap = (issue) => {
+  if (issue.input === undefined) return 'is required'
+  if (issue.code === 'invalid_value') {
+    return `must be one of ${issue.values.map(String).join(', ')}`
+  }
+  if (issue.code !== 'invalid_type') return undefined
+  const expected = TYPE_WORDS[issue.expected]
+  return expected ? `must be ${expected}` : undefined
+}
 
 /** Plain-language messages for each problem, prefixed with the field name. */
 export function describeIssues(error: z.ZodError): string[] {
@@ -139,7 +181,7 @@ export function parseInput<S extends z.ZodType>(
   value: unknown,
   message: string,
 ): z.output<S> {
-  const result = schema.safeParse(value)
+  const result = schema.safeParse(value, { error: plainErrors })
   if (!result.success) {
     throw new ValidationError(message, describeIssues(result.error))
   }

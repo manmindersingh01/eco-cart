@@ -21,8 +21,9 @@ One developer builds it, and production launch is Saturday 31 October 2026.
   Before building a backend step, write what it will build into its section; if anything changes while building, update the section and its change log in the same change.
   Before writing code for a feature, read its section: 4 code layout, 5 data model, 6.1 login, 6.2 listings, 6.3 checkout and payment, 6.4 dispatch, 6.5 returns, 6.6 invoices, 6.7 imports, 6.8 search, 6.9 assistant, 8 security.
 - `EcoKart_One_Month_Delivery_Timeline.pdf` has the milestones, the client inputs, and the launch priorities.
+  It is kept out of the repository (`.gitignore`), so ask the project lead for a copy.
 - The decisions in section 11 of the design doc are recommendations until the client confirms them.
-  Build with the recommended option (Docker plus pg-boss, Drizzle, guest cart, one role per account) unless told otherwise.
+  Build with the recommended option in each Open row of section 11 (for example Drizzle, guest cart, one role per account) unless told otherwise.
   Already decided by the client: AWS for hosting only, OpenRouter for AI, Better Auth for authentication.
   Decided 5 October 2026: the database is PostgreSQL in Docker (the `compose.yaml` image), not Amazon RDS, for now.
 - If a change would contradict the design doc, stop and ask first.
@@ -63,7 +64,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, conflict, validation, not configured), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
 - Services check input with `parseInput` and the shared formats and `strictObject` in `packages/core/src/lib/validation.ts`, so every message is plain language.
 - A service that also changes a Better Auth account (through `AccountDirectory`) takes the database and runs its own transactions in a safe order; other services take a transaction.
-- The catalogue module splits its services by topic (`categories.ts`, `brands.ts`, `tree.ts`, and later `products.ts`) instead of one `service.ts`.
+- The catalogue module splits its services by topic (`categories.ts`, `brands.ts`, `tree.ts`, `products.ts`, `images.ts`, `summary.ts`, `jobs.ts`) instead of one `service.ts`.
 - Read the category tree with `loadCategoryTree` and the functions in `modules/catalogue/tree.ts` (children, breadcrumbs, everything below a category).
   Never write a recursive query for it.
   Every change to the tree locks the `categories` table first, so two administrators can never create a loop together.
@@ -105,9 +106,9 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   Recompute prices, totals, discounts, stock, and permissions on the server.
 - Decrement stock with one conditional statement: `UPDATE product_variants SET stock = stock - $qty WHERE id = $id AND stock >= $qty`.
   Zero rows updated means the item sold out, so roll back.
+  Use the same pattern for `coupons.used_count` and invoice sequences.
 - Any change to a product's variants locks the product's row first and its variants after it, then rebuilds the summary fields with `refreshProducts` in the same transaction (backend spec step 6).
   Checkout takes its locks in the same order, product rows sorted by id, so totals stay right and transactions never deadlock.
-  Use the same pattern for `coupons.used_count` and invoice sequences.
 - Never call Razorpay or any other external API inside a database transaction.
   Commit first, then call, and run the compensating rollback on failure (design doc section 6.3, step 4).
 - Verify the Razorpay webhook signature before reading anything from the payload.
@@ -122,7 +123,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 
 - Every table holding buyer or seller data has row-level security (RLS).
   Run buyer and seller work through `withContext` (`packages/core/src/db/context.ts`), which sets `app.role`, `app.user_id`, `app.seller_id`, and `app.guest_token` with `set_config(..., true)`, the parameterised `SET LOCAL`.
-  Never use plain `SET`, because the connection pooler runs in transaction mode.
+  Never use plain `SET`: the values must end with the transaction, so they never leak to the next request on a pooled connection, or through a transaction-mode pooler added later.
 - Use the `system` context role only for work that changes several parties' data at once (checkout, payment confirmation, order expiry, cancellation, refunds), and only after the service has checked permissions itself.
 - RLS is the safety net, not the check.
   Application code still checks permissions explicitly.
@@ -149,11 +150,12 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Authentication is Better Auth (decided 2 October 2026) with the `emailOTP`, `phoneNumber`, and `admin` plugins and the Drizzle adapter (`provider: "pg"`, `usePlural: true`, `advanced.database.generateId: "uuid"`).
   Its configuration lives in `packages/core/src/modules/auth/`, and it is mounted at `apps/web/src/app/api/auth/[...all]/route.ts`.
 - The tables `users`, `sessions`, `accounts`, `verifications`, and `auth_rate_limits` belong to Better Auth.
-  Generate their schema with its CLI, never hand-edit them, and read or change users and sessions only through the Better Auth API (`getSession`, `createUser`, `setRole`, `banUser`).
+  Generate their schema with its CLI, never hand-edit them, and read or change users and sessions only through Better Auth: its API in requests (`getSession`, the admin endpoints), and `AccountDirectory` (its internal adapter) in services.
   Suspending an account is `banUser`.
 - Accounts that an administrator creates (administrators and sellers) are created with `emailVerified: true`, because Better Auth's clean-up for unverified accounts does not work with UUID ids (see the backend spec, step 2).
 - Seller accounts are made only by `createSeller`, together with their business; Better Auth's administrator endpoints refuse the `seller` role and refuse to change the role of an account that owns a business.
-- OTP codes are stored hashed (`storeOTP: "hashed"`), and the OTP delivery callbacks only queue the email or SMS; they never send inline.
+- Email codes are stored hashed (`storeOTP: "hashed"`); phone codes are not yet, and must be before SMS goes live (backend spec step 2).
+  The OTP delivery callbacks only queue the email or SMS; they never send inline.
 - Object storage buckets are private, and every download of a private file (originals, imports, invoices, return photos) is a short-lived signed URL.
   Only the product photo sizes under `images/` are public, served through CloudFront.
 

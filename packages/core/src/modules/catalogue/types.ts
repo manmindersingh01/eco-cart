@@ -14,7 +14,7 @@ import {
   wholeNumber,
 } from '../../lib/validation.ts'
 
-const isActive = z.boolean({ error: 'must be true or false' })
+const isActive = z.boolean()
 const sortOrder = wholeNumber(0, 10_000)
 const parentId = idOf('a category').nullable()
 
@@ -131,7 +131,7 @@ export const MAX_HIGHLIGHTS = 8
 export const MAX_ATTRIBUTES = 30
 
 const sku = z
-  .string({ error: 'must be text' })
+  .string()
   .trim()
   .regex(
     /^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$/,
@@ -140,32 +140,28 @@ const sku = z
 const price = wholeNumber(1, MAX_PRICE_PAISE)
 const stock = wholeNumber(0, MAX_STOCK)
 const title = z
-  .string({ error: 'must be text' })
+  .string()
   .trim()
   .min(3, 'must be at least 3 characters')
   .max(150, 'must be at most 150 characters')
 const description = z
-  .string({ error: 'must be text' })
+  .string()
   .trim()
   .max(5000, 'must be at most 5000 characters')
 const highlights = z
-  .array(text(200), { error: 'must be a list of short texts' })
+  .array(text(200))
   .max(MAX_HIGHLIGHTS, `can have at most ${MAX_HIGHLIGHTS} items`)
 const attributes = z
-  .record(text(40), text(200), {
-    error: 'must be an object of names and values',
-  })
+  .record(text(40), text(200))
   .refine(
     (value) => Object.keys(value).length <= MAX_ATTRIBUTES,
     `can have at most ${MAX_ATTRIBUTES} entries`,
   )
 const optionNames = z
-  .array(text(30), { error: 'must be a list of names' })
+  .array(text(30))
   .max(MAX_OPTION_NAMES, `can have at most ${MAX_OPTION_NAMES} names`)
 /** One value per option name, for example { "Size": "M" }. */
-const optionValues = z.record(z.string(), text(50), {
-  error: 'must be an object of option names and values',
-})
+const optionValues = z.record(z.string(), text(50))
 
 export const newVariant = strictObject({
   sku,
@@ -188,7 +184,7 @@ export const newProduct = strictObject({
   hsnCode: hsnCode.nullable().optional(),
   optionNames: optionNames.optional(),
   variants: z
-    .array(newVariant, { error: 'must be a list of variants' })
+    .array(newVariant)
     .min(1, 'must have at least one variant')
     .max(MAX_VARIANTS, `can have at most ${MAX_VARIANTS} variants`),
 })
@@ -301,37 +297,32 @@ export interface ProductListOptions {
 
 export const imageUploadRequest = strictObject({
   contentType: z.enum(IMAGE_CONTENT_TYPES, {
-    error: 'must be image/jpeg, image/png, image/webp, or image/avif',
+    error: (issue) =>
+      issue.input === undefined
+        ? undefined
+        : 'must be image/jpeg, image/png, image/webp, or image/avif',
   }),
   /** In bytes. */
   size: z
-    .number({ error: 'must be a number' })
+    .number()
     .int('must be a whole number')
     .min(1, 'must be at least 1 byte')
     .max(MAX_UPLOAD_BYTES, 'must be at most 10 MB'),
 })
 
 export const newImage = strictObject({
-  uploadKey: z.string({ error: 'must be text' }),
-  alt: z
-    .string({ error: 'must be text' })
-    .trim()
-    .max(200, 'must be at most 200 characters')
-    .optional(),
+  uploadKey: z.string(),
+  alt: z.string().trim().max(200, 'must be at most 200 characters').optional(),
   variantId: idOf('a variant').nullable().optional(),
 })
 
 export const imageUpdate = strictObject({
-  alt: z
-    .string({ error: 'must be text' })
-    .trim()
-    .max(200, 'must be at most 200 characters')
-    .optional(),
+  alt: z.string().trim().max(200, 'must be at most 200 characters').optional(),
   variantId: idOf('a variant').nullable().optional(),
 })
 
 export const imageOrder = strictObject({
-  imageIds: z.array(idOf('a photo'), { error: 'must be a list of photo ids' }),
+  imageIds: z.array(idOf('a photo')),
 })
 
 /** A signed form for one photo upload, straight to object storage. */

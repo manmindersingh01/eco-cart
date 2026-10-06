@@ -47,9 +47,34 @@ export const encryptionKey = (env: NodeJS.ProcessEnv) =>
       'is the development example value; generate one with `openssl rand -base64 32`',
     )
 
-/** Which service delivers SMS; `none` keeps phone sign-in switched off. */
-export const smsProvider = z.enum(['none', 'mailpit'])
-export type SmsProvider = z.infer<typeof smsProvider>
+const LOCAL_CATCHER =
+  'is the local Mailpit catcher, which never delivers anything; production needs a real provider'
+
+/**
+ * Which service delivers email. Only the local Mailpit catcher exists so
+ * far, and it is refused in production, so a sign-in code can never be
+ * "sent" into a catcher nobody reads.
+ */
+export const emailProvider = (env: NodeJS.ProcessEnv) =>
+  z
+    .enum(['mailpit'])
+    .refine(
+      (value) => !(isProduction(env) && value === 'mailpit'),
+      LOCAL_CATCHER,
+    )
+
+/**
+ * Which service delivers SMS; `none` keeps phone sign-in switched off. The
+ * local Mailpit catcher is refused in production, like for email.
+ */
+export const smsProvider = (env: NodeJS.ProcessEnv) =>
+  z
+    .enum(['none', 'mailpit'])
+    .refine(
+      (value) => !(isProduction(env) && value === 'mailpit'),
+      LOCAL_CATCHER,
+    )
+export type SmsProvider = 'none' | 'mailpit'
 
 /**
  * Parses `env` with `schema`, or throws one error that lists every problem

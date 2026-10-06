@@ -47,7 +47,7 @@ Each of those can be added later if measurements show a need, and the code is st
 | Concern | Choice | Why this one |
 | --- | --- | --- |
 | Framework | Next.js (App Router), React, TypeScript | Fixed by the quotation. Server components give fast, cacheable public pages and one codebase for all three surfaces. |
-| Database access | Drizzle ORM with SQL migrations | Thin layer over SQL, easy to combine with row-level security and raw queries for search. Prisma is the alternative if preferred. |
+| Database access | Drizzle ORM with SQL migrations | Thin layer over SQL, easy to combine with row-level security and raw queries for search. Steps 1 to 6 are built on it. |
 | Auth | Better Auth (open source, MIT) with its email OTP, phone number, and admin plugins, sessions stored in Postgres through its Drizzle adapter | Decided by the client. It covers OTP login by email and SMS, roles, suspension, and session handling out of the box, so we do not write auth ourselves. It runs inside our app and database, so there is no third-party auth service and row-level security works unchanged. |
 | Background jobs | pg-boss (queue stored in Postgres) with a worker process | Reliable retries and scheduling with zero extra infrastructure. |
 | Search | Postgres full-text (`tsvector`), trigram fuzzy match (`pg_trgm`), and pgvector (HNSW index) | One database answers keyword, semantic, and image search with filters in a single query. Sufficient well past one million products. |
@@ -72,11 +72,11 @@ Each of those can be added later if measurements show a need, and the code is st
 | Route 53 + ACM | DNS and certificates |
 | Secrets Manager | Database password, Razorpay keys, AI provider keys, email and SMS keys, injected into task definitions |
 | CloudWatch | Logs from both services and alarms on error rate, queue depth, and database CPU |
-| GitHub Actions | Builds the image, pushes to ECR, runs migrations, deploys staging, and promotes to production on approval |
+| GitHub Actions | Will build the image, push to ECR, run migrations, deploy staging, and promote to production on approval; today it runs the checks on every pull request |
 
 AWS is used for hosting only.
 The AI, email, and SMS providers are ordinary HTTPS APIs called from the web and worker tasks, with their keys in Secrets Manager.
-Infrastructure is defined with the AWS CDK in the same repository, so the staging and production environments cannot drift apart.
+Infrastructure will be defined with the AWS CDK in the same repository, so the staging and production environments cannot drift apart; that code is not written yet.
 Each container keeps its own small application-side connection pool; a separate connection pooler such as PgBouncer is added only if the number of tasks grows large.
 
 ### 3.2 AI provider layer
@@ -146,6 +146,9 @@ apps/
       api/admin/categories/    administrators build and change the category tree
       api/admin/brands/        administrators keep the list of brands
       api/webhooks/razorpay/route.ts
+    src/lib/                   api.ts (handleErrors, one HTTP answer per error), request-context.ts,
+                               auth.ts, db.ts, queue.ts, storage.ts, sellers.ts, settings.ts
+    src/instrumentation.ts     checks every setting when the server starts, and stops it if one is wrong
     scripts/create-admin.ts    `pnpm admin:create`: the first administrator
   worker/                      background worker (@ecokart/worker)
     src/main.ts                process entry: reads settings, starts, stops gracefully
@@ -156,7 +159,7 @@ packages/
       auth/  catalogue/  cart/  checkout/  orders/  payments/  ledger/
       invoices/  returns/  search/  ai/  imports/  notifications/
       moderation/  settings/  audit/  sellers/  rate-limits/
-        (each module: service.ts, queries.ts, jobs.ts, types.ts; the
+        (each module has service.ts, plus jobs.ts, types.ts, or config.ts where needed; the
          catalogue splits its services by topic: categories.ts, brands.ts,
          tree.ts for the in-memory category tree, products.ts, images.ts,
          summary.ts for the summary fields on products, and jobs.ts)
@@ -172,6 +175,7 @@ packages/
     src/worker.ts              worker-only exports (`@ecokart/core/worker`), such as the photo job,
                                so the web app never loads the image library
     src/errors.ts              the errors services throw; the web app turns each into one HTTP status
+    src/index.ts               everything the web app and worker may use; src/env.ts reads required settings
     src/testing/               test database setup and fixtures, used only by tests
     src/lib/
       razorpay.ts  email.ts  sms.ts  cache.ts
@@ -182,7 +186,9 @@ packages/
       queue.ts       sends pg-boss jobs inside the caller's transaction
       encryption.ts  seals short secrets, such as queued sign-in codes
       config.ts      validates environment variables at startup
-      validation.ts  shared formats: GSTIN, PAN, PIN code, state code, phone, money
+      validation.ts  shared formats (GSTIN, PAN, PIN code, state code, phone, money, GST rates,
+                     HSN codes, slugs) and parseInput, which turns problems into plain words
+      postgres.ts    recognises unique and foreign-key errors, so services can explain them
       mailpit.ts     local mail catcher, for development and tests only
       pagination.ts  keyset pagination with exact (microsecond) cursors
       slug.ts        readable names for web addresses, numbered when taken
@@ -240,12 +246,12 @@ Three rules keep this maintainable.
 | Platform | `platform_settings`, `content_pages`, `email_outbox`, `audit_logs`, `rate_limits` |
 
 That is 37 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
-Better Auth keeps its rate-limit counters in `auth_rate_limits`; our own `rate_limits` table, with a different shape, serves checkout, search, and AI.
+Better Auth keeps its rate-limit counters in `auth_rate_limits`; our own `rate_limits` table, with a different shape, serves the per-address sign-in code limit, and later checkout, search, and AI.
 
 ### 5.3 Identity
 
 The first four tables are created and maintained by Better Auth.
-Its CLI generates their Drizzle schema, and application code never reads or writes them directly; it goes through the Better Auth API.
+Its CLI generates their Drizzle schema, and application code never reads or writes them directly; it goes through Better Auth, either its API in requests or its internal adapter (`AccountDirectory`) in services.
 They use UUID ids (`advanced.database.generateId: "uuid"`) and plural snake_case names (`usePlural`) so they look like the rest of the database.
 They carry no row-level security policies, because Better Auth is the only code that touches them.
 Better Auth also creates `auth_rate_limits` for its rate-limit counters.
@@ -264,36 +270,46 @@ users                                   core + phone number plugin + admin plugi
   role                    text   buyer | seller | admin
   banned                  boolean       our "suspended"
   ban_reason              text
-  ban_expires             timestamptz
+  ban_expires             timestamp (UTC)
   created_at, updated_at
 
 sessions                                core + admin plugin
   id               uuid PK
   user_id          uuid FK users
   token            text UNIQUE   the cookie value, opaque
-  expires_at       timestamptz
+  expires_at       timestamp (UTC)
   ip_address       text
   user_agent       text
   impersonated_by  text, nullable   set when an admin impersonates a user
   created_at, updated_at
   INDEX (user_id)
 
-accounts                                core; links a user to a sign-in method
+accounts                                core; for password and social sign-in, so empty at launch
   id            uuid PK
   user_id       uuid FK users
-  provider_id   text    e.g. email-otp, phone-number
+  provider_id   text    for example credential; code sign-in writes no rows here
   account_id    text
-  password      text, nullable   unused at launch
+  access_token, refresh_token, id_token        text, nullable
+  access_token_expires_at, refresh_token_expires_at   timestamp, nullable
+  scope         text, nullable
+  password      text, nullable   unused: EcoKart has no passwords
   created_at, updated_at
   INDEX (user_id)
 
 verifications                           core; holds OTP codes while they are valid
   id            uuid PK
   identifier    text    the email or phone the code was sent to
-  value         text    the code, stored hashed (storeOTP: hashed)
-  expires_at    timestamptz
+  value         text    email codes stored hashed (storeOTP: hashed); phone codes in plain
+                        text for their five minutes until SMS goes live (backend spec, step 2)
+  expires_at    timestamp (UTC)
   created_at, updated_at
   INDEX (identifier)
+
+auth_rate_limits                        Better Auth's rate-limit counters
+  id            uuid PK
+  key           text UNIQUE   the address and path being counted
+  count         int
+  last_request  bigint        milliseconds since 1970
 
 addresses
   id            uuid PK
@@ -304,12 +320,13 @@ addresses
   is_default    boolean
   created_at, updated_at, deleted_at
   INDEX (user_id)
+  UNIQUE (user_id) WHERE is_default AND deleted_at IS NULL     one default address per buyer
 ```
 
 One account has one role.
 A seller account is created by an administrator through the seller onboarding, which creates the owner's account with the `seller` role through Better Auth (its internal `createUser`) and the linked `sellers` row together.
 If the business cannot be saved, the new account is removed again, and Better Auth's own administrator endpoints refuse to hand out the `seller` role, so a seller account always has a business.
-Suspending a buyer or seller is Better Auth's `banUser`, which also revokes every session; the reason is kept in `ban_reason`.
+Suspending a buyer or seller is Better Auth's ban (its `banUser` endpoint, or the same calls through its internal adapter for sellers), which also revokes every session; the reason is kept in `ban_reason`.
 If a person needs to be both a buyer and a seller they use two accounts at launch; the admin plugin can hold several roles on one account, so this can be relaxed later without a schema change.
 
 ### 5.4 Sellers
@@ -321,16 +338,18 @@ sellers
   slug              text UNIQUE
   display_name      text
   legal_name        text
-  gstin, pan        text
+  gstin, pan        text, nullable until approval, which needs both
   line1, city, state_code, pincode
   support_email, support_phone
   commission_bps    int, nullable   overrides the platform default when set
-  invoice_prefix    text            used in GST invoice numbers
+  invoice_prefix    text UNIQUE     used in GST invoice numbers
   invoice_seq       int default 0
   invoice_seq_fy    text            financial year the sequence belongs to, e.g. 2026-27
   status            text   pending | approved | suspended
   approved_at, suspended_reason
   created_at, updated_at
+  INDEX (status, created_at DESC, id DESC)     the administrators' seller list
+  INDEX (created_at DESC, id DESC)
 ```
 
 ### 5.5 Catalogue
@@ -342,10 +361,11 @@ categories
   name, slug        slug UNIQUE; name UNIQUE among siblings, ignoring capital letters
   depth             int    0 to 2: three levels at most
   gst_rate_bps      int    the client's chartered accountant approves this per category; one of the current GST rates
-  default_hsn_code  text   4, 6, or 8 digits
+  default_hsn_code  text, nullable   4, 6, or 8 digits
   sort_order        int
   is_active         boolean  an inactive category hides everything below it
   created_at, updated_at
+  INDEX (parent_id, sort_order)
 
 brands
   id        uuid PK
@@ -377,7 +397,7 @@ products
   in_stock            boolean GENERATED AS (total_stock > 0)
   rating_avg          numeric(3,2)
   rating_count        int
-  primary_image_id    uuid
+  primary_image_id    uuid FK product_images, ON DELETE SET NULL; the first ready photo
   -- search
   search_text         text      title + brand + category + highlights, rebuilt on write
   search_vector       tsvector  GENERATED from search_text
@@ -386,8 +406,8 @@ products
   INDEX (seller_id, created_at DESC, id DESC)            the seller's list
   INDEX (seller_id, status, created_at DESC, id DESC)
   INDEX (category_id, status)
-  INDEX (status, created_at DESC)
-  INDEX (status, min_price_paise)
+  INDEX (status, created_at DESC, id DESC)
+  INDEX (status, min_price_paise, id)
   GIN INDEX (search_vector)
   GIN INDEX (search_text gin_trgm_ops)
 
@@ -408,7 +428,7 @@ product_images
   id            uuid PK
   product_id    uuid FK products
   variant_id    uuid FK product_variants, nullable
-  storage_key   text    images/{id}; the public sizes are images/{id}/{thumb|card|gallery}.webp
+  storage_key   text UNIQUE   images/{id}; the public sizes are images/{id}/{thumb|card|gallery}.webp
   status        text    processing | ready | failed
   upload_key    text    UNIQUE, the browser's upload, so it becomes one photo
   failure_reason text   shown to the seller when the photo cannot be used
@@ -443,7 +463,7 @@ product_embeddings
   content_hash  text   hash of the text or image that was embedded
   embedding     vector(1024)   Voyage Multimodal 3.5 at 1024 dimensions; changing the model means a re-embed job
   created_at
-  UNIQUE (product_id, kind, image_id)
+  UNIQUE NULLS NOT DISTINCT (product_id, kind, image_id)   so one text row per product
   HNSW INDEX (embedding vector_cosine_ops) WHERE kind = 'text'
   HNSW INDEX (embedding vector_cosine_ops) WHERE kind = 'image'
 ```
@@ -512,8 +532,8 @@ orders
   placed_at, paid_at, cancelled_at, completed_at
   cancel_reason     text
   created_at, updated_at
-  INDEX (user_id, created_at DESC)
-  INDEX (status, created_at)
+  INDEX (user_id, created_at DESC, id DESC)
+  INDEX (status, created_at, id)
 
 order_items
   id                    uuid PK
@@ -536,7 +556,7 @@ order_items
   status                text   confirmed | dispatched | delivered | cancelled | return_requested | returned
   created_at, updated_at
   INDEX (order_id)
-  INDEX (seller_id, status, created_at DESC)
+  INDEX (seller_id, status, created_at DESC, id DESC)
 
 shipments
   id               uuid PK
@@ -554,7 +574,7 @@ shipments
 order_events
   id             bigserial PK
   order_id       uuid FK orders
-  order_item_id  uuid, nullable
+  order_item_id  uuid FK order_items, nullable
   actor_user_id  uuid, nullable
   actor_role     text   buyer | seller | admin | system
   event_type     text   e.g. placed, paid, dispatched, cancelled, refund_recorded
@@ -579,7 +599,7 @@ return_requests
   decided_at     timestamptz
   refund_id      uuid FK refunds, nullable
   created_at, updated_at
-  INDEX (status, created_at)
+  INDEX (status, created_at, id)
   INDEX (user_id)
   INDEX (seller_id)
 
@@ -617,7 +637,7 @@ payments
   amount_paise         bigint
   currency             text default INR
   status               text   created | captured | failed | refunded | partially_refunded
-  method               text, nullable   upi | card | netbanking | wallet | cod
+  method               text, nullable   whatever Razorpay reports, for example upi or card, or cod; not limited to a list
   failure_reason       text
   raw                  jsonb   last provider payload
   created_at, updated_at
@@ -641,7 +661,7 @@ refunds
   payment_id          uuid FK payments, nullable
   return_request_id   uuid FK return_requests, nullable
   amount_paise        bigint
-  provider_refund_id  text, nullable   typed in by the admin from the Razorpay dashboard
+  provider_refund_id  text UNIQUE, nullable   typed in by the admin from the Razorpay dashboard
   method              text   gateway | bank_transfer
   note                text
   recorded_by         uuid FK users
@@ -668,7 +688,7 @@ seller_ledger_entries
   reference          text, nullable   bank transfer reference for payouts
   created_by         uuid FK users, nullable
   created_at
-  INDEX (seller_id, created_at)
+  INDEX (seller_id, created_at, id)
 ```
 
 The ledger is append only.
@@ -688,6 +708,7 @@ reviews
   status         text   published | hidden
   created_at, updated_at
   UNIQUE (product_id, user_id)
+  INDEX (product_id, status, created_at DESC, id DESC)
 ```
 
 Writing a review updates `products.rating_avg` and `rating_count` in the same transaction.
@@ -710,6 +731,7 @@ catalogue_imports
   error_report_key   text, nullable   CSV of failed rows with reasons
   error              text, nullable
   created_at, completed_at
+  INDEX (seller_id, created_at DESC, id DESC)
 
 catalogue_import_rows
   id             bigserial PK
@@ -721,6 +743,7 @@ catalogue_import_rows
   error_message  text
   product_id     uuid FK products, nullable
   created_at
+  UNIQUE (import_id, row_number)
   INDEX (import_id, status)
 ```
 
@@ -818,6 +841,7 @@ rate_limits
   key           text PK   e.g. otp:phone:+91..., checkout:user:<id>, ip:1.2.3.4:search
   window_start  timestamptz
   count         int
+  INDEX (window_start)   for clearing old windows
 ```
 
 Each setting has a rule its value must follow, checked whenever it is saved or read.
@@ -947,8 +971,8 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 | Keyset pagination | Product lists, order lists, ledgers, seller lists | Page 200 costs the same as page 1. The cursor keeps the time to the microsecond, so rows created in the same millisecond are never repeated or skipped. |
 | Small category tree in memory | Category filters and breadcrumbs | Descendant category ids are computed in the app from a 60-second cached tree; no recursive queries. |
 | Everything slow goes to the worker | AI calls, embeddings, image resizing, PDFs, emails, imports | Requests stay under a few hundred milliseconds regardless of external service latency. |
-| Pre-sized images on the CDN | Thumbnail, card, and gallery sizes generated at upload | No on-the-fly resizing; immutable cache headers keyed by content hash. |
-| Connection pooling | Every database connection | Transaction-mode pooling from day one, which also works with the row-level security session variables because they are set with `SET LOCAL` inside the transaction. |
+| Pre-sized images on the CDN | Thumbnail, card, and gallery sizes generated at upload | No on-the-fly resizing; immutable cache headers, because each photo has its own id in its address and its files never change. |
+| Connection pooling | Every database connection | Each container keeps a small connection pool. The row-level security values are set with `SET LOCAL` inside each transaction, so they never leak to the next request on a pooled connection, and they keep working if a transaction-mode pooler such as PgBouncer is added later. |
 | Atomic conditional updates | Stock, coupon usage, invoice sequences | Correct under concurrency without table locks or application-level mutexes. |
 
 ## 8. Security
@@ -958,13 +982,13 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
   Buyers can only see their own orders and addresses, sellers only their own products, order lines, ledger, and imports, guests only their own cart, and administrators see everything.
   Visitors see a product only while both the product and its seller are approved, so suspending a seller hides all their listings at once.
 - The role `system` is used for work that changes several parties' data at once, such as checkout and payment confirmation, after the service has checked permissions itself.
-- The worker connects as the `ecokart_worker` user, which has a full-access policy on every table.
+- The worker connects as the `ecokart_worker` user, which has a full-access policy on every table with row-level security. Grants still limit it: it only reads the Better Auth tables, and only reads and adds rows in the append-only tables.
   An explicit policy, rather than the `BYPASSRLS` attribute, works the same on any PostgreSQL, including managed services such as Amazon RDS that cannot grant that attribute.
 - Only the database owner, used by `pnpm db:migrate`, can change the table structure.
   Neither the web nor the worker user can update or delete the seller ledger, order events, or audit log, and a trigger refuses those changes even to the owner.
 - The full list of row-level security rules is in `docs/backend-spec.md`, step 1.
 - Application code still checks permissions explicitly; row-level security is the safety net that makes a missed check a bug rather than a data leak.
-- Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, OTP codes stored hashed, three attempts per code, and suspension through `banUser`, which revokes every session of that user.
+- Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, email codes stored hashed (phone codes get the same before SMS goes live), three attempts per code, and suspension through Better Auth's ban, which revokes every session of that user.
 - Better Auth rate limits its own endpoints (OTP sending and verification), with the counters in the database so the limits hold across web containers.
   A second limit caps the codes sent to any one email address or phone number.
   Checkout, search, and every AI endpoint use the `rate_limits` table with an upsert per window.
@@ -999,7 +1023,7 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | Webhook arrives after the order was auto-cancelled | Payment recorded as captured and flagged for manual refund in the admin console. |
 | Gateway is slow or down at checkout | Gateway call happens after the database transaction commits; failure triggers a compensating rollback. |
 | Filtered vector search returns too few rows | Over-fetch candidates and fall back to keyword search when the filtered vector result is short. |
-| Row-level security breaks with connection pooling | Session variables are set with `SET LOCAL` inside a transaction; the pooler runs in transaction mode. |
+| Row-level security breaks with connection pooling | Session variables are set with `SET LOCAL` inside a transaction, so they end with it, on our own pools today and with a transaction-mode pooler if one is added. |
 | GST or invoice format disputes | Invoice data is frozen in `invoices.lines`; the PDF template is data driven so the format can change without touching order data. |
 | SMS DLT approval is late | Email OTP works from day one; SMS OTP switches on with the `SMS_PROVIDER` environment variable once a provider is ready. |
 | AI costs run away | Daily platform and per-seller limits counted from `ai_requests`; results cached by input hash; embeddings regenerated only when content changes. |
@@ -1018,7 +1042,7 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | Database hosting | Decided 5 October 2026 | PostgreSQL in Docker, the same image as local development, for now | Amazon RDS, with managed backups and Multi-AZ failover |
 | Database backups | Open | Continuous WAL archiving plus a nightly base backup to the private S3 bucket (for example with pgBackRest), and a tested restore before launch. With Docker, backups are ours to run. | Move to Amazon RDS, which takes backups itself |
 | AWS compute shape | Open | ECS Fargate for the web and worker, the database container on its own host with a persistent volume, S3 + CloudFront, defined with the CDK | App Runner for the web app with a Fargate worker, or a single EC2 host running Docker Compose for the pilot |
-| ORM | Open | Drizzle (Better Auth ships a Drizzle adapter, and the repo is scaffolded for it) | Prisma |
+| ORM | Open | Drizzle (Better Auth ships a Drizzle adapter; the schema, migrations, and services of steps 1 to 6 are built on it, so changing now means rewriting them) | Prisma |
 | Auth | Decided 2 October 2026 | Better Auth with the email OTP, phone number, and admin plugins, Drizzle adapter, UUID ids | Own OTP tables and sessions, or Auth.js |
 | Guest cart | Open | Yes, cookie-based, merged into the account on login | Require login before adding to cart |
 | Roles | Open | One role per account; a seller uses a separate seller account | One account can be both buyer and seller |

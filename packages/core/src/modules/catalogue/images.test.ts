@@ -315,6 +315,23 @@ describe('the photo job', () => {
     ])
   })
 
+  test('refuses a file over 10 MB that reached storage another way', async () => {
+    const product = await newProduct()
+    // The signed form stops this; the job checks again in case a file got
+    // there some other way.
+    const key = `uploads/${product.id}/${randomUUID()}`
+    await storage.write(key, Buffer.alloc(10 * 1024 * 1024 + 1), {
+      contentType: 'image/jpeg',
+    })
+    const id = (await add(product, { uploadKey: key })).images[0]!.id
+    await processUploadedImage({ db: worker, storage }, id)
+    expect(await imageRow(id)).toMatchObject({
+      status: 'failed',
+      failureReason: 'The file is larger than 10 MB',
+    })
+    expect(await storage.read(key)).toBeNull()
+  })
+
   test('retries a storage failure, and gives up with a reason on the last attempt', async () => {
     const product = await newProduct()
     const id = await addPhoto(product, await phonePhoto())

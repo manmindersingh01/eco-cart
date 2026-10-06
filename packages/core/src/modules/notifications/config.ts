@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import { encryptionKey, parseEnv, smsProvider } from '../../lib/config.ts'
+import {
+  emailProvider,
+  encryptionKey,
+  parseEnv,
+  smsProvider,
+} from '../../lib/config.ts'
 import {
   createMailpitEmailSender,
   parseMailbox,
@@ -15,7 +20,7 @@ import { createMailpitSmsSender, type SmsSender } from '../../lib/sms.ts'
 export function loadNotificationConfig(env: NodeJS.ProcessEnv = process.env) {
   const schema = z
     .object({
-      EMAIL_PROVIDER: z.enum(['mailpit']),
+      EMAIL_PROVIDER: emailProvider(env),
       EMAIL_FROM: z
         .string()
         .refine(
@@ -23,7 +28,7 @@ export function loadNotificationConfig(env: NodeJS.ProcessEnv = process.env) {
           'must look like `EcoKart <no-reply@example.com>`',
         ),
       MAILPIT_URL: z.url().optional(),
-      SMS_PROVIDER: smsProvider,
+      SMS_PROVIDER: smsProvider(env),
       MESSAGE_ENCRYPTION_KEY: encryptionKey(env),
     })
     .refine(
