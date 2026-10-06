@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { createDatabase } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
@@ -18,6 +18,7 @@ import {
   createTestUser,
 } from '../../testing/fixtures.ts'
 import { validationIssues } from '../../testing/errors.ts'
+import { holdRows, sessionsWaitingOn, waitUntil } from '../../testing/locks.ts'
 import {
   createCategory,
   deleteCategory,
@@ -343,12 +344,17 @@ describe('updateCategory', () => {
     // A third transaction holds both rows, so neither move can save before
     // both have started. Each move alone is allowed; only the table lock
     // makes the second one see the first and refuse.
-    const { pid, release, finished } = await holdRows([x.id, y.id])
+    const { pid, release, finished } = await holdRows(
+      owner,
+      categories,
+      categories.id,
+      [x.id, y.id],
+    )
     const moves = Promise.allSettled([
       update(x.id, { parentId: y.id }),
       update(y.id, { parentId: x.id }),
     ])
-    await waitUntil(async () => (await sessionsWaitingOn(pid)) >= 2)
+    await waitUntil(async () => (await sessionsWaitingOn(owner, pid)) >= 2)
     release()
     await finished
     const results = await moves
@@ -397,51 +403,6 @@ describe('updateCategory', () => {
     ).rejects.toThrow(ForbiddenError)
   })
 })
-
-/**
- * Locks category rows in a transaction of their own until `release` is
- * called. `pid` is that transaction's database session.
- */
-async function holdRows(ids: string[]) {
-  const released = Promise.withResolvers<void>()
-  const held = Promise.withResolvers<number>()
-  const finished = owner.transaction(async (tx) => {
-    const result = await tx.execute<{ pid: number }>(
-      sql`select pg_backend_pid() as pid`,
-    )
-    await tx
-      .select({ id: categories.id })
-      .from(categories)
-      .where(inArray(categories.id, ids))
-      .for('update')
-    held.resolve(result.rows[0]!.pid)
-    await released.promise
-  })
-  return { pid: await held.promise, release: released.resolve, finished }
-}
-
-/** Sessions waiting on `pid`, directly or behind another waiting session. */
-async function sessionsWaitingOn(pid: number): Promise<number> {
-  const result = await owner.execute<{ count: number }>(sql`
-    select count(*)::int as count
-    from pg_stat_activity a
-    where ${pid} = any(pg_blocking_pids(a.pid))
-       or exists (
-         select 1 from pg_stat_activity b
-         where b.pid = any(pg_blocking_pids(a.pid))
-           and ${pid} = any(pg_blocking_pids(b.pid))
-       )
-  `)
-  return result.rows[0]!.count
-}
-
-async function waitUntil(condition: () => Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 5000
-  while (!(await condition())) {
-    if (Date.now() > deadline) throw new Error('Timed out waiting')
-    await new Promise((resolve) => setTimeout(resolve, 10))
-  }
-}
 
 const findNode = <N extends { id: string; children: N[] }>(
   nodes: N[],

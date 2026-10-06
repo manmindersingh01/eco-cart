@@ -1,4 +1,4 @@
-import { testDatabase } from '@ecokart/core/testing'
+import { testDatabase, testStorageEnv } from '@ecokart/core/testing'
 import { defineConfig } from 'vitest/config'
 
 const database = testDatabase('worker')
@@ -11,6 +11,8 @@ export default defineConfig({
       DATABASE_URL: database.workerUrl,
       // For the tests that send jobs and sign in the way the web app does.
       WEB_DATABASE_URL: database.webUrl,
+      // For test fixtures, such as a seller and a category.
+      MIGRATION_DATABASE_URL: database.migrationUrl,
       BETTER_AUTH_URL: 'http://localhost:3000',
       BETTER_AUTH_SECRET: 'development-only-secret-for-tests',
       // The Mailpit catcher from compose.yaml, or CI's service container.
@@ -20,6 +22,8 @@ export default defineConfig({
       SMS_PROVIDER: 'mailpit',
       // "development-only-encryption-key!" in base64.
       MESSAGE_ENCRYPTION_KEY: 'ZGV2ZWxvcG1lbnQtb25seS1lbmNyeXB0aW9uLWtleSE=',
+      // Its own bucket on the compose.yaml storage service, or CI's.
+      ...testStorageEnv('worker'),
     },
   },
 })

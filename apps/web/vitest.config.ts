@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { testDatabase } from '@ecokart/core/testing'
+import { testDatabase, testStorageEnv } from '@ecokart/core/testing'
 import { defineConfig } from 'vitest/config'
 
 const database = testDatabase('web')
@@ -22,6 +22,8 @@ export default defineConfig({
       // "development-only-encryption-key!" in base64.
       MESSAGE_ENCRYPTION_KEY: 'ZGV2ZWxvcG1lbnQtb25seS1lbmNyeXB0aW9uLWtleSE=',
       SMS_PROVIDER: 'mailpit',
+      // Its own bucket on the compose.yaml storage service, or CI's.
+      ...testStorageEnv('web'),
     },
   },
 })

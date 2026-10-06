@@ -48,3 +48,26 @@ export function testDatabase(
     workerUrl: urlFor('ecokart_worker', TEST_WORKER_PASSWORD),
   }
 }
+
+const DEFAULT_STORAGE_ENDPOINT = 'http://localhost:8333'
+
+/**
+ * Storage settings for a package's tests: its own bucket, ecokart-test-<suffix>,
+ * on the compose.yaml storage service or CI's (TEST_STORAGE_ENDPOINT).
+ */
+export function testStorageEnv(
+  suffix: string,
+  endpoint: string = process.env.TEST_STORAGE_ENDPOINT ??
+    DEFAULT_STORAGE_ENDPOINT,
+): Record<string, string> {
+  const bucket = `ecokart-test-${suffix}`
+  return {
+    STORAGE_BUCKET: bucket,
+    STORAGE_REGION: 'ap-south-1',
+    STORAGE_ENDPOINT: endpoint,
+    // The same values as compose.yaml and the CI service.
+    STORAGE_ACCESS_KEY_ID: 'ecokart',
+    STORAGE_SECRET_ACCESS_KEY: 'development-only-storage-secret',
+    STORAGE_PUBLIC_URL: `${endpoint}/${bucket}`,
+  }
+}

@@ -32,5 +32,26 @@ services:
       timeout: 5s
       retries: 15
 
+  # S3-compatible object storage for product photos, imports, and invoices,
+  # standing in for the S3 bucket and CloudFront locally. Public photos load
+  # from http://localhost:8333/ecokart/images/... Never used in production.
+  # `pnpm db:up` creates the bucket (packages/core/src/lib/storage-setup.ts).
+  storage:
+    image: chrislusf/seaweedfs:4.48
+    command: ['mini', '-dir=/data', '-master.telemetry=false']
+    environment:
+      AWS_ACCESS_KEY_ID: ecokart
+      AWS_SECRET_ACCESS_KEY: development-only-storage-secret
+    ports:
+      - '${STORAGE_PORT:-8333}:8333'
+    volumes:
+      - storage-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:8333/healthz']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
 volumes:
   postgres-data:
+  storage-data:

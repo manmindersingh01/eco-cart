@@ -11,14 +11,14 @@ The backend is built step by step following [docs/backend-spec.md](docs/backend-
 | `apps/web` | Next.js app (App Router, React, TypeScript, Tailwind CSS) for the storefront, seller portal, and admin console |
 | `apps/worker` | Background worker (Node.js, TypeScript, pg-boss) for slow work such as AI calls, emails, and imports |
 | `packages/core` | Business logic shared by the web app and the worker |
-| `compose.yaml` | Local PostgreSQL 16 with pgvector, matching production |
+| `compose.yaml` | Local PostgreSQL 16 with pgvector (matching production), Mailpit, and S3-compatible object storage |
 
 ## Requirements
 
 - [pnpm 12](https://pnpm.io/installation).
   If you already have pnpm 11.10 or newer, run `pnpm self-update`.
   Otherwise install it with `curl -fsSL https://get.pnpm.io/install.sh | sh -`.
-- [Docker](https://www.docker.com/), for the local database.
+- [Docker](https://www.docker.com/), for the local database, mail catcher, and object storage.
 
 You do not need to install Node.js yourself.
 pnpm reads `devEngines.runtime` in `package.json` and downloads the right Node.js version (24) for every script.
@@ -27,10 +27,10 @@ pnpm reads `devEngines.runtime` in `package.json` and downloads the right Node.j
 
 ```bash
 pnpm install
-pnpm db:up
 cp packages/core/.env.example packages/core/.env
 cp apps/web/.env.example apps/web/.env
 cp apps/worker/.env.example apps/worker/.env
+pnpm db:up
 pnpm db:migrate
 pnpm db:seed
 pnpm dev
@@ -44,6 +44,9 @@ It never overwrites what already exists.
 
 `pnpm db:up` also starts Mailpit, which catches every email and SMS the worker sends locally.
 Read them at http://localhost:8025, for example the code when you sign in.
+It also starts SeaweedFS, an S3-compatible object store that stands in for the S3 bucket and CloudFront, and creates the `ecokart` bucket.
+Product photos load from http://localhost:8333/ecokart/images/....
+Browsers may upload photos to it only from the addresses in `STORAGE_CORS_ORIGINS` in `packages/core/.env`, so add yours there and run `pnpm db:up` again if the web app runs somewhere other than http://localhost:3000.
 To make yourself an administrator, run `pnpm admin:create --email you@example.com --name "Your Name"` and sign in with that email.
 
 Then open http://localhost:3000.
@@ -59,8 +62,8 @@ Run these from the repository root.
 | Command | What it does |
 | --- | --- |
 | `pnpm dev` | Starts the web app and the worker, reloading on every change |
-| `pnpm db:up` | Starts the local database and Mailpit and waits until they are ready |
-| `pnpm db:down` | Stops the local database and Mailpit (the data is kept) |
+| `pnpm db:up` | Starts the local database, Mailpit, and object storage, waits until they are ready, and sets up the local bucket |
+| `pnpm db:down` | Stops the local services (the data is kept) |
 | `pnpm db:migrate` | Applies new migrations, sets the database user passwords, and installs or upgrades the job queue tables |
 | `pnpm db:seed` | Saves example data for local development; refuses to run in production |
 | `pnpm db:generate` | Writes a new SQL migration from changes to the Drizzle schema in `packages/core/src/db/schema` |
@@ -69,7 +72,7 @@ Run these from the repository root.
 | `pnpm check` | Runs everything CI runs: format check, lint, typecheck, test, build |
 | `pnpm typecheck` | Type-checks every package |
 | `pnpm lint` | Lints with Oxlint, including type-aware rules |
-| `pnpm test` | Runs every package's tests against fresh `ecokart_test_*` databases (needs `pnpm db:up`) |
+| `pnpm test` | Runs every package's tests against fresh `ecokart_test_*` databases and `ecokart-test-*` buckets (needs `pnpm db:up`) |
 | `pnpm build` | Builds the web app for production |
 | `pnpm format` | Formats code and config files with Prettier (Markdown is formatted by hand) |
 

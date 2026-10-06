@@ -19,6 +19,7 @@ import { foreignKeyViolation, uniqueViolation } from '../../lib/postgres.ts'
 import { firstFreeSlug, slugify } from '../../lib/slug.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
 import { recordAuditEntry, type AuditEntry } from '../audit/service.ts'
+import { refreshProducts } from './summary.ts'
 import {
   brandUpdate,
   newBrand,
@@ -272,6 +273,10 @@ export async function updateBrand(
       .set(changes)
       .where(eq(brands.id, brandId))
       .returning()
+    // Products' search text holds the brand name.
+    if (changes.name !== undefined && changes.name !== current.name) {
+      await refreshProducts(tx, eq(products.brandId, brandId))
+    }
     const view = toView(row!)
     const only = (brand: BrandView) =>
       Object.fromEntries(

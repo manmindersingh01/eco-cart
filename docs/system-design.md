@@ -67,7 +67,7 @@ Each of those can be added later if measurements show a need, and the code is st
 | ECS Fargate, service `web` | Next.js app behind an Application Load Balancer; two tasks in production, one in staging |
 | ECS Fargate, service `worker` | The job runner; one task, no load balancer, scheduled jobs come from pg-boss cron inside it |
 | PostgreSQL 16 in Docker | The `pgvector/pgvector` image from `compose.yaml` with its data on a persistent volume, in a private subnet, with the `vector` and `pg_trgm` extensions. Decided 5 October 2026 instead of Amazon RDS, for now. Where the container runs and how it is backed up are settled with the compute shape and the backup plan (section 11). |
-| S3 | One private bucket per environment for images, import files, and invoice PDFs |
+| S3 | One private bucket per environment for images, import files, and invoice PDFs, with a CORS rule for uploads from the web app's address and a lifecycle rule that deletes unused uploads after a day. Locally, SeaweedFS from `compose.yaml` stands in for it. |
 | CloudFront | One distribution in front of the ALB for public page caching and TLS, and one in front of the bucket with origin access control |
 | Route 53 + ACM | DNS and certificates |
 | Secrets Manager | Database password, Razorpay keys, AI provider keys, email and SMS keys, injected into task definitions |
@@ -140,6 +140,7 @@ apps/
       api/admin/settings/      administrators read and change platform settings
       api/admin/sellers/       administrators create, approve, suspend, and reinstate sellers
       api/seller/profile/      a seller's own business details and support contacts
+      api/seller/products/     a seller's listings, variants, stock, and photos
       api/categories/          the visible category tree, for anyone
       api/brands/              active brands A to Z, for anyone
       api/admin/categories/    administrators build and change the category tree
@@ -157,7 +158,8 @@ packages/
       moderation/  settings/  audit/  sellers/  rate-limits/
         (each module: service.ts, queries.ts, jobs.ts, types.ts; the
          catalogue splits its services by topic: categories.ts, brands.ts,
-         tree.ts for the in-memory category tree, and later products.ts)
+         tree.ts for the in-memory category tree, products.ts, images.ts,
+         summary.ts for the summary fields on products, and jobs.ts)
     src/db/
       pool.ts                  database connection pool
       client.ts                Drizzle database on top of the pool
@@ -167,10 +169,16 @@ packages/
       schema/                  Drizzle schema, one file per domain
       migrations/              SQL migrations including RLS policies and indexes
     src/jobs.ts                every job queue and its retry settings, created by `pnpm db:migrate`
+    src/worker.ts              worker-only exports (`@ecokart/core/worker`), such as the photo job,
+                               so the web app never loads the image library
     src/errors.ts              the errors services throw; the web app turns each into one HTTP status
     src/testing/               test database setup and fixtures, used only by tests
     src/lib/
-      razorpay.ts  storage.ts  email.ts  sms.ts  cache.ts
+      razorpay.ts  email.ts  sms.ts  cache.ts
+      storage.ts     one S3 client: signed upload forms, reading and writing objects, public photo addresses
+      storage-setup.ts  sets up the local bucket (`pnpm db:up`) and the test buckets
+      images.ts      photo formats, limits, and sizes
+      image-processing.ts  checks photos and makes the sizes; loaded only by the worker
       queue.ts       sends pg-boss jobs inside the caller's transaction
       encryption.ts  seals short secrets, such as queued sign-in codes
       config.ts      validates environment variables at startup
@@ -182,7 +190,8 @@ packages/
         client.ts      one OpenAI-compatible HTTP client; base URL, key, model from env
         chat.ts        TextModel and VisionModel on top of the chat client
         embed.ts       Embedder on top of the embeddings client
-compose.yaml                   local PostgreSQL 16 with pgvector, and Mailpit, for development
+compose.yaml                   local PostgreSQL 16 with pgvector, Mailpit, and SeaweedFS (S3-compatible
+                               object storage standing in for S3 and CloudFront), for development
 ```
 
 Both programs are Node.js.
@@ -374,7 +383,8 @@ products
   search_vector       tsvector  GENERATED from search_text
   ai_draft_request_id uuid FK ai_requests, nullable
   created_at, updated_at, deleted_at
-  INDEX (seller_id, status)
+  INDEX (seller_id, created_at DESC, id DESC)            the seller's list
+  INDEX (seller_id, status, created_at DESC, id DESC)
   INDEX (category_id, status)
   INDEX (status, created_at DESC)
   INDEX (status, min_price_paise)
@@ -390,6 +400,7 @@ product_variants
   mrp_paise    bigint  CHECK (mrp_paise >= price_paise)
   stock        int     CHECK (stock >= 0)
   is_active    boolean
+  sort_order   int     the seller's order, for example S, M, L
   created_at, updated_at
   UNIQUE (product_id, sku)
 
@@ -397,12 +408,15 @@ product_images
   id            uuid PK
   product_id    uuid FK products
   variant_id    uuid FK product_variants, nullable
-  storage_key   text    key in object storage; sizes derived from it
+  storage_key   text    images/{id}; the public sizes are images/{id}/{thumb|card|gallery}.webp
+  status        text    processing | ready | failed
+  upload_key    text    UNIQUE, the browser's upload, so it becomes one photo
+  failure_reason text   shown to the seller when the photo cannot be used
   content_hash  text
   width, height int
   alt           text
   sort_order    int
-  created_at
+  created_at, updated_at
   INDEX (product_id, sort_order)
 
 product_moderation
@@ -957,7 +971,8 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 - Sign-in codes waiting to be sent are encrypted with `MESSAGE_ENCRYPTION_KEY` and removed once sent.
 - Razorpay webhooks are verified with the webhook secret before anything is read from the payload, and the checkout return is verified with the key secret. No card data is ever received by EcoKart.
 - All prices, totals, stock, and permissions are recomputed on the server; the browser is never trusted.
-- Secrets live in environment variables in the hosting platform, never in the repository. Object storage buckets are private and every download is a short-lived signed URL.
+- Secrets live in environment variables in the hosting platform, never in the repository. Object storage buckets are private and every download of a private file (originals, imports, invoices, buyers' return photos) is a short-lived signed URL. Only the product photo sizes under `images/` are public, served through CloudFront with origin access control.
+- Uploads go straight from the browser to the bucket with a signed form that allows one key, one content type, and at most 10 MB. The worker checks every photo and re-encodes it, which removes all metadata such as GPS locations, so nothing a browser sent is ever served as it arrived.
 - Standard Next.js protections cover cross-site scripting and request forgery; parameterised queries through Drizzle cover injection.
 - Every administrator action and every state change on an order is written to `audit_logs` or `order_events`.
 
@@ -1009,6 +1024,6 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | Roles | Open | One role per account; a seller uses a separate seller account | One account can be both buyer and seller |
 | Commission base | Open | Applied to the seller's line total after the coupon discount share | Applied before discounts |
 | Delivery revenue | Open | Delivery charge belongs to the platform | Passed through to sellers |
-| GST rates that depend on price | Open | Clothing and footwear are taxed at 5% up to ₹2,500 a piece and 18% above it. An optional price limit and higher rate on the category, applied to each order line from its own price at checkout. Needs the chartered accountant's agreement before products are built (backend spec, step 5). | A rate per product set by hand, or separate categories per price band |
+| GST rates that depend on price | Open | Clothing and footwear are taxed at 5% up to ₹2,500 a piece and 18% above it. An optional price limit and higher rate on the category, applied to each order line from its own price at checkout. Needs the chartered accountant's agreement before approval copies rates onto products (backend spec, step 7). | A rate per product set by hand, or separate categories per price band |
 
 Open rows are recommendations and are built as written unless the client decides otherwise.

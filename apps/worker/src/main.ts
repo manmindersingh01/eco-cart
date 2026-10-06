@@ -1,4 +1,8 @@
-import { loadNotificationConfig, requireEnv } from '@ecokart/core'
+import {
+  loadNotificationConfig,
+  loadStorageConfig,
+  requireEnv,
+} from '@ecokart/core'
 import { startWorker } from './worker.ts'
 
 // Settings are read once, so a missing or wrong one stops the worker here
@@ -6,6 +10,7 @@ import { startWorker } from './worker.ts'
 const worker = await startWorker({
   databaseUrl: requireEnv('DATABASE_URL'),
   notifications: loadNotificationConfig(),
+  storage: loadStorageConfig(),
 })
 console.info('Worker started')
 

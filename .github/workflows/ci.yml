@@ -40,11 +40,29 @@ jobs:
         ports:
           - 8025:8025
 
+      # The local object storage from compose.yaml. Service containers cannot
+      # take a command, so it runs the image's default `weed mini`, which
+      # reads its keys from these variables.
+      storage:
+        image: chrislusf/seaweedfs:4.48
+        env:
+          AWS_ACCESS_KEY_ID: ecokart
+          AWS_SECRET_ACCESS_KEY: development-only-storage-secret
+        ports:
+          - 8333:8333
+        options: >-
+          --health-cmd "wget -q -O /dev/null http://127.0.0.1:8333/healthz"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+
     env:
       # Each package's tests create and migrate their own ecokart_test_*
       # database on this server (packages/core/src/testing/urls.ts).
       TEST_DATABASE_SERVER_URL: postgres://ecokart:ecokart@localhost:5432/postgres
       MAILPIT_URL: http://localhost:8025
+      # Each package's tests use their own ecokart-test-* bucket on it.
+      TEST_STORAGE_ENDPOINT: http://localhost:8333
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

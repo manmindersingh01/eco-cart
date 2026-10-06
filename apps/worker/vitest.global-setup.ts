@@ -1,5 +1,13 @@
-import { recreateTestDatabase, testDatabase } from '@ecokart/core/testing'
+import {
+  recreateTestBucket,
+  recreateTestDatabase,
+  testDatabase,
+  testStorageEnv,
+} from '@ecokart/core/testing'
 
 export async function setup(): Promise<void> {
-  await recreateTestDatabase(testDatabase('worker'))
+  await Promise.all([
+    recreateTestDatabase(testDatabase('worker')),
+    recreateTestBucket(testStorageEnv('worker')),
+  ])
 }

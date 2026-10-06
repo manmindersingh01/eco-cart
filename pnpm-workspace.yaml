@@ -5,6 +5,8 @@ packages:
 # Every dependency version lives in the catalog below, so each package.json
 # references it with "catalog:" and the whole workspace shares one version.
 catalog:
+  '@aws-sdk/client-s3': ^3.1146.0
+  '@aws-sdk/s3-presigned-post': ^3.1146.0
   '@better-auth/drizzle-adapter': ^1.7.7
   '@tailwindcss/postcss': ^4.3.3
   '@types/node': ^24.19.0
@@ -23,6 +25,7 @@ catalog:
   prettier: ^3.9.9
   react: ^19.3.0
   react-dom: ^19.3.0
+  sharp: ^0.35.5
   tailwindcss: ^4.3.3
   typescript: ^7.0.2
   vitest: ^5.0.2

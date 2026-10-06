@@ -18,7 +18,7 @@
     "lint:fix": "oxlint --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:up": "docker compose up --detach --wait",
+    "db:up": "docker compose up --detach --wait && pnpm --filter @ecokart/core storage:setup",
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @ecokart/core db:migrate",
     "db:seed": "pnpm --filter @ecokart/core db:seed",

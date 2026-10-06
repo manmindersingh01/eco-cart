@@ -36,7 +36,7 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | 3 | Platform settings and their defaults | 5.13 | Done |
 | 4 | Seller accounts: create, approve, suspend | 5.3, 5.4 | Done |
 | 5 | Category tree with GST rates, and brands | 5.5 | Done |
-| 6 | Products, variants, stock, and image upload | 5.5, 6.2 | Planned |
+| 6 | Products, variants, stock, and image upload | 5.5, 6.2 | Done |
 | 7 | Listing moderation: submit, deterministic screening, approve, reject | 6.2 | Planned |
 | 8 | Catalogue import from CSV and Excel with a row-level error report | 5.11, 6.7 | Planned |
 | 9 | Storefront reads: home, category, product, keyword search, filters, sorting, keyset pagination | 6.8 | Planned |
@@ -583,10 +583,130 @@ A bamboo spatula listed in Bamboo Kitchenware later gets that rate and HSN code 
 - **Some GST rates depend on the price.**
   Clothing and footwear are taxed at 5% up to ₹2,500 a piece (before tax) and 18% above it, so one rate per category cannot describe them.
   The recommended fix is an optional price limit and higher rate on the category, applied to each order line at checkout from its own price, because sizes of the same product can sit on either side of the limit.
-  This changes design doc section 5.5 and the order line snapshot, so it needs the client's and the chartered accountant's agreement before step 6.
+  This changes design doc section 5.5 and the order line snapshot, so it needs the client's and the chartered accountant's agreement before approval copies rates onto products in step 7.
 - When a category's rate changes, what happens to products already approved in it is decided in step 7, where approval copies the rate.
 - Three levels is a recommendation; the client's tree may need a fourth, which is a small migration.
 - The chartered accountant should confirm the list of GST rates above.
+
+## Step 6: Products, variants, stock, and image upload
+
+Status: Done (6 October 2026).
+
+### Goal
+
+A seller creates a listing as a draft, with its variants (sizes, colours), prices, stock, and photos, and edits it until it is ready to submit for review in step 7.
+Prices and stock can change at any time, because they change daily in a real shop.
+Photos go straight from the browser to object storage, and the worker turns each one into the fixed sizes the storefront shows.
+
+For example, Green Basket lists "Bamboo Toothbrush, Pack of 4" in Bamboo Toothbrushes, with two variants (Soft and Medium bristles) at ₹199 each against an MRP of ₹249, 120 and 80 in stock, and three photos.
+Later the same day Ravi changes the stock of Soft to 95 without anything else changing.
+
+### What gets built
+
+1. **Listings** in `packages/core/src/modules/catalogue/products.ts`:
+   - **Create** (the seller): category, optional brand, title, description, up to 8 highlights, up to 30 attributes (for example `material: bamboo`), an optional HSN code, up to 3 option names (for example Size and Colour), and at least one variant.
+     The product starts as a `draft`.
+   - **The category** must be active, inside active categories, and at the bottom of the tree (no subcategories), because the GST rate belongs to a specific kind of goods.
+     In return, a category that has products can no longer get subcategories (a change to step 5's tree rules).
+   - **The brand**, if given, must be active.
+   - **The HSN code** may be left out, in which case the category's default applies; step 7 copies the result onto the product at approval, together with the GST rate.
+     Sellers never set the GST rate; it comes from the category, and only an administrator may override it (step 7).
+   - **Edit** (the seller): every listing detail, while the product is a `draft` or was `rejected`.
+     Option names can be renamed but not added or removed; renaming "Color" to "Colour" renames it in every variant.
+     Editing a product under review or on sale is part of step 7, because it needs a new review.
+   - **Delete** (the seller): a `draft` or `rejected` product is soft deleted (`deleted_at`).
+     A product that was on sale is archived instead (step 7).
+2. **Variants:**
+   - Each has a SKU (unique within the product, ignoring capital letters), one value for each option name, a price and MRP in paise (price at most MRP, both up to ₹10,00,000), stock (0 to 10,00,000), and an active flag.
+     No two variants may have the same option values, and a product without options has exactly one variant.
+   - **Add, change SKU or options, and delete** (the seller): while the product is a `draft` or was `rejected`.
+     A variant that an order or cart refers to cannot be deleted, only deactivated, and the last variant cannot be deleted.
+   - **Price, MRP, stock, and active flag** (the seller): at any time, including while on sale, and they take effect at once.
+     Setting stock means "this is how many I have now", for example after counting the shelf.
+3. **Summary fields on `products`,** rebuilt in the same transaction as every change that affects them: lowest and highest price, lowest MRP, and total stock over the active variants; the first ready photo as the main image; and the search text (title, brand, category names, and highlights).
+   Renaming or moving a category and renaming a brand rebuild the search text of their products too.
+   Every change locks the product's row first and its variants after it, so two changes to one product never overwrite each other's totals (checkout in step 12 follows the same order).
+4. **A web address for each product** made from its title and the start of its id, for example `bamboo-toothbrush-pack-of-4-3f9a2c`.
+   It follows the title until the product is first published, then never changes.
+5. **Photos:**
+
+   ```
+   browser                      web app                       object storage            worker
+   ask to upload ------------>  checks, signs an upload form
+   POST the file -------------------------------------------> uploads/{product}/{id}
+   "added" ------------------>  image row (processing),
+                                job in the same transaction ------------------------->  checks and resizes
+                                                                images/{image}/... <--  thumb, card, gallery
+                                                                originals/{image}  <--  kept private
+                                image row ready or failed  <---------------------------
+   ```
+
+   - **Ask to upload** (the seller): content type and size; JPEG, PNG, WebP, or AVIF up to 10 MB, and at most 10 photos per product.
+     The answer is a signed form for one object key that expires in 10 minutes; object storage itself refuses a larger file or a different key.
+   - **Add the uploaded photo:** creates the `product_images` row as `processing` and queues the job in the same transaction.
+     Adding the same upload twice is refused.
+   - **The job** reads the file, checks that it really is an image of an allowed type, at least 600 pixels on its longer side and at most 50 megapixels, and writes three WebP sizes (thumbnail 160, card 480, gallery 1200 pixels on the longer side) with all photo metadata removed, including any GPS location.
+     The upload is kept privately as the original, so new sizes can be made later.
+     A file that is not a usable image marks the row `failed` with a plain reason the seller sees, for example "The image is too small; it needs at least 600 pixels on its longer side".
+   - **Order, alt text, and variant** (the seller): set the order of all photos at once, and give a photo alt text or tie it to a variant, for example the green one.
+   - **Remove** (the seller): deletes the row.
+     The stored files stay, because past orders show the photo they were placed with.
+6. **Object storage** in `packages/core/src/lib/storage.ts`: one S3 client for both programs.
+   In production it is the private S3 bucket, and the public sizes are served through CloudFront (design doc 3.1).
+   Locally it is SeaweedFS in `compose.yaml`, an S3-compatible store, because MinIO and LocalStack no longer publish free images.
+   `pnpm db:up` also creates the local bucket with its CORS rule and the public read rule for `images/`.
+7. **API** (all for the signed-in seller, for their own products):
+
+   | Method and path | What |
+   | --- | --- |
+   | `POST /api/seller/products` | Create a draft with its variants |
+   | `GET /api/seller/products?status=&cursor=` | Own products, newest first, 20 a page |
+   | `GET /api/seller/products/{id}` | One product with its variants and photos |
+   | `PATCH /api/seller/products/{id}` | Change listing details |
+   | `DELETE /api/seller/products/{id}` | Delete a draft or rejected product |
+   | `POST /api/seller/products/{id}/variants` | Add a variant |
+   | `PATCH /api/seller/products/{id}/variants/{variantId}` | Change a variant, including price and stock |
+   | `DELETE /api/seller/products/{id}/variants/{variantId}` | Delete a variant |
+   | `POST /api/seller/products/{id}/images/uploads` | Get a signed upload form |
+   | `POST /api/seller/products/{id}/images` | Add an uploaded photo (202: the worker finishes it) |
+   | `PUT /api/seller/products/{id}/images/order` | Set the order of all photos |
+   | `PATCH /api/seller/products/{id}/images/{imageId}` | Alt text and variant |
+   | `DELETE /api/seller/products/{id}/images/{imageId}` | Remove a photo |
+
+8. **Database changes:** `product_images` gains `status` (`processing`, `ready`, `failed`), `upload_key` (unique, so an upload is added once), and `failure_reason`; `product_variants` gains `sort_order`, the seller's order of the variants; the seller's product list gets indexes on `(seller_id, created_at, id)` and `(seller_id, status, created_at, id)`.
+
+### Smaller decisions made in this step
+
+- **Product services live in `products.ts` and `images.ts`** in the catalogue module, next to `categories.ts` and `brands.ts`.
+- **Public photos are not signed URLs.**
+  The rule "every download is a short-lived signed URL" is for private files (originals, imports, invoices, buyers' return photos).
+  Product photos are public catalogue content, served through CloudFront with long cache lifetimes, while the bucket itself stays private.
+  Design doc section 8 says so.
+- **Seller edits to listings are not written to the audit log,** which is for administrator actions.
+  Prices and stock change many times a day, and every order keeps its own copy of what was sold.
+- **Variants keep the seller's order** in a new `sort_order` column.
+  Variants created together share one creation time, so ordering by it gave a random order, which the first test run showed.
+- **The worker refuses to start while a job queue is missing,** with the message to run `pnpm db:migrate`.
+  The live run showed a worker that started without the photo queue and only logged errors, so photos would have stayed `processing` forever after a deploy that skipped the migration.
+- **A photo's size is read from its header before the pixel limit applies,** so a 60-megapixel camera photo is refused as too large rather than "not an image".
+  Reading the header decodes no pixels, so it is safe even for a file built to exhaust memory.
+- **The local bucket's CORS rule takes its addresses from `STORAGE_CORS_ORIGINS`.**
+  SeaweedFS refuses uploads from any other address, like S3 does, so a developer running the web app on another port adds that address.
+- **Sign-ins in the web app's tests come from random addresses,** because the per-address rate limit made test files that sign in at the same moment fail with 429.
+
+### Not in this step
+
+- Submitting for review, approval, rejection, archiving, and editing a product that is on sale (step 7).
+- Public product pages and search (step 9), and a cache that serves photos from Next.js's image component (step 9).
+- Example products in `pnpm db:seed`; they need the approval in step 7.
+- SKUs unique across a seller's whole catalogue, which imports may need (step 8).
+- The S3 bucket, its CORS rule, the CloudFront distribution, and a lifecycle rule that deletes unused uploads after a day; they belong to the infrastructure code, which is not written yet.
+
+### Done when
+
+- On `pnpm dev`, through the real API: a seller creates a draft with two variants, uploads a photo the way a browser does, the worker turns it into three sizes that load from the public address, a too-small image is marked failed with its reason, the seller changes stock and sees the total change, and deleting the draft hides it.
+- Tests prove every rule above, the summary fields after each kind of change, that one seller can never read or change another's product, the upload form's limits against real object storage, the image job from upload to stored sizes (including metadata removal and every failure reason), and every API answer.
+- `pnpm check` passes.
 
 ## Change log
 
@@ -609,3 +729,7 @@ A bamboo spatula listed in Bamboo Kitchenware later gets that rate and HSN code 
 - 6 October 2026: Step 4 committed. Step 5 written.
 - 6 October 2026: Step 5 built.
   While building it: brand slugs are numbered like category slugs, A to Z page cursors cannot be mixed up with newest-first ones, the database repeats the tree rules, and the design doc records price-dependent GST rates as an open decision (section 11).
+- 6 October 2026: Step 5 committed. Step 6 written; the decision on price-dependent GST rates is needed by step 7, not step 6.
+- 6 October 2026: Step 6 built.
+  While building it: variants keep the seller's order, the worker refuses to start without its queues, very large photos get the right message, the local bucket's upload addresses come from settings, and the web tests' sign-ins no longer collide on the rate limit.
+  The design doc was updated in the same change (sections 3.1, 4, 5.5, and 8).

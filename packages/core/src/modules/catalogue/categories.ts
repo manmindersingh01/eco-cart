@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { Transaction } from '../../db/client.ts'
 import type { RequestContext } from '../../db/context.ts'
 import { categories, products } from '../../db/schema/index.ts'
@@ -12,6 +12,7 @@ import { foreignKeyViolation, uniqueViolation } from '../../lib/postgres.ts'
 import { firstFreeSlug, slugify } from '../../lib/slug.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
 import { recordAuditEntry, type AuditEntry } from '../audit/service.ts'
+import { refreshProducts } from './summary.ts'
 import {
   buildCategoryTree,
   MAX_CATEGORY_DEPTH,
@@ -203,6 +204,25 @@ function placement(
   return { depth: parent.depth + 1, issue: null }
 }
 
+/**
+ * Products sit only in categories without subcategories (backend spec step
+ * 6), so a category that has products cannot become a parent.
+ */
+async function parentHasProductsIssue(
+  tx: Transaction,
+  parentId: string | null,
+): Promise<string | null> {
+  if (parentId === null) return null
+  const [listed] = await tx
+    .select({ id: products.id })
+    .from(products)
+    .where(and(eq(products.categoryId, parentId), isNull(products.deletedAt)))
+    .limit(1)
+  return listed
+    ? 'parentId has products listed in it, so it cannot have subcategories'
+    : null
+}
+
 /** Creates a category. Administrators only. */
 export async function createCategory(
   tx: Transaction,
@@ -218,6 +238,7 @@ export async function createCategory(
   throwIfAny([
     issue,
     issue ? null : siblingNameIssue(tree, parentId, details.name),
+    issue ? null : await parentHasProductsIssue(tx, parentId),
     details.slug === undefined ? null : slugIssue(tree, details.slug),
   ])
   const slug =
@@ -282,7 +303,10 @@ export async function updateCategory(
       ])
     }
     const target = placement(tree, parentId)
-    throwIfAny([target.issue])
+    throwIfAny([
+      target.issue,
+      target.issue ? null : await parentHasProductsIssue(tx, parentId),
+    ])
     if (target.depth + tree.levelsBelow(categoryId) > MAX_CATEGORY_DEPTH) {
       throwIfAny([
         `parentId is too deep for this category and its subcategories; categories go at most ${MAX_CATEGORY_DEPTH + 1} levels deep`,
@@ -316,6 +340,16 @@ export async function updateCategory(
         .update(categories)
         .set({ depth: sql`${categories.depth} + ${depth - current.depth}` })
         .where(inArray(categories.id, below))
+    }
+    // Products' search text holds the category names from the top down.
+    if (
+      moving ||
+      (changes.name !== undefined && changes.name !== current.name)
+    ) {
+      await refreshProducts(
+        tx,
+        inArray(products.categoryId, tree.subtreeIds(categoryId)),
+      )
     }
     const touched = new Set([
       ...Object.keys(changes),

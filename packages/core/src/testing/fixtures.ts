@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Database } from '../db/client.ts'
 import {
+  brands,
   categories,
   orderItems,
   orders,
@@ -74,6 +75,15 @@ export async function createTestCategory(db: Database) {
     })
     .returning()
   return category!
+}
+
+export async function createTestBrand(db: Database, isActive = true) {
+  const suffix = uniqueSuffix()
+  const [brand] = await db
+    .insert(brands)
+    .values({ name: `Brand ${suffix}`, slug: `brand-${suffix}`, isActive })
+    .returning()
+  return brand!
 }
 
 /** A product with one variant priced at ₹500 (MRP ₹600) and 5 in stock. */

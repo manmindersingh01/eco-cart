@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto'
 import { loadAuthConfig, type Database } from '@ecokart/core'
 import { lastEmailedCode } from '@ecokart/core/testing'
 import { POST as authPost } from '@/app/api/auth/[...all]/route'
@@ -7,7 +8,13 @@ import { POST as authPost } from '@/app/api/auth/[...all]/route'
  * browser will, and returns the session cookie for later requests.
  */
 
-let ipCounter = 0
+/**
+ * Rate limits count per IP, so every request comes from its own address in
+ * 198.18.0.0/15, a range reserved for tests. A counter would not do: each
+ * test file starts its own, and files run at the same time.
+ */
+const randomTestIp = () =>
+  `198.${18 + randomInt(2)}.${randomInt(256)}.${1 + randomInt(254)}`
 
 function authRequest(path: string, body: object): Promise<Response> {
   const { baseURL } = loadAuthConfig()
@@ -17,8 +24,7 @@ function authRequest(path: string, body: object): Promise<Response> {
       headers: {
         'content-type': 'application/json',
         origin: baseURL,
-        // Rate limits count per IP, so every sign-in uses its own.
-        'x-forwarded-for': `192.0.2.${(++ipCounter % 250) + 1}`,
+        'x-forwarded-for': randomTestIp(),
       },
       body: JSON.stringify(body),
     }),

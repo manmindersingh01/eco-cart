@@ -11,7 +11,12 @@ export {
   NotSignedInError,
   ValidationError,
 } from './errors.ts'
-export { startJobQueue, type JobQueue } from './lib/queue.ts'
+export { QUEUES } from './jobs.ts'
+export {
+  startJobQueue,
+  type JobQueue,
+  type QueueDefinition,
+} from './lib/queue.ts'
 export { type Auth } from './modules/auth/auth.ts'
 export { loadAuthConfig, type AuthConfig } from './modules/auth/config.ts'
 export {
@@ -86,3 +91,40 @@ export type {
   PublicBrand,
   PublicCategory,
 } from './modules/catalogue/types.ts'
+export {
+  addVariant,
+  createProduct,
+  deleteProduct,
+  deleteVariant,
+  getOwnProduct,
+  listOwnProducts,
+  updateProduct,
+  updateVariant,
+  type PhotoAddresses,
+} from './modules/catalogue/products.ts'
+export {
+  addImage,
+  createImageUpload,
+  MAX_IMAGES_PER_PRODUCT,
+  PROCESS_IMAGE_QUEUE,
+  removeImage,
+  setImageOrder,
+  updateImage,
+} from './modules/catalogue/images.ts'
+export type {
+  ImageUpload,
+  ImageView,
+  NewProduct,
+  NewVariant,
+  ProductStatus,
+  ProductSummary,
+  ProductView,
+  VariantView,
+} from './modules/catalogue/types.ts'
+export {
+  createObjectStorage,
+  loadStorageConfig,
+  type ObjectStorage,
+  type StorageConfig,
+  type UploadForm,
+} from './lib/storage.ts'

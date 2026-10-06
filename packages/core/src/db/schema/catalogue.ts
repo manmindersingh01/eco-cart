@@ -162,7 +162,18 @@ export const products = pgTable(
     deletedAt: timestamptz('deleted_at'),
   },
   (t) => [
-    index('products_seller_id_status_idx').on(t.sellerId, t.status),
+    // The seller's product list: newest first, optionally by status.
+    index('products_seller_id_created_at_idx').on(
+      t.sellerId,
+      t.createdAt.desc(),
+      t.id.desc(),
+    ),
+    index('products_seller_id_status_created_at_idx').on(
+      t.sellerId,
+      t.status,
+      t.createdAt.desc(),
+      t.id.desc(),
+    ),
     index('products_category_id_status_idx').on(t.categoryId, t.status),
     index('products_status_created_at_idx').on(
       t.status,
@@ -224,6 +235,8 @@ export const productVariants = pgTable(
     mrpPaise: paise('mrp_paise').notNull(),
     stock: integer('stock').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
+    // The seller's order, for example S, M, L (backend spec step 6).
+    sortOrder: integer('sort_order').notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -248,7 +261,14 @@ export const productImages = pgTable(
       .notNull()
       .references(() => products.id),
     variantId: uuid('variant_id').references(() => productVariants.id),
+    // images/{id}: the public sizes are images/{id}/{size}.webp.
     storageKey: text('storage_key').notNull().unique(),
+    // processing until the worker has made the sizes (backend spec step 6).
+    status: text('status').notNull().default('processing'),
+    // The browser's upload; unique, so one upload becomes one photo.
+    uploadKey: text('upload_key').unique(),
+    // Shown to the seller when the photo cannot be used.
+    failureReason: text('failure_reason'),
     // Filled in by the worker once the upload has been processed.
     contentHash: text('content_hash'),
     width: integer('width'),
@@ -262,6 +282,18 @@ export const productImages = pgTable(
     index('product_images_product_id_sort_order_idx').on(
       t.productId,
       t.sortOrder,
+    ),
+    check(
+      'product_images_status_check',
+      sql`status in ('processing', 'ready', 'failed')`,
+    ),
+    check(
+      'product_images_ready_check',
+      sql`status <> 'ready' or (content_hash is not null and width is not null and height is not null)`,
+    ),
+    check(
+      'product_images_failed_check',
+      sql`(status = 'failed') = (failure_reason is not null)`,
     ),
     check('product_images_dimensions_check', sql`width > 0 and height > 0`),
     webSelect(productVisible('product_images.product_id')),

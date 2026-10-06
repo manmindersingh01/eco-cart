@@ -1,13 +1,27 @@
 import {
+  addImage,
   createAppAuth,
   createDatabase,
+  createImageUpload,
+  createObjectStorage,
   createPool,
+  createProduct,
+  getOwnProduct,
   loadAuthConfig,
   loadNotificationConfig,
+  loadStorageConfig,
+  QUEUES,
   requireEnv,
   startJobQueue,
+  withContext,
 } from '@ecokart/core'
+import {
+  createTestCategory,
+  createTestSeller,
+  waitUntil,
+} from '@ecokart/core/testing'
 import { PgBoss } from 'pg-boss'
+import sharp from 'sharp'
 import { expect, test } from 'vitest'
 import { z } from 'zod'
 import { startWorker } from './worker.ts'
@@ -15,6 +29,7 @@ import { startWorker } from './worker.ts'
 const options = () => ({
   databaseUrl: requireEnv('DATABASE_URL'),
   notifications: loadNotificationConfig(),
+  storage: loadStorageConfig(),
 })
 
 test('starts the job queue against the database and stops cleanly', async () => {
@@ -35,6 +50,26 @@ test('says how to fix a database without the job queue tables', async () => {
   ).rejects.toThrow(
     'The job queue tables are missing or out of date. Run `pnpm db:migrate`',
   )
+})
+
+test('refuses to start while a job queue is missing', async () => {
+  const [queue] = QUEUES.slice(-1)
+  const admin = new PgBoss({
+    connectionString: requireEnv('MIGRATION_DATABASE_URL'),
+    migrate: false,
+    supervise: false,
+    schedule: false,
+  })
+  await admin.start()
+  try {
+    await admin.deleteQueue(queue!.name)
+    await expect(startWorker(options())).rejects.toThrow(
+      `The job queues ${queue!.name} are missing. Run \`pnpm db:migrate\`, then start the worker again.`,
+    )
+  } finally {
+    await admin.createQueue(queue!.name, queue!.options)
+    await admin.stop()
+  }
 })
 
 // The web app sends jobs as ecokart_web and the worker runs them as
@@ -145,3 +180,79 @@ test('a sign-in code travels from Better Auth through the worker to the inbox', 
     await worker.stop()
   }
 })
+
+test('a photo travels from the browser upload through the worker to its public sizes', async () => {
+  const worker = await startWorker(options())
+  const webUrl = requireEnv('WEB_DATABASE_URL')
+  const webPool = createPool(webUrl, 'worker-e2e-photo-web')
+  const ownerPool = createPool(
+    requireEnv('MIGRATION_DATABASE_URL'),
+    'worker-e2e-photo-owner',
+  )
+  const queue = await startJobQueue(webUrl, 'worker-e2e-photo-queue')
+  const web = createDatabase(webPool)
+  const owner = createDatabase(ownerPool)
+  const storage = createObjectStorage(loadStorageConfig())
+  try {
+    const { owner: user, seller: business } = await createTestSeller(owner)
+    const seller = {
+      role: 'seller' as const,
+      userId: user.id,
+      sellerId: business.id,
+    }
+    const category = await createTestCategory(owner)
+    const product = await withContext(web, seller, (tx) =>
+      createProduct(tx, storage, seller, {
+        categoryId: category.id,
+        title: 'Terracotta Water Bottle',
+        variants: [
+          { sku: 'TWB-1', pricePaise: 59_900, mrpPaise: 69_900, stock: 12 },
+        ],
+      }),
+    )
+
+    // The browser asks for a form and posts the photo straight to storage.
+    const form = await createImageUpload(
+      { db: web, storage },
+      seller,
+      product.id,
+      {
+        contentType: 'image/png',
+        size: 50_000,
+      },
+    )
+    const body = new FormData()
+    for (const [name, value] of Object.entries(form.fields)) {
+      body.append(name, value)
+    }
+    const photo = await sharp({
+      create: { width: 900, height: 900, channels: 3, background: '#b5532e' },
+    })
+      .png()
+      .toBuffer()
+    body.append('file', new Blob([photo]))
+    expect((await fetch(form.url, { method: 'POST', body })).status).toBe(204)
+
+    await withContext(web, seller, (tx) =>
+      addImage(tx, storage, queue, seller, product.id, { uploadKey: form.key }),
+    )
+    const current = () =>
+      withContext(web, seller, (tx) =>
+        getOwnProduct(tx, storage, seller, product.id),
+      )
+    await waitUntil(
+      async () => (await current()).images[0]?.status === 'ready',
+      15_000,
+    )
+
+    const card = await fetch((await current()).images[0]!.urls!.card)
+    expect(card.status).toBe(200)
+    const size = await sharp(Buffer.from(await card.arrayBuffer())).metadata()
+    expect([size.format, size.width, size.height]).toEqual(['webp', 480, 480])
+  } finally {
+    await queue.stop()
+    await Promise.all([webPool.end(), ownerPool.end()])
+    await worker.stop()
+  }
+  // The worker picks jobs up every two seconds, so allow for a slow runner.
+}, 30_000)

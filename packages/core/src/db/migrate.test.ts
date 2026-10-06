@@ -1,6 +1,7 @@
 import { Client } from 'pg'
 import { describe, expect, test } from 'vitest'
 import { requireEnv } from '../env.ts'
+import { QUEUES } from '../jobs.ts'
 import { TEST_WEB_PASSWORD, TEST_WORKER_PASSWORD } from '../testing/urls.ts'
 import { migrateDatabase } from './migrate.ts'
 
@@ -32,7 +33,7 @@ describe('migrateDatabase', () => {
       'Database schema is up to date',
       'Database users ecokart_web and ecokart_worker can log in',
       expect.stringMatching(/^pg-boss schema "pgboss" is already at version/),
-      'Job queues ready: notifications.send-email, notifications.send-sms',
+      `Job queues ready: ${QUEUES.map((queue) => queue.name).join(', ')}`,
     ])
   })
 

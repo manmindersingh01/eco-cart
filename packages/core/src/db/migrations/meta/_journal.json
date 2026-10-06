@@ -57,6 +57,20 @@
       "when": 1791231052242,
       "tag": "0007_category_and_brand_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791235163325,
+      "tag": "0008_product_photos_and_lists",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791235801139,
+      "tag": "0009_variant_order",
+      "breakpoints": true
     }
   ]
 }

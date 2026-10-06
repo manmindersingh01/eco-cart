@@ -1,14 +1,19 @@
 import {
   createDatabase,
+  createObjectStorage,
   createPool,
   loadNotificationConfig,
+  QUEUES,
   registerNotificationJobs,
+  type StorageConfig,
 } from '@ecokart/core'
+import { registerCatalogueJobs } from '@ecokart/core/worker'
 import { PgBoss } from 'pg-boss'
 
 export interface WorkerOptions {
   databaseUrl: string
   notifications: ReturnType<typeof loadNotificationConfig>
+  storage: StorageConfig
 }
 
 export interface RunningWorker {
@@ -43,6 +48,7 @@ export async function startWorker(
 
   try {
     await boss.start()
+    await assertQueuesExist(boss)
   } catch (error) {
     // start() may already have opened its connection pool.
     await boss.stop()
@@ -53,6 +59,10 @@ export async function startWorker(
   const pool = createPool(options.databaseUrl, 'ecokart-worker-jobs')
   const db = createDatabase(pool)
   await registerNotificationJobs(boss, { db, ...options.notifications })
+  await registerCatalogueJobs(boss, {
+    db,
+    storage: createObjectStorage(options.storage),
+  })
 
   return {
     boss,
@@ -60,6 +70,22 @@ export async function startWorker(
       await boss.stop()
       await pool.end()
     },
+  }
+}
+
+/**
+ * A queue that `pnpm db:migrate` has not created yet would make its jobs fail
+ * quietly in the background, so the worker refuses to start instead.
+ */
+async function assertQueuesExist(boss: PgBoss): Promise<void> {
+  const missing: string[] = []
+  for (const { name } of QUEUES) {
+    if (!(await boss.getQueue(name))) missing.push(name)
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `The job queues ${missing.join(', ')} are missing. Run \`pnpm db:migrate\`, then start the worker again.`,
+    )
   }
 }
 

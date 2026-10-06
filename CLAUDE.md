@@ -34,7 +34,7 @@ This is a pnpm 12 workspace.
 pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, so never install Node.js separately for this project.
 
 - Install: `pnpm install`
-- Local services (PostgreSQL 16 with pgvector on port 5434, and Mailpit, which catches every email and SMS, at http://localhost:8025): `pnpm db:up`, stop with `pnpm db:down`
+- Local services (PostgreSQL 16 with pgvector on port 5434; Mailpit, which catches every email and SMS, at http://localhost:8025; and SeaweedFS, S3-compatible object storage standing in for S3 and CloudFront, at http://localhost:8333): `pnpm db:up`, which also creates the local bucket; stop with `pnpm db:down`
 - Apply migrations, set the `ecokart_web` and `ecokart_worker` passwords, and install the pg-boss tables: `pnpm db:migrate` (reads `packages/core/.env`)
 - Write a new migration after changing the Drizzle schema: `pnpm db:generate`.
   For SQL that Drizzle cannot express (grants, triggers, functions), use `pnpm --filter @ecokart/core exec drizzle-kit generate --custom --name=<name>` and fill in the file.
@@ -47,7 +47,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Tests in one package: `pnpm --filter @ecokart/core test`
 - Add a dependency: `pnpm --filter @ecokart/web add <name>`.
   The version goes into the `catalog` in `pnpm-workspace.yaml` and `package.json` gets `catalog:`.
-- Tests rebuild their own databases (`ecokart_test_core`, `ecokart_test_web`, `ecokart_test_worker`) from the migrations on every run and never touch the development database.
+- Tests rebuild their own databases (`ecokart_test_core`, `ecokart_test_web`, `ecokart_test_worker`) from the migrations and empty their own buckets (`ecokart-test-*`) on every run, and never touch the development database or bucket.
 - Example data for local development (platform settings, three approved sellers, a category tree, and brands): `pnpm db:seed`; it only fills what is missing and refuses production.
 - Not set up yet: e2e tests.
   Add them here when they exist.
@@ -56,6 +56,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 
 - Follow the layout in design doc section 4: routes in `apps/web/src/app/`, business logic in `packages/core/src/modules/<domain>/` (`service.ts`, `queries.ts`, `jobs.ts`, `types.ts`), schema in `packages/core/src/db/schema/`, SQL migrations in `packages/core/src/db/migrations/`, worker job registration in `apps/worker/src/worker.ts`, external clients in `packages/core/src/lib/`.
 - The worker runs `packages/core` and its own code as TypeScript directly on Node.js, so use only type-level TypeScript syntax (no `enum`, `namespace`, or constructor parameter properties) and import local files with their `.ts` extension.
+- Code that only the worker runs and that loads heavy libraries (the image library `sharp`) is exported from `@ecokart/core/worker`, never from `@ecokart/core`, so the web app never loads it.
+- The worker refuses to start while a queue in `packages/core/src/jobs.ts` is missing, so a deploy that skipped `pnpm db:migrate` fails loudly.
 - Pages, server actions, and API routes call module services.
   They never write SQL themselves.
 - Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, conflict, validation, not configured), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
@@ -72,8 +74,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   AI calls, embeddings, image resizing, PDFs, emails, and file imports go to a pg-boss job that the worker runs.
 - Do not add Redis, Elasticsearch, a separate vector database, or another queue.
   Postgres covers all of these at launch, and section 9 of the design doc says when that changes.
-- Uploads go straight from the browser to object storage with presigned URLs.
-  Files never pass through the web app.
+- Uploads go straight from the browser to object storage with a signed POST form (`ObjectStorage.createUploadForm`).
+  Files never pass through the web app, and the worker checks and re-encodes every photo before it is shown, so nothing a browser sent is ever served as it arrived.
 - Public pages (home, category, product, content) use tag-based caching and must revalidate their tag when the product or category changes.
   Personal pages (cart, orders, seller portal, admin) are never cached.
 
@@ -103,6 +105,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   Recompute prices, totals, discounts, stock, and permissions on the server.
 - Decrement stock with one conditional statement: `UPDATE product_variants SET stock = stock - $qty WHERE id = $id AND stock >= $qty`.
   Zero rows updated means the item sold out, so roll back.
+- Any change to a product's variants locks the product's row first and its variants after it, then rebuilds the summary fields with `refreshProducts` in the same transaction (backend spec step 6).
+  Checkout takes its locks in the same order, product rows sorted by id, so totals stay right and transactions never deadlock.
   Use the same pattern for `coupons.used_count` and invoice sequences.
 - Never call Razorpay or any other external API inside a database transaction.
   Commit first, then call, and run the compensating rollback on failure (design doc section 6.3, step 4).
@@ -150,7 +154,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Accounts that an administrator creates (administrators and sellers) are created with `emailVerified: true`, because Better Auth's clean-up for unverified accounts does not work with UUID ids (see the backend spec, step 2).
 - Seller accounts are made only by `createSeller`, together with their business; Better Auth's administrator endpoints refuse the `seller` role and refuse to change the role of an account that owns a business.
 - OTP codes are stored hashed (`storeOTP: "hashed"`), and the OTP delivery callbacks only queue the email or SMS; they never send inline.
-- Object storage buckets are private, and every download is a short-lived signed URL.
+- Object storage buckets are private, and every download of a private file (originals, imports, invoices, return photos) is a short-lived signed URL.
+  Only the product photo sizes under `images/` are public, served through CloudFront.
 
 ## AI features
 
