@@ -1,26 +1,77 @@
 @import 'tailwindcss';
 
 :root {
-  --background: #ffffff;
+  --background: #f7faf7;
+  --surface: #ffffff;
+  --surface-subtle: #eef5f0;
   --foreground: #14201a;
   --muted: #55645c;
-  --brand: #1f7a4d;
+  --brand: #176b42;
+  --brand-strong: #0f5232;
+  --brand-soft: #dff3e7;
+  --border: #cfdbd3;
+  --focus: #2563eb;
+  --success: #147a46;
+  --success-soft: #e1f5e9;
+  --warning: #8a5200;
+  --warning-soft: #fff1cf;
+  --danger: #b42318;
+  --danger-soft: #fee9e7;
+  --shadow-card: 0 1px 2px rgb(20 32 26 / 8%), 0 8px 24px rgb(20 32 26 / 6%);
+  --page-width: 80rem;
+  --page-gutter: clamp(1rem, 3vw, 2rem);
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0c1210;
+    --background: #0d1712;
+    --surface: #14221a;
+    --surface-subtle: #1b2d22;
     --foreground: #e8efe9;
-    --muted: #9aa9a0;
-    --brand: #4cc38a;
+    --muted: #a9b8ae;
+    --brand: #65d69b;
+    --brand-strong: #91e7b8;
+    --brand-soft: #173d29;
+    --border: #34493b;
+    --focus: #7aa7ff;
+    --success: #70dda2;
+    --success-soft: #173d29;
+    --warning: #f5c66c;
+    --warning-soft: #43351d;
+    --danger: #ff938a;
+    --danger-soft: #472421;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 25%), 0 8px 24px rgb(0 0 0 / 20%);
   }
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+  --color-border: var(--border);
+  --color-focus: var(--focus);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -33,4 +84,59 @@ body {
     'Segoe UI',
     Roboto,
     sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--brand-soft);
+  color: var(--foreground);
+}
+
+.page-container {
+  width: min(100%, var(--page-width));
+  margin-inline: auto;
+  padding-inline: var(--page-gutter);
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 0.75rem;
+  left: 0.75rem;
+  translate: 0 -200%;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--foreground);
+  padding: 0.65rem 1rem;
+  box-shadow: var(--shadow-card);
+}
+
+.skip-link:focus {
+  translate: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -1,6 +1,9 @@
 export default function HomePage() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center px-6 py-24 text-center">
+    <main
+      id="main-content"
+      className="page-container flex flex-1 flex-col items-center justify-center py-24 text-center"
+    >
       <svg
         aria-hidden="true"
         viewBox="0 0 24 24"
