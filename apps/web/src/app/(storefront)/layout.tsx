@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { AccountControls } from '@/components/auth/account-controls'
 
 export default function StorefrontLayout({ children }: LayoutProps<'/'>) {
   return (
@@ -19,7 +20,7 @@ export default function StorefrontLayout({ children }: LayoutProps<'/'>) {
             </svg>
             <span className="text-xl">EcoKart</span>
           </Link>
-          <p className="text-sm text-muted">Marketplace for India</p>
+          <AccountControls compact />
         </div>
       </header>
       {children}

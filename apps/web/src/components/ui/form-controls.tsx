@@ -1,5 +1,6 @@
 import type {
   AriaAttributes,
+  ComponentPropsWithRef,
   InputHTMLAttributes,
   ReactElement,
   ReactNode,
@@ -75,10 +76,7 @@ export function FieldError({
   )
 }
 
-export function Input({
-  className,
-  ...props
-}: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: ComponentPropsWithRef<'input'>) {
   return <input className={cx(control, className)} {...props} />
 }
 

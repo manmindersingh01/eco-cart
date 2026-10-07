@@ -10,10 +10,12 @@ type NavigationItem = {
 export function PortalShell({
   portalName,
   navigation,
+  accountActions,
   children,
 }: {
   portalName: string
   navigation: readonly NavigationItem[]
+  accountActions?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -48,9 +50,18 @@ export function PortalShell({
           </ul>
         </nav>
       </aside>
-      <main id="main-content" className="min-w-0 flex-1">
-        <div className="page-container py-6 sm:py-8">{children}</div>
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {accountActions ? (
+          <header className="border-b bg-surface">
+            <div className="page-container flex min-h-16 items-center justify-end py-2">
+              {accountActions}
+            </div>
+          </header>
+        ) : null}
+        <main id="main-content" className="flex-1">
+          <div className="page-container py-6 sm:py-8">{children}</div>
+        </main>
+      </div>
     </div>
   )
 }

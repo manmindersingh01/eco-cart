@@ -198,7 +198,7 @@ flowchart TD
 | ID | Task | Depends on | Implemented | File |
 | --- | --- | --- | --- | --- |
 | T01 | Foundation and UI system | None | Yes | [01-foundation.md](01-foundation.md) |
-| T02 | Authentication and role access | T01 | No | [02-authentication.md](02-authentication.md) |
+| T02 | Authentication and role access | T01 | No - browser check pending | [02-authentication.md](02-authentication.md) |
 | T03 | Admin shell and platform settings | T01, T02 | No | [03-admin-settings.md](03-admin-settings.md) |
 | T04 | Admin seller management | T03 | No | [04-admin-sellers.md](04-admin-sellers.md) |
 | T05 | Admin category and brand management | T03 | No | [05-admin-catalogue.md](05-admin-catalogue.md) |
