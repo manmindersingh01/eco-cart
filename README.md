@@ -52,7 +52,7 @@ To make yourself an administrator, run `pnpm admin:create --email you@example.co
 Then open http://localhost:3000.
 The health check at http://localhost:3000/api/health shows whether the web app can reach the database.
 
-The local database listens on port 5434, so it does not clash with a PostgreSQL server already running on 5432.
+The local database listens on port 15434, so it avoids Windows excluded port ranges and does not clash with a PostgreSQL server already running on 5432.
 To use another port, set `POSTGRES_PORT` before `pnpm db:up`, change the database URLs in all three `.env` files to match, and set `TEST_DATABASE_SERVER_URL` (for example `postgres://ecokart:ecokart@localhost:5435/postgres`) when running tests.
 
 ## Commands

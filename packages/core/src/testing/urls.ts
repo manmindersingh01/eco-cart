@@ -1,7 +1,7 @@
 // Kept free of heavy imports, because every package's vitest.config.ts loads
 // it to fill in the test environment.
 
-const DEFAULT_SERVER_URL = 'postgres://ecokart:ecokart@localhost:5434/postgres'
+const DEFAULT_SERVER_URL = 'postgres://ecokart:ecokart@localhost:15434/postgres'
 
 // The same values as the .env.example files, because role passwords are
 // shared by every database on the server.
