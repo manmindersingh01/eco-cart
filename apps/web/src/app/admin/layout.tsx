@@ -6,6 +6,8 @@ const navigation = [
   { href: '/admin', label: 'Overview' },
   { href: '/admin/settings', label: 'Platform settings' },
   { href: '/admin/sellers', label: 'Sellers' },
+  { href: '/admin/categories', label: 'Categories' },
+  { href: '/admin/brands', label: 'Brands' },
 ] as const
 
 export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {

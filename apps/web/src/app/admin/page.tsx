@@ -34,6 +34,25 @@ export default function AdminPage() {
               Manage sellers
             </LinkButton>
           </Card>
+          <Card className="flex flex-col items-start">
+            <h3 className="text-lg font-semibold">Categories</h3>
+            <p className="mt-2 flex-1 text-sm text-muted">
+              Maintain the three-level category tree, GST rates, HSN defaults,
+              and public visibility.
+            </p>
+            <LinkButton href="/admin/categories" className="mt-5">
+              Manage categories
+            </LinkButton>
+          </Card>
+          <Card className="flex flex-col items-start">
+            <h3 className="text-lg font-semibold">Brands</h3>
+            <p className="mt-2 flex-1 text-sm text-muted">
+              Search and maintain the brand choices available to sellers.
+            </p>
+            <LinkButton href="/admin/brands" className="mt-5">
+              Manage brands
+            </LinkButton>
+          </Card>
         </div>
       </section>
     </div>
