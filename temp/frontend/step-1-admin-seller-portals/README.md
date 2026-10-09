@@ -9,7 +9,7 @@
 | Delivery shape | One branch and one pull request, implemented as nine ordered subtasks |
 | Overall status | `in_progress` |
 | Implemented | No |
-| Last reviewed | 8 October 2026 |
+| Last reviewed | 9 October 2026 |
 
 ## Decision
 
@@ -200,7 +200,7 @@ flowchart TD
 | T01 | Foundation and UI system | None | Yes | [01-foundation.md](01-foundation.md) |
 | T02 | Authentication and role access | T01 | Yes | [02-authentication.md](02-authentication.md) |
 | T03 | Admin shell and platform settings | T01, T02 | No - browser check pending | [03-admin-settings.md](03-admin-settings.md) |
-| T04 | Admin seller management | T03 | No | [04-admin-sellers.md](04-admin-sellers.md) |
+| T04 | Admin seller management | T03 | No - final browser pass pending | [04-admin-sellers.md](04-admin-sellers.md) |
 | T05 | Admin category and brand management | T03 | No | [05-admin-catalogue.md](05-admin-catalogue.md) |
 | T06 | Seller shell and profile | T01, T02 | No | [06-seller-profile.md](06-seller-profile.md) |
 | T07 | Seller product list and draft creation | T05, T06 | No | [07-seller-products.md](07-seller-products.md) |

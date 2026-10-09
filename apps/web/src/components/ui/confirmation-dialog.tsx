@@ -11,6 +11,8 @@ type ConfirmationDialogProps = {
   confirmLabel: string
   onConfirm: () => void
   danger?: boolean
+  triggerDisabled?: boolean
+  confirmDisabled?: boolean
 }
 
 export function ConfirmationDialog({
@@ -21,6 +23,8 @@ export function ConfirmationDialog({
   confirmLabel,
   onConfirm,
   danger = false,
+  triggerDisabled = false,
+  confirmDisabled = false,
 }: ConfirmationDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -46,7 +50,12 @@ export function ConfirmationDialog({
 
   return (
     <>
-      <Button ref={triggerRef} variant={triggerVariant} onClick={openDialog}>
+      <Button
+        ref={triggerRef}
+        variant={triggerVariant}
+        onClick={openDialog}
+        disabled={triggerDisabled}
+      >
         {trigger}
       </Button>
       <dialog
@@ -67,7 +76,11 @@ export function ConfirmationDialog({
             <Button variant="secondary" onClick={closeDialog}>
               Cancel
             </Button>
-            <Button variant={danger ? 'danger' : 'primary'} onClick={confirm}>
+            <Button
+              variant={danger ? 'danger' : 'primary'}
+              onClick={confirm}
+              disabled={confirmDisabled}
+            >
               {confirmLabel}
             </Button>
           </div>

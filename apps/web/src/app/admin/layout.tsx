@@ -5,6 +5,7 @@ import { requireAdminPage } from '@/lib/page-auth'
 const navigation = [
   { href: '/admin', label: 'Overview' },
   { href: '/admin/settings', label: 'Platform settings' },
+  { href: '/admin/sellers', label: 'Sellers' },
 ] as const
 
 export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {

@@ -24,6 +24,16 @@ export default function AdminPage() {
               Manage settings
             </LinkButton>
           </Card>
+          <Card className="flex flex-col items-start">
+            <h3 className="text-lg font-semibold">Sellers</h3>
+            <p className="mt-2 flex-1 text-sm text-muted">
+              Create seller accounts, maintain business details, and manage
+              approval or suspension.
+            </p>
+            <LinkButton href="/admin/sellers" className="mt-5">
+              Manage sellers
+            </LinkButton>
+          </Card>
         </div>
       </section>
     </div>
