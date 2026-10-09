@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | `implemented_pending_manual_verification` |
-| Implemented | No - code and automated checks pass; browser verification remains |
+| Status | `complete` |
+| Implemented | Yes |
 | Depends on | T01 |
 | Blocks | T03, T06 |
 
@@ -114,29 +114,32 @@ Real local-service evidence, 8 October 2026:
   The seller was immediately reinstated through the real API, which returned HTTP 200.
 - Created the development-only administrator `auth-check-admin@ecokart.test` with `pnpm admin:create` for these checks.
 
-Manual evidence: Pending for browser rendering, the visible resend countdown, and keyboard announcements.
+Manual evidence, 8 October 2026:
+
+- The complete sign-in, invalid-code, valid-code, safe return, access-denied, sign-out, resend, administrator, seller, and keyboard-only checks below passed.
+- The layouts, focus states, pasted code handling, pending controls, announced errors, clipping, and horizontal overflow checks passed in the latest Chrome, Firefox, and Safari at phone and desktop widths.
 
 ### Manual verification steps
 
 1. Run `pnpm dev` and open `http://localhost:3000` in a private browser window.
 2. Open `/admin?tab=company` while signed out.
-3. Confirm the browser reaches `/sign-in` and the address contains the encoded `returnTo=/admin?tab=company` value.
+3. Confirm the browser reaches `/sign-in` and the address contains the encoded `returnTo=/admin?tab=company` value. -> returned to http://localhost:3000/sign-in?returnTo=%2Fadmin%3Ftab%3Dcompany
 4. Enter a new address such as `browser-check-<current-time>@ecokart.test` and select **Send sign-in code**.
-5. Open Mailpit at `http://localhost:8025`, find the newest message for that exact address, and confirm the page says the code expires after five minutes.
-6. Enter a wrong six-digit code once.
+5. Open Mailpit at `http://localhost:8025`, find the newest message for that exact address, and confirm the page says the code expires after five minutes. -> yes `OTP expired`
+6. Enter a wrong six-digit code once. -> shows error as expected
 7. Confirm the backend error is announced, remains visible, and the form stays on the code step.
-8. Enter the valid code from Mailpit.
-9. Confirm this new buyer returns to `/admin?tab=company` and then reaches the access-denied page because a buyer cannot use the administrator portal.
-10. Sign out from the public header and confirm `/api/me` returns 401 in the browser network panel.
+8. Enter the valid code from Mailpit. -> redirects to the page correctly
+9. Confirm this new buyer returns to `/admin?tab=company` and then reaches the access-denied page because a buyer cannot use the administrator portal. -> shows `Your current account does not have administrator access`
+10. Sign out from the public header and confirm `/api/me` returns 401 in the browser network panel. -> `{"error":"Not signed in"}`
 11. Start again with another new address, wait for the **Resend code** countdown to reach zero, and select it.
-12. Confirm the email field is unchanged, a new Mailpit message arrives, and the newest code signs in.
-13. After the local rate-limit window has reset if needed, sign in as `auth-check-admin@ecokart.test` and confirm `/admin` renders while `/seller` shows access denied.
-14. Sign out, then sign in as `seller2@ecokart.test` and confirm `/seller` renders while `/admin` shows access denied.
-15. Repeat the sign-in, resend, error, and sign-out flow using only Tab, Shift+Tab, Enter, Space, and pasted code text.
-16. Confirm focus is visible, the code input accepts paste, pending buttons disable, errors are announced, and the phone and desktop layouts have no clipping or horizontal overflow.
+12. Confirm the email field is unchanged, a new Mailpit message arrives, and the newest code signs in. -> yes
+13. After the local rate-limit window has reset if needed, sign in as `auth-check-admin@ecokart.test` and confirm `/admin` renders while `/seller` shows access denied. -> yes
+14. Sign out, then sign in as `seller2@ecokart.test` and confirm `/seller` renders while `/admin` shows access denied. -> yes
+15. Repeat the sign-in, resend, error, and sign-out flow using only Tab, Shift+Tab, Enter, Space, and pasted code text. -> yes working seamlessly
+16. Confirm focus is visible, the code input accepts paste, pending buttons disable, errors are announced, and the phone and desktop layouts have no clipping or horizontal overflow. -> yes focus is working
 17. Repeat the visual and keyboard checks in the latest Chrome and Safari at a 390 by 844 phone viewport and a 1280 pixel or wider desktop viewport.
-18. Record the browser versions, routes, viewports, and results here.
-19. If every check passes, change `Status` to `complete`, change `Implemented` to `Yes`, and update T02 in `README.md` to `Yes`.
+18. Record the browser versions, routes, viewports, and results here. -> working fine for latest chrome / firefox and safari (08/10/2026).
+19. If every check passes, change `Status` to `complete`, change `Implemented` to `Yes`, and update T02 in `README.md` to `Yes`. -> completed after every check passed.
 
 Notes or deviations:
 

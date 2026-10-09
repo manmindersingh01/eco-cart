@@ -2,7 +2,10 @@ import { AccountControls } from '@/components/auth/account-controls'
 import { PortalShell } from '@/components/ui/portal-shell'
 import { requireAdminPage } from '@/lib/page-auth'
 
-const navigation = [{ href: '/admin', label: 'Overview' }] as const
+const navigation = [
+  { href: '/admin', label: 'Overview' },
+  { href: '/admin/settings', label: 'Platform settings' },
+] as const
 
 export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
   const account = await requireAdminPage('/admin')
