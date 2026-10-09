@@ -202,7 +202,7 @@ flowchart TD
 | T03 | Admin shell and platform settings | T01, T02 | No - browser check pending | [03-admin-settings.md](03-admin-settings.md) |
 | T04 | Admin seller management | T03 | No - final browser pass pending | [04-admin-sellers.md](04-admin-sellers.md) |
 | T05 | Admin category and brand management | T03 | No - final browser pass pending | [05-admin-catalogue.md](05-admin-catalogue.md) |
-| T06 | Seller shell and profile | T01, T02 | No | [06-seller-profile.md](06-seller-profile.md) |
+| T06 | Seller shell and profile | T01, T02 | No - final browser pass pending | [06-seller-profile.md](06-seller-profile.md) |
 | T07 | Seller product list and draft creation | T05, T06 | No | [07-seller-products.md](07-seller-products.md) |
 | T08 | Product editor, variants, and photos | T07 | No | [08-product-editor.md](08-product-editor.md) |
 | T09 | Public baseline, hardening, and release evidence | T04, T05, T08 | No | [09-release.md](09-release.md) |

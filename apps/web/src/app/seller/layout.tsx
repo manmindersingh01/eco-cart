@@ -2,7 +2,10 @@ import { AccountControls } from '@/components/auth/account-controls'
 import { PortalShell } from '@/components/ui/portal-shell'
 import { requireSellerPage } from '@/lib/page-auth'
 
-const navigation = [{ href: '/seller', label: 'Overview' }] as const
+const navigation = [
+  { href: '/seller', label: 'Overview' },
+  { href: '/seller/profile', label: 'Business profile' },
+] as const
 
 export default async function SellerLayout({
   children,
