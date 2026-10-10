@@ -76,6 +76,7 @@ export default async function SellerProductsPage({
   const rawStatus = typeof query.status === 'string' ? query.status : undefined
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined
   const created = typeof query.created === 'string' ? query.created : undefined
+  const deleted = typeof query.deleted === 'string' ? query.deleted : undefined
   const status = isProductStatus(rawStatus) ? rawStatus : undefined
   let error: string | null = null
   let items: ProductSummary[] = []
@@ -122,6 +123,11 @@ export default async function SellerProductsPage({
         <Notice title="Draft created" tone="success">
           Your product was saved. Detailed editing, variants, and photos arrive
           in the next seller catalogue task.
+        </Notice>
+      ) : null}
+      {deleted ? (
+        <Notice title="Product deleted" tone="success">
+          The product was removed from your seller catalogue.
         </Notice>
       ) : null}
 
@@ -205,7 +211,12 @@ export default async function SellerProductsPage({
                         <div className="flex items-center gap-3">
                           <ProductThumbnail product={product} />
                           <div className="min-w-0">
-                            <p className="font-semibold">{product.title}</p>
+                            <Link
+                              href={`/seller/products/${product.id}`}
+                              className="font-semibold text-brand-strong underline-offset-4 hover:underline"
+                            >
+                              {product.title}
+                            </Link>
                             <p className="mt-1 text-muted">
                               {product.categoryName}
                             </p>
@@ -237,7 +248,14 @@ export default async function SellerProductsPage({
                   <ProductThumbnail product={product} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-start justify-between gap-2">
-                      <h2 className="font-semibold">{product.title}</h2>
+                      <h2 className="font-semibold">
+                        <Link
+                          href={`/seller/products/${product.id}`}
+                          className="text-brand-strong underline-offset-4 hover:underline"
+                        >
+                          {product.title}
+                        </Link>
+                      </h2>
                       <StatusBadge tone={statusTone(product.status)}>
                         {formatStatusLabel(product.status)}
                       </StatusBadge>

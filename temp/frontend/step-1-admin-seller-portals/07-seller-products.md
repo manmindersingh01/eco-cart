@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | `implemented_pending_t08_and_manual_verification` |
-| Implemented | No - list and creation pass; T08 detail handoff and final browser verification remain |
+| Status | `implemented_pending_manual_verification` |
+| Implemented | No - implementation and automated verification pass; final browser pass pending |
 | Depends on | T05, T06 |
 | Blocks | T08 |
 
@@ -102,7 +102,7 @@ Implementation evidence, 10 October 2026:
 - Converted rupees to integer paise with decimal-string arithmetic and checked MRP against selling price before submission.
 - Kept every entered value after local validation, HTTP 400, HTTP 409, and unexpected request failures.
 - Added safe HTTP 401 sign-in recovery and HTTP 403 seller access-denied recovery.
-- A successful creation returns to the product list with a Draft created notice until T08 delivers the detail editor route.
+- A successful creation opens the new product's detail editor.
 
 Important files:
 
@@ -171,7 +171,7 @@ Manual evidence: Deferred until the final combined Chrome and Safari pass reques
 23. Enter an MRP below price and confirm `variants.0.mrpPaise must be at least pricePaise` appears beside MRP and in the error summary.
 24. Submit invalid SKU, price, stock, HSN, category, brand, title, highlight, attribute, option, and variant values.
    Confirm backend messages remain intact, appear beside a matching field when possible, and never clear entered data.
-25. Submit a valid simple draft and confirm the browser returns to `/seller/products?created=...`, shows Draft created, and lists the new product.
+25. Submit a valid simple draft and confirm the browser opens `/seller/products/{id}` with the saved summary and editing controls.
 26. Submit a valid two-option, two-variant draft and confirm both prices contribute to the displayed range and both stocks contribute to total stock.
 27. Repeat list filtering, pagination, brand search, category selection, dynamic row controls, validation, and creation using only Tab, Shift+Tab, Space, Enter, and arrow keys.
 28. Confirm focus is visible, labels target their fields, loading and error states are announced, SKU remains visible, and disabled actions remain understandable.
@@ -180,7 +180,7 @@ Manual evidence: Deferred until the final combined Chrome and Safari pass reques
 31. Open both routes while signed out and while signed in as a buyer or administrator.
    Confirm product data and the creation form never render before sign-in or seller access-denied handling.
 32. Use a pending disposable seller and confirm it can open the creation form and save a private draft.
-33. After T08 supplies `/seller/products/[id]`, confirm successful creation navigates to the new product's detail editor and that a rejected product shows its rejection reason prominently there.
+33. Confirm successful creation navigates to the new product's detail editor and that a rejected product shows its rejection reason prominently there.
 34. Record browser versions, routes, viewports, and observed results here during the final combined browser pass.
 35. If every check passes, change `Status` to `complete`, change `Implemented` to `Yes`, and update T07 in `README.md` to `Yes`.
 
@@ -189,8 +189,7 @@ Notes or deviations:
 - The backend specification explicitly says example products are not included in `pnpm db:seed` because approval arrives in backend step 7.
   The two real T07 drafts above provide stable local list data instead of claiming seeded products exist.
 - `ProductSummary`, returned by the list API, has no rejection reason.
-  T08 must show `rejectionReason` from the product detail response in the detail editor.
-- `/seller/products/[id]` and its photo and editing interface belong to T08 and do not exist yet.
-  T07 returns successful creation to the valid product list with a notice; T08 must change this to the planned detail-editor handoff.
+  The T08 detail editor shows `rejectionReason` from the product detail response instead.
+- T08 now supplies `/seller/products/[id]`, links list titles to it, and sends successful creation directly to the new product editor.
 - The current Vitest environment is Node-based and has no browser DOM or component-testing library.
   UI behavior is covered by pure frontend tests, existing route tests, typecheck, lint, production compilation, server-rendered route checks, and the real HTTP workflow, with the combined browser pass deferred as requested.

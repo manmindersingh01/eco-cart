@@ -189,9 +189,7 @@ export function ProductCreateForm() {
         '/api/seller/products',
         { method: 'POST', json: input.value },
       )
-      window.location.assign(
-        `/seller/products?created=${encodeURIComponent(response.product.id)}`,
-      )
+      window.location.assign(`/seller/products/${response.product.id}`)
     } catch (cause) {
       if (cause instanceof ApiError) {
         if (cause.status === 401) {
@@ -773,7 +771,7 @@ function VariantEditor({
   )
 }
 
-function BrandPicker({
+export function BrandPicker({
   selected,
   selectedId,
   disabled,
