@@ -110,7 +110,7 @@ Manual evidence: Deferred until the final combined Chrome and Safari pass reques
 1. Run `pnpm dev` and sign in as `seller1@ecokart.test` using the newest code in Mailpit.
 2. Open `/seller` and confirm the portal header shows the signed-in account, the navigation includes Overview and Business profile, and Sign out is available.
 3. Confirm the overview greets the seller by business display name and shows the Approved badge and approved guidance.
-4. Confirm the Business profile card opens `/seller/profile` and the catalogue card is clearly labelled as the next frontend task rather than linking to a missing page.
+4. Confirm the Business profile card opens `/seller/profile` and Manage products opens the delivered `/seller/products` route.
 5. Open `/seller/profile` in the latest Chrome at 1280 pixels or wider.
 6. Confirm the page shows status, display and legal names, seller URL name, GSTIN, PAN, invoice prefix, commission, approval date, registered address, support contacts, creation date, and update date.
 7. Confirm the commission says `Platform rate` for a seller whose `commissionBps` is null and never says zero.
@@ -139,13 +139,12 @@ Manual evidence: Deferred until the final combined Chrome and Safari pass reques
 24. A suspended seller normally cannot establish a usable session.
     Suspend a disposable seller from an administrator session and confirm its existing session is ended before protected seller content renders.
 25. Record browser versions, routes, viewports, and observed results here during the final combined browser pass.
-26. After T07 supplies `/seller/products`, confirm an approved overview links to catalogue management.
+26. Confirm an approved and a pending seller can both reach catalogue management from the overview.
 27. If every check passes, change `Status` to `complete`, change `Implemented` to `Yes`, and update T06 in `README.md` to `Yes`.
 
 Notes or deviations:
 
-- The plan asks an approved status to link to catalogue management, but `/seller/products` belongs to T07 and does not exist yet.
-  The overview shows an honest catalogue card without a dead link, and T07 must add the link when it delivers that route.
+- T07 now supplies `/seller/products`, and the seller overview links to it for approved and pending sellers.
 - Suspended seller sessions are revoked and `requireSeller` rejects any surviving session before the seller shell renders.
   The shared status presentation and profile component still support a suspended record for consistent display, while the access guard remains authoritative.
 - The current Vitest environment is Node-based and has no browser DOM or component-testing library.

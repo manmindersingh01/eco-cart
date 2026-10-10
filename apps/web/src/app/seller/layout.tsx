@@ -5,6 +5,7 @@ import { requireSellerPage } from '@/lib/page-auth'
 const navigation = [
   { href: '/seller', label: 'Overview' },
   { href: '/seller/profile', label: 'Business profile' },
+  { href: '/seller/products', label: 'Products' },
 ] as const
 
 export default async function SellerLayout({

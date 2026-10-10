@@ -48,12 +48,12 @@ export default async function SellerPage() {
           <Card className="flex flex-col items-start">
             <h3 className="text-lg font-semibold">Product catalogue</h3>
             <p className="mt-2 flex-1 text-sm text-muted">
-              Catalogue tools are the next portal feature. Your current status
-              determines when draft products can become public.
+              Create and manage draft product listings. Pending sellers can
+              prepare drafts while public selling waits for approval.
             </p>
-            <p className="mt-5 text-sm font-semibold text-muted">
-              Coming in the next frontend task
-            </p>
+            <LinkButton href="/seller/products" className="mt-5">
+              Manage products
+            </LinkButton>
           </Card>
         </div>
       </section>
