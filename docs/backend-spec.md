@@ -182,6 +182,7 @@ The five Better Auth tables (including `auth_rate_limits`) also have none, as th
 - **Database passwords are sent to PostgreSQL already hashed** (SCRAM-SHA-256), so a plain password never appears in a statement that the database might log.
 - **Tests use their own databases**, one per package (`ecokart_test_core`, `ecokart_test_web`, `ecokart_test_worker`), rebuilt from the real migrations at the start of every test run.
   The development database is never touched by tests, but the test setup sets the two database users' passwords to the example values, because users are shared by the whole server.
+  In a linked git worktree each name ends with the worktree's folder name (for example `ecokart_test_core_step_7`), and so does each test bucket, so several checkouts can run their tests at the same time without dropping each other's databases.
 
 ### Not in this step
 
@@ -766,3 +767,5 @@ Later the same day Ravi changes the stock of Soft to 95 without anything else ch
   Statements that had drifted were corrected (for example the row-level security table, the seller lifecycle, audit entries, and database checks).
   Where the code did not do what the documents promised, the code was fixed: plain messages for missing and wrong-type fields, GSTIN, PAN, and commission optional when creating a seller, the company GSTIN matching its state, Mailpit refused in production, the web app checking its settings at startup, accounts made through Better Auth's admin endpoint starting verified, and `pnpm admin:create` refusing a seller's owner.
   Tests were added for every "Done when" item that had none.
+- 11 October 2026: Test databases and buckets in a linked git worktree carry the worktree's folder name, so the remaining steps can be built in parallel checkouts without their test runs breaking each other.
+  Two checkouts running the core tests at once failed at random before (2 to 7 failed tests per run) and pass every time now.
