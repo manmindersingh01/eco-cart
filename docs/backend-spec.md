@@ -47,7 +47,7 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | 14 | GST invoices and PDFs | 6.6 | Planned |
 | 15 | Returns, refunds, seller ledger, and settlement CSV | 5.9, 6.5 | Planned |
 | 16 | Reviews and content pages | 5.10, 5.13 | Planned |
-| 17 | AI client, request log, cache, and daily limits | 3.2, 5.12 | Planned |
+| 17 | AI client, request log, cache, and daily limits | 3.2, 5.12 | Done |
 | 18 | Embeddings, natural-language search, image search, similar products | 6.8 | Planned |
 | 19 | AI listing builder from photos and AI-assisted import mapping | 6.2, 6.7 | Planned |
 | 20 | AI screening and the shopping assistant | 6.2, 6.9 | Planned |
@@ -140,7 +140,7 @@ Checkout, payment confirmation, order expiry, cancellation, and refunds run as `
 | `seller_ledger_entries` | The seller; full access | Full access (append only) |
 | `reviews` | Anyone, if published; the author; full access | The author; full access |
 | `catalogue_imports`, `catalogue_import_rows` | The seller; full access | Seller adds imports; the worker processes rows |
-| `ai_requests` | Shared cache rows (no user, no seller) for anyone; otherwise the owning user or seller; full access | Same |
+| `ai_requests` | Shared cache rows (no user, no seller) for anyone; otherwise the owning user or seller; full access | The same, but only rows still `queued` or `running` (step 17); full access |
 | `search_queries` | Full access | Anyone, for themselves or with no user (append only) |
 | `email_outbox` | Full access | Anyone may add a row; only the worker changes rows, to record sending |
 | `audit_logs` | Full access | Full access, or a signed-in user recording their own action (append only) |
@@ -738,6 +738,155 @@ Later the same day Ravi changes the stock of Soft to 95 without anything else ch
 - Tests prove every rule above, the summary fields after each kind of change, that one seller can never read or change another's product, the upload form's limits against real object storage, the image job from upload to stored sizes (including metadata removal and every failure reason), and every API answer.
 - `pnpm check` passes.
 
+## Step 17: AI client, request log, cache, and daily limits
+
+Status: Done (12 October 2026).
+
+### Goal
+
+Every AI feature in steps 18 to 20 reaches the models through one small client, and every call goes through one service that answers repeated questions from the cache, enforces the daily limits, and writes the call to `ai_requests` with its tokens, cost, and time.
+No AI feature is switched on in this step; it builds the road the later ones drive on.
+
+For example, in step 19 Ravi from Green Basket asks for a listing draft from three photos.
+The draft job finds that Green Basket has made 37 of its 100 calls today and the platform 812 of its 2000, records the call as `running`, sends the photos to DeepSeek V4.1 Flash through OpenRouter, checks the JSON reply against the draft's shape, and records the answer with its 2,140 input tokens, 380 output tokens, cost, and 4.2 seconds.
+Green Basket's 101st call of the day is refused with 429, "You have used today’s 100 AI calls; more are available after midnight India time", and nobody is called.
+
+### What gets built
+
+1. **A general "too many requests" error** in `packages/core/src/errors.ts`, for every limit in the app, not only AI.
+   - `new TooManyRequestsError(message, { resetAt })`, where `resetAt` (a `Date`, optional) is when the limit allows the next try.
+   - `handleErrors` answers 429 with `{ "error": message }`, and, when `resetAt` is given, a `Retry-After` header with the whole seconds until then (at least 1).
+   - The storefront lane's per-address search limit and the buyer lane's checkout limit throw the same error with the `resetAt` that `consumeRateLimit` returns.
+2. **One OpenAI-compatible HTTP client** in `packages/core/src/lib/ai/`, with no vendor SDK (design doc 3.2 and 4):
+   - `client.ts` posts JSON to `{base URL}/chat/completions` and `{base URL}/embeddings` with the API key and a time limit per call: 60 seconds unless the caller asks for less, for example a few seconds on a request-time path.
+     Every failure (no answer in time, a network error, or an error status) becomes an `AiProviderError` with a plain message: the provider's status and its own error text, never the key or the prompt.
+     The client does not retry these itself: jobs are retried by the queue, and request-time paths fall back instead of waiting.
+   - `chat.ts` has `TextModel.json(prompt, schema)` and `VisionModel.describe(images, prompt, schema)`.
+     A prompt is a system instruction, the user's text, and an example of the answer's shape.
+     The client adds one fixed line asking for a single JSON object shaped like the example, so every prompt contains the word "json" and an example, as DeepSeek's JSON mode requires.
+     The request asks for JSON mode (`response_format: { "type": "json_object" }`) and caps the answer at 2,000 tokens unless the caller sets another cap.
+     The reply is parsed and checked against the zod schema.
+     If it is not JSON, does not fit the schema, or was cut off at the cap, the client asks once more, showing the model its reply and what was wrong with it.
+     A second bad reply throws `AiReplyError`, so an unchecked answer is never returned.
+     Images are sent as `image_url` parts with the addresses the caller gives, which in production are the card-size photos on CloudFront.
+     Both return the checked answer with its usage: input and output tokens over both tries, and the cost when the provider reports one.
+   - `embed.ts` has `Embedder.embed(inputs, { inputType })`, which returns one vector per input; an input is a text or an image address.
+     It sends `input_type` (`search_document` for catalogue items, `search_query` for buyer queries) and `dimensions`, as OpenRouter's embeddings endpoint takes them.
+     A batch of only texts is sent as plain strings, which every OpenAI-compatible provider accepts; a batch with images uses the multimodal `content` form.
+     Every vector is checked to have exactly the configured size.
+   - `index.ts` has `createAiModels(settings)`, which builds the three from the AI settings.
+3. **The AI service** in `packages/core/src/modules/ai/service.ts`: `callAi(db, context, models, call)`, which every AI feature uses.
+   The call names its feature, which model it uses (text, vision, or embeddings), its seller and user if any, its input, how long a stored answer may be reused, the answer's schema, and the function that asks the model.
+   1. If AI is switched off, it stops with `NotConfiguredError` (503), "AI features are switched off".
+   2. **Cache.** The input hash is SHA-256 of the feature, the model, and the caller's input with its object keys sorted, so the same input always gives the same hash.
+      Callers put their prompt text in the input, so changing a prompt also changes the hash.
+      A `succeeded` row with the same feature and hash, for the same seller and user, and not older than the caller's cache lifetime, is returned without calling the model and without a new row.
+      Its stored answer is checked against the schema again, and an answer that no longer fits is treated as missing.
+      A call that gives no cache lifetime is never answered from the cache.
+   3. **Limits.** In one short transaction it takes an advisory lock, counts today's calls for the platform and for the seller, refuses with `TooManyRequestsError` if either limit is used up, and otherwise writes the row as `running`.
+      Counting and writing under one lock means two calls racing for the last call of the day cannot both get it.
+   4. The model is called after that transaction has committed, never inside it.
+   5. A second short transaction records `succeeded` with the answer, or `failed` with the error, together with the tokens, the cost in millionths of a US dollar (`cost_micro_usd`, empty when the provider reports none), the time taken, and `completed_at`.
+      The error is then thrown on to the caller.
+4. **Rules for the daily limits:**
+   - A day runs from midnight to midnight India time (Asia/Kolkata), so the limits reset when the sellers' day starts, not at 5:30 in the morning.
+     The refusal's `resetAt` is the next midnight India time.
+   - Every row in `ai_requests` is one call against the limits on the day it was created, whatever happened to it, because a failed call still reached the provider.
+     A cache hit costs nothing and is neither written nor counted.
+     A row whose answer needed the second try is still one call.
+   - What each feature counts against is fixed in one table in `modules/ai/service.ts` (`LIMIT_RULES`), for every value `ai_requests.feature` allows, so no later step needs to change the limit logic and no caller can leave a call out of a limit.
+     A test fails if the database allows a feature the table does not cover.
+   - A feature that counts against the seller must name its seller, or the call stops with a programming error.
+     A seller named on any other call only decides who may see the row and whose cache it uses.
+   - A limit of 0 switches that kind of call off.
+
+   | Feature | Step | Counts against | Row visible to |
+   | --- | --- | --- | --- |
+   | `listing_draft` | 19 | The seller and the platform | The seller |
+   | `import_mapping`, `import_fill` | 19 | The seller and the platform | The seller |
+   | `screening` | 20 | The platform only, so a seller who used up their calls can still submit for review | The seller (the row names them) and administrators |
+   | `nl_search`, `image_search`, `similar`, `assistant` | 18, 20 | The platform only | Shared (no seller, no user) |
+   | `embedding` | 18 | Nothing, but logged with its cost | Decided in step 18 |
+   | Any cache hit | All | Nothing, and no row is written | |
+
+   Buyer-facing calls carry no user id, so their answers are shared through the cache (for example one parsed "steel bottle under 500" serves every buyer for a day) and the log holds no buyer identity.
+   Per-address limits on those endpoints (design doc section 8) come with steps 18 and 20.
+5. **Database changes,** in two generated migrations and one hand-written one:
+   - The single `web_all` policy on `ai_requests` is split into `web_select` (unchanged: shared rows, the user's own, the seller's own, and full access), and `web_insert` and `web_update`, which allow the web app to write only rows that are still `queued` or `running`.
+     Once an answer is stored, the web app can no longer change it, so a mistake in any request path cannot overwrite a cached answer that other buyers would then be served.
+     The worker and administrators keep full access.
+   - `app.ai_calls_since(since, seller, platform features, seller features)`, a `SECURITY DEFINER` function that returns two numbers: the platform's and the seller's calls since a time, each counting only the features that count against it.
+     It is needed because row-level security lets a buyer's request see only shared rows and its own, so a count made from that request would be too low.
+     It never returns any row's content.
+   - `cost_micro_inr` is renamed `cost_micro_usd`, because OpenRouter reports the cost in its credits, which are US dollars.
+6. **A fake AI server for tests,** `startFakeAiServer()` in `@ecokart/core/testing`.
+   It answers `/chat/completions` and `/embeddings` in OpenRouter's format with the replies a test chooses, checks the API key, and records every request, so steps 18 to 20 are tested without a key or the network.
+   Next to it, `rejectionOf(call, ErrorClass)` returns the error a call failed with, already typed, so tests check its fields without casts.
+7. **Configuration and startup checks:** `loadAiConfig` in `packages/core/src/lib/ai/config.ts` reads the variables from design doc 3.2, and the web app (`apps/web/src/lib/settings.ts`) and the worker (`apps/worker/src/main.ts`, which passes the result to the jobs as `WorkerOptions.ai`) call it when they start, so a deploy with a wrong AI setting stops instead of failing on its first AI call.
+
+   | Variable | Rule |
+   | --- | --- |
+   | `AI_ENABLED` | Required, `true` or `false`. `false` switches every AI feature off: calls answer 503 "AI features are switched off", and the other AI variables are not read. |
+   | `AI_BASE_URL` | An address; in production `https` and not a local address, so the key is never sent in the clear and the test server can never be used |
+   | `AI_API_KEY` | At least 16 characters, and not a `development-only` example in production |
+   | `AI_CHAT_MODEL`, `AI_VISION_MODEL`, `AI_EMBED_MODEL` | Model names, for example `deepseek/deepseek-v4.1-flash` |
+   | `AI_EMBED_DIMENSIONS` | Must be 1024, the size of the `product_embeddings` column, because a different size would only fail when the first vector is stored |
+   | `AI_EMBED_BASE_URL`, `AI_EMBED_API_KEY` | Optional and set together; without them embeddings use the chat endpoint |
+
+   With `AI_ENABLED=true`, every missing variable is named in one message, for example "AI_API_KEY is required when AI_ENABLED is true", and an empty line in a `.env` file counts as missing.
+   The `.env.example` files of both programs hold the OpenRouter values with `AI_ENABLED=false`.
+   The `provider` written on each row comes from the base URL: `openrouter` for openrouter.ai, `deepseek` for api.deepseek.com, `local` for a local address, and the host name otherwise.
+8. **An administrator usage report,** `GET /api/admin/ai/usage?from=YYYY-MM-DD&to=YYYY-MM-DD` (India dates, the last 30 days by default, at most 92 days).
+   For each day and feature it gives the calls, the failed calls, the input and output tokens, and the cost, and it gives today's platform calls next to the platform limit.
+   This is the cost report from design doc 5.12, and the place where an administrator sees the limits working.
+
+### Smaller decisions made in this step
+
+- **The AI switch is its own variable** (decided 12 October 2026), `AI_ENABLED`, required in every environment.
+  Without it, a key missing in production would switch AI off and nobody would notice; with it, AI can still be switched off on purpose, for example at launch before the key arrives.
+- **Cost is stored in US dollars, as reported** (decided 12 October 2026), in whole millionths of a dollar like every other stored amount.
+  A chat call costs a few hundred millionths and a short embedding about two, so rounding moves each row by at most half a millionth and the report's totals stay accurate to far less than a cent.
+  Converting at a stored exchange rate was the alternative, but an old rate would quietly misstate every cost.
+- **Embeddings do not count against the daily call limits** (decided 12 October 2026).
+  One approved import of a few hundred products needs thousands of them, which alone would use up the platform's 2000 calls, while even 100,000 embeddings cost about $4.
+  They are still logged with their cost, and the OpenRouter credit limit stays the hard cap.
+- **JSON mode, not schema-enforced output** (decided 12 October 2026).
+  OpenRouter lists DeepSeek's own endpoint, which our routing prefers, with JSON mode but without schema-enforced output, so the schema would mostly be ignored.
+  Every answer is checked against its schema in code, which AGENTS.md requires anyway.
+- **The model's name is part of the cache key,** so moving to another model never serves an answer from the old one.
+- **Who writes a `queued` row** (an open question from planning, needed by steps 8, 19, and 20): the web app, in the same transaction that queues the job, so the seller's screen can follow the row's status and a used-up limit is refused at once with 429 instead of failing later in the worker.
+  The worker then runs that row.
+  Step 19 adds this on top of the same limit check; step 17 builds only calls that run at once.
+- **A call that reaches a used-up limit inside a job** gets the same `TooManyRequestsError` with `resetAt`; each job in steps 18 to 20 decides whether to wait until then (pg-boss `startAfter`) or fail visibly.
+- **The AI settings have their own loader in their own file** (`lib/ai/config.ts`), and their own lines in each program's startup check, so the Razorpay settings of step 12 can be added next to them without touching the same lines.
+- **The limit tests write the default number of calls** (100 for a seller, 2000 for the platform) instead of saving smaller limits, because the settings tests own `platform_settings` and empty it before each test.
+- **The client sets no routing or data policy in its requests.**
+  OpenRouter's data policy and the preference for DeepSeek's own endpoint are set on the client's OpenRouter account (design doc 3.2), so the same requests also work against DeepSeek directly.
+
+### Not in this step
+
+- Any AI feature: embeddings and search (step 18), the listing builder and import mapping (step 19), screening and the shopping assistant (step 20).
+- `queued` rows and running them in the worker (step 19).
+- Sending local photos inline: OpenRouter cannot reach `http://localhost:8333`, so steps 18 and 19 send a photo on a local address as a data URL when the AI base URL is not local.
+- Per-address limits on the AI endpoints (steps 18 and 20).
+- Screens for the usage report; the frontend comes after the backend steps.
+- Clearing old `ai_requests` rows; at a few thousand rows a day the table stays small for years.
+
+### Done when
+
+- On `pnpm dev`, both programs start with AI switched off and with AI pointed at the fake server, and refuse to start with a wrong AI setting, naming the variable.
+- Through the real API, an administrator reads the usage report after calls made through the service, and a buyer is refused.
+- Tests prove: the cost is recorded in millionths of a dollar and added up in the report; JSON replies are checked, retried once with the reason, and refused after a second bad reply; cut-off replies count as bad; usage and cost are added up over both tries; provider errors, time limits, and malformed responses become `AiProviderError` without the key; image parts and embedding batches have the right shape and vector sizes are checked; the cache hits only the same feature, model, input, seller, and user within its lifetime, and re-checks stored answers; the platform and seller limits refuse at the limit with the next India midnight as `resetAt`, count failed calls, and do not count cache hits; two calls racing for the last call of the day get one answer and one 429; the new policies stop the web app changing a stored answer; the counting function counts rows a buyer cannot see; the configuration rules; the 429 answer and its `Retry-After` header; and every answer of the usage report.
+- `pnpm check` passes.
+
+### Open points
+
+- An OpenRouter API key per environment, each with a credit limit, which is the hard cap behind the daily limits.
+- The client sets the OpenRouter account's data policy (no providers that train on prompts) and its preference for DeepSeek's own endpoint, and accepts the providers' data terms (design doc 10).
+- A DeepSeek direct key as the standby (design doc 3.2).
+- The client confirms the daily limits of 2000 calls for the platform and 100 per seller (open since step 3).
+- Once a key exists: check whether DeepSeek V4.1 Flash thinks before answering by default, which would make every short JSON task slower and dearer, and whether OpenRouter passes `dimensions` and `input_type` on to Voyage (OpenRouter lists no supported parameters for it; 1024 is also Voyage's default size, and the client checks every vector's size either way).
+
 ## Change log
 
 - 5 October 2026: File created and step 1 written.
@@ -769,3 +918,7 @@ Later the same day Ravi changes the stock of Soft to 95 without anything else ch
   Tests were added for every "Done when" item that had none.
 - 11 October 2026: Test databases and buckets in a linked git worktree carry the worktree's folder name, so the remaining steps can be built in parallel checkouts without their test runs breaking each other.
   Two checkouts running the core tests at once failed at random before (2 to 7 failed tests per run) and pass every time now.
+- 11 October 2026: Step 17 written.
+- 12 October 2026: Step 17 built.
+  While building it: the user chose a required `AI_ENABLED` switch, costs stored in US dollars as OpenRouter reports them (`cost_micro_inr` renamed `cost_micro_usd`), embeddings outside the daily call limits, and JSON mode with an example in every prompt; each feature's limit rule is fixed in one table, so steps 18 to 20 never change the limit logic; the limit tests write the default number of calls, because the settings tests own `platform_settings`.
+  The design doc was updated in the same change (sections 3.2, 4, and 5.12), and so was the row-level security table in step 1.

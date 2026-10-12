@@ -48,3 +48,17 @@ export class NotConfiguredError extends Error {
 export class ConflictError extends Error {
   override name = 'ConflictError'
 }
+
+/**
+ * 429: a limit is used up, for example a seller's AI calls for the day or a
+ * visitor's searches for the minute. `resetAt`, when known, is when the
+ * next try is allowed; the web app sends it as a Retry-After header.
+ */
+export class TooManyRequestsError extends Error {
+  override name = 'TooManyRequestsError'
+  readonly resetAt: Date | undefined
+  constructor(message: string, options: { resetAt?: Date } = {}) {
+    super(message)
+    this.resetAt = options.resetAt
+  }
+}

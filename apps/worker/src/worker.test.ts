@@ -30,6 +30,7 @@ const options = () => ({
   databaseUrl: requireEnv('DATABASE_URL'),
   notifications: loadNotificationConfig(),
   storage: loadStorageConfig(),
+  ai: null,
 })
 
 test('starts the job queue against the database and stops cleanly', async () => {

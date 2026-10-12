@@ -7,6 +7,7 @@ import {
   registerNotificationJobs,
   type StorageConfig,
 } from '@ecokart/core'
+import type { AiSettings } from '@ecokart/core'
 import { registerCatalogueJobs } from '@ecokart/core/worker'
 import { PgBoss } from 'pg-boss'
 
@@ -14,6 +15,11 @@ export interface WorkerOptions {
   databaseUrl: string
   notifications: ReturnType<typeof loadNotificationConfig>
   storage: StorageConfig
+  /**
+   * Null when AI_ENABLED is false. The AI jobs from step 18 on build their
+   * models from it.
+   */
+  ai: AiSettings | null
 }
 
 export interface RunningWorker {

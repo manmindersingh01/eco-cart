@@ -9,6 +9,7 @@ export {
   NotConfiguredError,
   NotFoundError,
   NotSignedInError,
+  TooManyRequestsError,
   ValidationError,
 } from './errors.ts'
 export { QUEUES } from './jobs.ts'
@@ -128,3 +129,36 @@ export {
   type StorageConfig,
   type UploadForm,
 } from './lib/storage.ts'
+// AI client, request log, cache, and daily limits (backend spec step 17).
+export {
+  AiProviderError,
+  AiReplyError,
+  type AiEndpoint,
+  type AiUsage,
+  type ModelReply,
+} from './lib/ai/client.ts'
+export type {
+  ChatOptions,
+  JsonPrompt,
+  TextModel,
+  VisionModel,
+} from './lib/ai/chat.ts'
+export {
+  EMBEDDING_DIMENSIONS,
+  type EmbedInput,
+  type EmbedInputType,
+  type Embedder,
+} from './lib/ai/embed.ts'
+export {
+  createAiModels,
+  type AiModels,
+  type AiSettings,
+} from './lib/ai/index.ts'
+export { loadAiConfig } from './lib/ai/config.ts'
+export { callAi, type AiAnswer, type AiCall } from './modules/ai/service.ts'
+export {
+  getAiUsage,
+  type AiUsageLine,
+  type AiUsageReport,
+} from './modules/ai/queries.ts'
+export type { AiFeature } from './modules/ai/types.ts'

@@ -62,7 +62,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - The worker refuses to start while a queue in `packages/core/src/jobs.ts` is missing, so a deploy that skipped `pnpm db:migrate` fails loudly.
 - Pages, server actions, and API routes call module services.
   They never write SQL themselves.
-- Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, conflict, validation, not configured), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
+- Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, conflict, validation, not configured, too many requests), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
 - Services check input with `parseInput` and the shared formats and `strictObject` in `packages/core/src/lib/validation.ts`, so every message is plain language.
 - A service that also changes a Better Auth account (through `AccountDirectory`) takes the database and runs its own transactions in a safe order; other services take a transaction.
 - The catalogue module splits its services by topic (`categories.ts`, `brands.ts`, `tree.ts`, `products.ts`, `images.ts`, `summary.ts`, `jobs.ts`) instead of one `service.ts`.
@@ -162,7 +162,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 
 ## AI features
 
-- Every AI call goes through `packages/core/src/lib/ai/`, one OpenAI-compatible HTTP client whose base URL, API key, and model names come from environment variables (`AI_BASE_URL`, `AI_API_KEY`, `AI_CHAT_MODEL`, `AI_VISION_MODEL`, `AI_EMBED_MODEL`, `AI_EMBED_DIMENSIONS`, see design doc section 3.2).
+- Every AI call goes through `packages/core/src/lib/ai/`, one OpenAI-compatible HTTP client whose base URL, API key, and model names come from environment variables (`AI_ENABLED`, `AI_BASE_URL`, `AI_API_KEY`, `AI_CHAT_MODEL`, `AI_VISION_MODEL`, `AI_EMBED_MODEL`, `AI_EMBED_DIMENSIONS`, see design doc section 3.2).
   Never import a vendor SDK anywhere else, and never hard-code a provider or model name outside that folder.
 - The gateway is OpenRouter (`https://openrouter.ai/api/v1`), decided by the client on 2 October 2026.
   Chat and vision use `deepseek/deepseek-v4.1-flash`; embeddings use `voyageai/voyage-multimodal-3.5` at 1024 dimensions.

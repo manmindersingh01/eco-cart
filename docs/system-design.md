@@ -92,11 +92,12 @@ Which model answers is decided by environment variables, so changing a model is 
 | --- | --- | --- | --- |
 | Chat (text in, JSON out) | `TextModel.json(prompt, schema)` validates the reply against a schema and retries once on invalid output | `deepseek/deepseek-v4.1-flash` | Listing text, import mapping, missing-content suggestions, query parsing, text screening, assistant |
 | Vision (images and text in, JSON out) | `VisionModel.describe(images, prompt, schema)` | `deepseek/deepseek-v4.1-flash` (accepts image input, 1M context) | Listing builder from photos, unusable-image screening |
-| Embeddings (text or image in, vector out) | `Embedder.embed(input)` returns a 1024-dimension vector | `voyageai/voyage-multimodal-3.5` with `dimensions: 1024` | Product text, product images, search queries, uploaded photos, similar products |
+| Embeddings (text or image in, vector out) | `Embedder.embed(inputs)` returns one 1024-dimension vector per text or image | `voyageai/voyage-multimodal-3.5` with `dimensions: 1024` | Product text, product images, search queries, uploaded photos, similar products |
 
 Configuration lives in environment variables, with the same names in staging and production.
 
 ```
+AI_ENABLED=true                          false switches every AI feature off (decided 12 October 2026)
 AI_BASE_URL=https://openrouter.ai/api/v1
 AI_API_KEY=<OpenRouter key for this environment>
 AI_CHAT_MODEL=deepseek/deepseek-v4.1-flash
@@ -110,11 +111,15 @@ How OpenRouter is used.
 
 - One API key per environment, each with a credit limit set in the OpenRouter dashboard.
   That limit is the hard cap behind the daily limits counted in `ai_requests`.
-- Chat requests ask for JSON with `response_format`.
-  OpenRouter advertises structured outputs for this model, so the client sends the JSON schema when the model accepts it, but every reply is still validated in code because enforcement varies by provider.
+- Chat requests ask for JSON mode with `response_format: { "type": "json_object" }`, and every prompt carries an example of the answer's shape.
+  The schema itself is not sent (decided 12 October 2026): OpenRouter lists DeepSeek's own endpoint, which our routing prefers, without schema-enforced output, so every reply is validated in code instead and asked for once more if it does not fit.
 - Image inputs are sent as `image_url` content parts pointing at the resized card-size image on CloudFront, never the original upload.
 - Embedding requests send `input_type: search_document` for catalogue items and `search_query` for buyer queries, and images as `image_url` content parts in the same request format.
 - The OpenRouter account's data policy is set to exclude providers that train on prompts, and routing prefers DeepSeek's own endpoint, so catalogue text goes to as few third parties as possible.
+- OpenRouter reports each call's cost in its credits, which are US dollars, and `ai_requests` stores it as reported, in millionths of a dollar (decided 12 October 2026).
+  DeepSeek direct reports tokens but no cost.
+- `AI_ENABLED` must be set in every environment, so AI can be switched off on purpose, for example at launch before the key arrives, and never by a key that went missing.
+  When it is `false`, every AI feature answers that it is switched off and the rest of the shop works as before.
 - A DeepSeek direct key is kept in Secrets Manager as the emergency switch.
   If OpenRouter is unreachable, pointing `AI_BASE_URL` at `https://api.deepseek.com` with model `deepseek-flash` restores chat and vision; embedding jobs simply wait in the queue until the gateway is back.
 
@@ -145,6 +150,7 @@ apps/
       api/brands/              active brands A to Z, for anyone
       api/admin/categories/    administrators build and change the category tree
       api/admin/brands/        administrators keep the list of brands
+      api/admin/ai/usage/      administrators see AI calls, tokens, and cost per day, and today's calls against the limit
       api/webhooks/razorpay/route.ts
     src/lib/                   api.ts (handleErrors, one HTTP answer per error), request-context.ts,
                                auth.ts, db.ts, queue.ts, storage.ts, sellers.ts, settings.ts
@@ -196,6 +202,7 @@ packages/
         client.ts      one OpenAI-compatible HTTP client; base URL, key, model from env
         chat.ts        TextModel and VisionModel on top of the chat client
         embed.ts       Embedder on top of the embeddings client
+        index.ts       builds the three models from the AI settings
 compose.yaml                   local PostgreSQL 16 with pgvector, Mailpit, and SeaweedFS (S3-compatible
                                object storage standing in for S3 and CloudFront), for development
 ```
@@ -761,7 +768,7 @@ ai_requests
   model          text
   input_hash     text   hash of the normalised input, used as a cache key
   input_tokens, output_tokens   int
-  cost_micro_inr bigint, nullable
+  cost_micro_usd bigint, nullable   as the provider reports it; OpenRouter bills in US dollars
   status         text   queued | running | succeeded | failed
   result         jsonb, nullable
   error          text, nullable
@@ -787,7 +794,15 @@ search_queries
 One table serves all three AI operating controls from the quotation.
 Counting rows per seller per day enforces the usage limits.
 Looking up `(feature, input_hash)` returns a cached result for repeated inputs.
-Summing tokens gives the cost report.
+Summing tokens and cost gives the cost report, which administrators read at `GET /api/admin/ai/usage`.
+
+How the limits count (backend spec step 17):
+
+- A day runs from midnight to midnight India time.
+- Every row is one call on the day it was created, including failed calls; a cache hit writes no row and counts against nothing.
+- Each feature's rule is fixed in the AI module: listing drafts and import mapping count against the seller and the platform; screening, search, similar products, and the assistant count against the platform only; embeddings count against neither, because one approved import needs thousands of them at a tiny fraction of a chat call's price, and they are still logged with their cost.
+- Counting and writing the row happen under one lock, so two calls racing for the last call of the day cannot both get it.
+- The web app may only write rows that are still `queued` or `running`, so no request can change an answer that other requests are served from the cache.
 
 ### 5.13 Platform
 
