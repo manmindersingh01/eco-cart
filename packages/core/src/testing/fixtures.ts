@@ -5,6 +5,7 @@ import {
   categories,
   orderItems,
   orders,
+  productImages,
   productVariants,
   products,
   sellers,
@@ -97,6 +98,7 @@ export async function createTestProduct(
   },
 ) {
   const suffix = uniqueSuffix()
+  const status = options.status ?? 'approved'
   const [product] = await db
     .insert(products)
     .values({
@@ -105,7 +107,10 @@ export async function createTestProduct(
       brandId: options.brandId ?? null,
       title: `Bamboo bottle ${suffix}`,
       slug: `bamboo-bottle-${suffix}`,
-      status: options.status ?? 'approved',
+      status,
+      // An approved product has been published (backend spec step 7).
+      publishedAt:
+        status === 'approved' || status === 'archived' ? new Date() : null,
       hsnCode: '3924',
       gstRateBps: 1800,
       minPricePaise: 50_000,
@@ -200,4 +205,30 @@ export async function createTestOrder(
     .returning()
 
   return { order: order!, items }
+}
+
+/**
+ * A photo of the product in the given state, as if the worker had processed
+ * it, so a listing can be submitted for review (backend spec step 7).
+ */
+export async function createTestPhoto(
+  db: Database,
+  productId: string,
+  status: 'processing' | 'ready' | 'failed' = 'ready',
+) {
+  const id = randomUUID()
+  const [photo] = await db
+    .insert(productImages)
+    .values({
+      id,
+      productId,
+      storageKey: `images/${id}`,
+      status,
+      ...(status === 'ready'
+        ? { contentHash: `hash-${id}`, width: 1200, height: 1200 }
+        : {}),
+      ...(status === 'failed' ? { failureReason: 'The file is damaged' } : {}),
+    })
+    .returning()
+  return photo!
 }

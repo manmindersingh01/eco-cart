@@ -122,6 +122,29 @@ export type {
   VariantView,
 } from './modules/catalogue/types.ts'
 export {
+  approveProduct,
+  archiveProduct,
+  getProductForReview,
+  listReviewQueue,
+  moveToDraft,
+  rejectProduct,
+  submitProduct,
+  takeDownProduct,
+} from './modules/catalogue/moderation.ts'
+export {
+  screenListing,
+  SCREEN_LISTING_QUEUE,
+  type ScreeningDependencies,
+} from './modules/catalogue/screening.ts'
+export type {
+  ProductForReview,
+  ReviewQueueItem,
+  ReviewView,
+  RiskLevel,
+  ScreeningFlag,
+} from './modules/catalogue/types.ts'
+export type { SellerLabel } from './modules/sellers/service.ts'
+export {
   createObjectStorage,
   loadStorageConfig,
   type ObjectStorage,

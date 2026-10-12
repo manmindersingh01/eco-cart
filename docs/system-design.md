@@ -140,11 +140,15 @@ apps/
       api/admin/settings/      administrators read and change platform settings
       api/admin/sellers/       administrators create, approve, suspend, and reinstate sellers
       api/seller/profile/      a seller's own business details and support contacts
-      api/seller/products/     a seller's listings, variants, stock, and photos
+      api/seller/products/     a seller's listings, variants, stock, and photos; submitting
+                               for review, moving back to draft, and archiving
       api/categories/          the visible category tree, for anyone
       api/brands/              active brands A to Z, for anyone
       api/admin/categories/    administrators build and change the category tree
       api/admin/brands/        administrators keep the list of brands
+      api/admin/moderation/    administrators' queue of listings waiting for review
+      api/admin/products/      administrators review one listing, approve or reject it, and
+                               take down a listing on sale
       api/webhooks/razorpay/route.ts
     src/lib/                   api.ts (handleErrors, one HTTP answer per error), request-context.ts,
                                auth.ts, db.ts, queue.ts, storage.ts, sellers.ts, settings.ts
@@ -158,11 +162,13 @@ packages/
     src/modules/
       auth/  catalogue/  cart/  checkout/  orders/  payments/  ledger/
       invoices/  returns/  search/  ai/  imports/  notifications/
-      moderation/  settings/  audit/  sellers/  rate-limits/
+      settings/  audit/  sellers/  rate-limits/
         (each module has service.ts, plus jobs.ts, types.ts, or config.ts where needed; the
          catalogue splits its services by topic: categories.ts, brands.ts,
          tree.ts for the in-memory category tree, products.ts, images.ts,
-         summary.ts for the summary fields on products, and jobs.ts)
+         summary.ts for the summary fields on products, moderation.ts for
+         submitting, reviewing, and archiving listings, screening.ts for the
+         screening job, and jobs.ts)
     src/db/
       pool.ts                  database connection pool
       client.ts                Drizzle database on top of the pool
@@ -388,7 +394,8 @@ products
   gst_rate_bps        int     copied from the category at approval, can be overridden
   status              text    draft | pending_review | approved | rejected | archived
   rejection_reason    text
-  published_at        timestamptz
+  published_at        timestamptz   first approval; an approved product also has its
+                                    GST rate and HSN code (a CHECK)
   -- denormalised read fields, maintained by the catalogue service on every write
   min_price_paise     bigint
   max_price_paise     bigint
@@ -443,16 +450,19 @@ product_moderation
   id             uuid PK
   product_id     uuid FK products
   submitted_at   timestamptz
-  ai_flags       jsonb   array of {code, detail}, e.g. price_above_mrp, prohibited_term
-  ai_risk        text    low | medium | high
+  ai_flags       jsonb   array of {code, detail}, e.g. prohibited_term, large_discount
+  ai_risk        text    low | medium | high, null until screening finishes
+  risk_rank      smallint GENERATED: 0 high, 1 medium, 2 low, 3 not screened yet
   ai_request_id  uuid FK ai_requests, nullable
-  decision       text    approved | rejected, nullable while open
-  decided_by     uuid FK users, nullable
-  decided_at     timestamptz
-  reason         text    shown to the seller on rejection
-  created_at
+  decision       text    approved | rejected | withdrawn (the seller took it back), nullable while open
+  decided_by     uuid FK users, nullable; the administrator, the seller who withdrew,
+                 or null when the system decided
+  decided_at     timestamptz, set exactly when decision is
+  reason         text    shown to the seller; required on rejection
+  created_at, updated_at
   INDEX (product_id, created_at DESC)
-  INDEX (created_at) WHERE decision IS NULL     the admin queue
+  INDEX (risk_rank, submitted_at, id) WHERE decision IS NULL     the admin queue
+  UNIQUE (product_id) WHERE decision IS NULL     one open review per product
 
 product_embeddings
   id            uuid PK
@@ -877,14 +887,25 @@ They cannot impersonate users, delete them, or set passwords or emails.
 ```
 draft -> pending_review -> approved
                         -> rejected -> (seller edits) -> pending_review
-approved -> archived
+approved -> archived                   the seller takes it off sale
+approved -> rejected                   an administrator takes it down, with a reason
+pending_review -> draft                the seller withdraws it to change it
+approved -> draft                      the seller changes it; off sale until approved again
+archived -> draft                      the seller brings it back to change and resubmit
 ```
+
+Listing details change only in `draft` and `rejected`; price, MRP, stock, and a variant's active flag change in every state.
 
 1. A seller creates a listing by hand, from photographs with the AI listing builder, or through a catalogue import. Every path produces a product in `draft`.
 2. On submit the product moves to `pending_review`, a `product_moderation` row is created, and a screening job runs.
-3. The screening job runs deterministic checks first (price above MRP, missing images or description, prohibited terms from platform settings), then asks the text model whether the title and description describe a prohibited category and the vision model whether any image is unusable (both DeepSeek V4.1 Flash through OpenRouter), and stores flags and a risk level on the moderation row.
-4. An administrator sees the queue sorted by risk, approves or rejects with a reason, and the decision is written to the moderation row, the product, and `audit_logs`.
-5. On approval the product's GST rate is copied from its category, its search text and summary fields are rebuilt, embeddings are queued, and the product page cache tag is revalidated.
+   A listing that could not be sold as it is (no ready photo, a photo still being processed, no active variant, no HSN code from the product or its category, or an inactive category or brand) is refused at once with a list of what to fix.
+3. The screening job runs deterministic checks first (prohibited terms from platform settings as whole words, a price 70% or more below its MRP, an empty description; the database already refuses a price above the MRP), then asks the text model whether the title and description describe a prohibited category and the vision model whether any image is unusable (both DeepSeek V4.1 Flash through OpenRouter), and stores flags and a risk level on the moderation row.
+4. An administrator sees the queue sorted by risk, highest first and then oldest first, approves (only once screening has finished) or rejects with a reason, and the decision is written to the moderation row, the product, and `audit_logs`.
+5. On approval the product's GST rate is copied from its category (an administrator may choose another current rate), its HSN code is its own or the category's default, its first publication time is set, its search text and summary fields are rebuilt, embeddings are queued, and the product page cache tag is revalidated.
+6. When a category's GST rate changes, its approved products that still have the old rate get the new one in the same transaction, with an audit entry; a rate an administrator chose at approval stays (decided 12 October 2026, for the client to confirm).
+   A new default HSN code does not change approved products, because a product's code may be the seller's own choice.
+7. A seller who withdraws a listing from review, or moves one on sale or archived back to draft, edits it and submits it again; a withdrawn review stays in the history.
+   An administrator can take down a listing that is on sale: it becomes `rejected` with a reason the seller sees, written to `audit_logs`.
 
 ### 6.3 Checkout and payment
 
@@ -988,6 +1009,7 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
   Neither the web nor the worker user can update or delete the seller ledger, order events, or audit log, and a trigger refuses those changes even to the owner.
 - The full list of row-level security rules is in `docs/backend-spec.md`, step 1.
 - Application code still checks permissions explicitly; row-level security is the safety net that makes a missed check a bug rather than a data leak.
+  In the same spirit, a database trigger refuses any change by the web app without full access that approves or rejects a product or sets its GST rate, so a seller can never approve their own listing.
 - Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, email codes stored hashed (phone codes get the same before SMS goes live), three attempts per code, and suspension through Better Auth's ban, which revokes every session of that user.
 - Better Auth rate limits its own endpoints (OTP sending and verification), with the counters in the database so the limits hold across web containers.
   A second limit caps the codes sent to any one email address or phone number.
@@ -1048,6 +1070,6 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | Roles | Open | One role per account; a seller uses a separate seller account | One account can be both buyer and seller |
 | Commission base | Open | Applied to the seller's line total after the coupon discount share | Applied before discounts |
 | Delivery revenue | Open | Delivery charge belongs to the platform | Passed through to sellers |
-| GST rates that depend on price | Open | Clothing and footwear are taxed at 5% up to ₹2,500 a piece and 18% above it. An optional price limit and higher rate on the category, applied to each order line from its own price at checkout. Needs the chartered accountant's agreement before approval copies rates onto products (backend spec, step 7). | A rate per product set by hand, or separate categories per price band |
+| GST rates that depend on price | Open | Clothing and footwear are taxed at 5% up to ₹2,500 a piece and 18% above it. An optional price limit and higher rate on the category, applied to each order line from its own price at checkout. Until the chartered accountant agrees, approval copies the category's single rate (backend spec, step 7); it must be settled before checkout freezes rates on order lines (step 12). | A rate per product set by hand, or separate categories per price band |
 
 Open rows are recommendations and are built as written unless the client decides otherwise.

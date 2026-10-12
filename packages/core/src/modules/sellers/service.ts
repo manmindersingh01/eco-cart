@@ -1,4 +1,4 @@
-import { desc, eq, sql } from 'drizzle-orm'
+import { desc, eq, inArray, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
 import { sellers } from '../../db/schema/index.ts'
@@ -588,4 +588,38 @@ export async function findSellerForOwner(
     throw new Error(`Seller ${row.id} has an unknown status ${row.status}`)
   }
   return { id: row.id, status: row.status }
+}
+
+/** A seller as lists in other modules show it, for example the review queue. */
+export interface SellerLabel {
+  id: string
+  displayName: string
+  status: SellerStatus
+}
+
+/**
+ * The name and status of each seller in `ids`, so other modules can show
+ * sellers without reading this module's table (backend spec step 7).
+ */
+export async function getSellerLabels(
+  tx: Transaction,
+  ids: string[],
+): Promise<Map<string, SellerLabel>> {
+  if (ids.length === 0) return new Map()
+  const rows = await tx
+    .select({
+      id: sellers.id,
+      displayName: sellers.displayName,
+      status: sellers.status,
+    })
+    .from(sellers)
+    .where(inArray(sellers.id, [...new Set(ids)]))
+  return new Map(
+    rows.map((row) => {
+      if (!isStatus(row.status)) {
+        throw new Error(`Seller ${row.id} has an unknown status ${row.status}`)
+      }
+      return [row.id, { ...row, status: row.status }]
+    }),
+  )
 }

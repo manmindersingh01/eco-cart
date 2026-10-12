@@ -1,5 +1,6 @@
 import type { QueueDefinition } from './lib/queue.ts'
 import { catalogueQueues } from './modules/catalogue/images.ts'
+import { screeningQueues } from './modules/catalogue/screening.ts'
 import { notificationQueues } from './modules/notifications/jobs.ts'
 
 /**
@@ -9,4 +10,5 @@ import { notificationQueues } from './modules/notifications/jobs.ts'
 export const QUEUES: QueueDefinition[] = [
   ...notificationQueues,
   ...catalogueQueues,
+  ...screeningQueues,
 ]

@@ -105,7 +105,7 @@ const definitions = {
   }),
   prohibited_terms: define({
     description:
-      'Words and phrases that flag a listing for review. Matching ignores upper and lower case.',
+      'Words and phrases that flag a listing for review. They match whole words, ignoring upper and lower case and punctuation, so "gun" flags "Toy-Gun" but not "begun"; add plural forms as their own terms.',
     schema: z
       .array(text(100))
       .max(500, 'can hold at most 500 terms')

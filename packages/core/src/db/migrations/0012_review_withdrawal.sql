@@ -1,0 +1,3 @@
+ALTER TABLE "product_moderation" DROP CONSTRAINT "product_moderation_decision_check";--> statement-breakpoint
+ALTER TABLE "product_moderation" ADD CONSTRAINT "product_moderation_decision_check" CHECK (decision in ('approved', 'rejected', 'withdrawn'));--> statement-breakpoint
+ALTER POLICY "web_update" ON "product_moderation" TO ecokart_web USING (app.has_full_access() or (decision is null and exists (select 1 from products p where p.id = product_moderation.product_id and p.seller_id = app.seller_id()))) WITH CHECK (app.has_full_access() or (decision = 'withdrawn' and exists (select 1 from products p where p.id = product_moderation.product_id and p.seller_id = app.seller_id())));
