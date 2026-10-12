@@ -69,13 +69,13 @@ describe('settings presentation', () => {
   test('associates backend issues with their company field', () => {
     const issues = [
       'gstin must contain the PAN as its 3rd to 12th characters',
-      'address.stateCode must be a two-digit GST state code, like 27',
+      'address.stateCode must be a GST state code, like 27 for Maharashtra',
     ]
     expect(issuesFor(issues, 'gstin')).toEqual([
       'must contain the PAN as its 3rd to 12th characters',
     ])
     expect(issuesFor(issues, 'address.stateCode')).toEqual([
-      'must be a two-digit GST state code, like 27',
+      'must be a GST state code, like 27 for Maharashtra',
     ])
   })
 })

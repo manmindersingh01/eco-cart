@@ -20,6 +20,7 @@ import { ApiError, apiRequest } from '@/lib/api-client'
 import {
   formatBasisPoints,
   formatIndianDate,
+  formatState,
   formatStatusLabel,
 } from '@/lib/format'
 
@@ -276,7 +277,7 @@ export function SellerDetailManager({
           <dl className="mt-4 grid gap-3 text-sm">
             <Detail
               label="Registered address"
-              value={`${seller.line1}, ${seller.city}, ${seller.stateCode} ${seller.pincode}`}
+              value={`${seller.line1}, ${seller.city}, ${formatState(seller.stateCode)} ${seller.pincode}`}
             />
             <Detail label="Support email" value={seller.supportEmail} />
             <Detail label="Support phone" value={seller.supportPhone} />
