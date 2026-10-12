@@ -1,5 +1,5 @@
 import { createDatabase, createPool, requireEnv } from '@ecokart/core'
-import { createTestUser } from '@ecokart/core/testing'
+import { createTestUser, testInvoicePrefixes } from '@ecokart/core/testing'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { z } from 'zod'
 import {
@@ -24,8 +24,12 @@ const owner = createDatabase(ownerPool)
 
 let adminCookie: string
 let buyerCookie: string
+// Invoice prefixes have only 4 characters, so the test database counts them
+// out instead of leaving them to chance.
+let freePrefixes: string[] = []
 
 beforeAll(async () => {
+  freePrefixes = await testInvoicePrefixes(owner, 20)
   const admin = await createTestUser(owner, 'admin')
   adminCookie = await signInWithEmail(owner, admin.email)
   buyerCookie = await signInWithEmail(
@@ -61,7 +65,7 @@ const newSellerBody = () => ({
   pincode: '560001',
   supportEmail: 'care@bamboohome.test',
   supportPhone: '+918012340002',
-  invoicePrefix: letters(),
+  invoicePrefix: freePrefixes.pop(),
   commissionBps: 800,
 })
 

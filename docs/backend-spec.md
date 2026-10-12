@@ -44,7 +44,7 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | 11 | Cart (guest and logged in) and coupons | 5.6 | Planned |
 | 12 | Checkout, Razorpay, webhook, payment confirmation, cash on delivery, order expiry | 6.3 | Planned |
 | 13 | Orders: buyer view, seller dispatch, delivery, cancellation | 6.4 | Planned |
-| 14 | GST invoices and PDFs | 6.6 | Planned |
+| 14 | GST invoices and PDFs | 6.6 | Done |
 | 15 | Returns, refunds, seller ledger, and settlement CSV | 5.9, 6.5 | Planned |
 | 16 | Reviews and content pages | 5.10, 5.13 | Planned |
 | 17 | AI client, request log, cache, and daily limits | 3.2, 5.12 | Planned |
@@ -161,7 +161,7 @@ The five Better Auth tables (including `auth_rate_limits`) also have none, as th
   The values are UTC, and only Better Auth reads them.
 - **`users.role` has a CHECK constraint** allowing `buyer`, `seller`, and `admin`, matching the one-role-per-account decision.
 - **`sessions.impersonated_by` is `text`**, not `uuid` as section 5.3 listed, because that is what Better Auth generates.
-- **Invoice prefixes are 1 to 6 capital letters or digits**, so a full invoice number can stay within the 16 characters GST allows (see the open points below).
+- **Invoice prefixes are 1 to 4 capital letters or digits** (6 until step 14), so a full invoice number stays within the 16 characters GST allows (see the open points below).
 - **State codes are the two-digit GST state codes** (for example `27` for Maharashtra), because the first two digits of a GSTIN use the same codes and GST place of supply is decided by comparing them.
 - **Money in TypeScript** is read from the `bigint` columns as a JavaScript `number` holding whole paise.
   That is exact up to about ₹90 lakh crore, far beyond any order, and avoids converting `BigInt` values for JSON.
@@ -203,6 +203,7 @@ The five Better Auth tables (including `auth_rate_limits`) also have none, as th
 - GST rules limit an invoice number to 16 characters.
   The format in section 5.7, `{seller prefix}/{FY}/{sequence}` with a year like `2026-27`, can go over that.
   Step 14 will propose a shorter format (for example `ABC/2627/000123`) for the client's chartered accountant to confirm.
+  Decided in step 14: `GRB/2627/000041`, with prefixes of at most 4 characters.
 - An OTP email queued in `email_outbox` would hold the code in plain text in the payload.
   Resolved in step 2: the code is encrypted before it is stored and removed once sent.
 
@@ -436,11 +437,11 @@ If Green Basket is suspended for fake listings, Ravi is signed out everywhere, c
      It always lifts the ban, which also repairs a ban left over from an earlier reinstatement that failed halfway.
    - **Repeating an action** (approving an approved seller, suspending a suspended one, reinstating one that is not suspended) changes nothing and answers 200.
      Approving a suspended seller answers 409.
-   - **Edit** (administrators): any business detail, except that the invoice prefix is fixed once the first invoice exists (changing it then answers 409), and the GSTIN and PAN cannot be removed while the seller is approved.
+   - **Edit** (administrators): any business detail, except that the invoice prefix is fixed once the first invoice exists (changing it then answers 409), and the GSTIN and PAN cannot be removed once the seller has been approved, even while suspended (since step 14).
      An empty change answers 400.
    - **Edit own contacts** (the seller): display name, support email, and support phone only.
      Legal and tax details stay with administrators, because they print on invoices.
-2. **Checks on every detail:** GSTIN and PAN formats, the PAN inside the GSTIN, the GSTIN's first two digits matching the state of the address, PIN code, phone numbers, a unique invoice prefix of 1 to 6 capital letters or digits, and a commission between 0% and 100%.
+2. **Checks on every detail:** GSTIN and PAN formats, the PAN inside the GSTIN, the GSTIN's first two digits matching the state of the address, PIN code, phone numbers, a unique invoice prefix of 1 to 4 capital letters or digits (6 until step 14), and a commission between 0% and 100%.
 3. **A seller's web address name (slug)** is made from the display name, for example `green-basket`, with `-2`, `-3` added if it is taken.
    "&" becomes "and", the slug is cut at 60 characters, and a name with no Latin letters or digits becomes `seller`.
    It does not change when the display name changes, so links keep working.
@@ -450,7 +451,21 @@ If Green Basket is suspended for fake listings, Ravi is signed out everywhere, c
    Seller accounts are made only through the seller flow above, so a seller account always has a business.
 7. **Audit entries** for `seller.create`, `seller.update`, `seller.approve`, `seller.suspend`, and `seller.reinstate` (administrator), and `seller.update_contacts` (the seller).
    A create records the new details; every other entry records the values before and after, and an edit only the fields it changed.
-8. **API:**
+8. **Cancelling invoices** with `cancelInvoices`, for an order cancelled before dispatch (decided 12 October 2026).
+   Step 13's cancellation calls it inside its own transaction, which runs as `system` and holds the order's row lock:
+
+   ```ts
+   cancelInvoices(tx: Transaction, queue: JobQueue, input: { orderId: string; reason: string }): Promise<IssuedInvoice[]>
+   // reason: 1 to 500 characters, printed on the PDF, for example "Cancelled by the buyer before dispatch"
+   // returns the invoices this call cancelled; none when they were cancelled already
+   ```
+
+   It marks every invoice of the order cancelled, with the time and reason, and keeps its number used, as GST requires; GST returns list such invoices as cancelled.
+   Each PDF is made again with a "This invoice is cancelled" notice, the date and reason, and a light "CANCELLED" mark across the page.
+   Until the new PDF exists, the old one cannot be downloaded (409), and the invoice lists show the cancellation.
+   Calling it again changes nothing, and an order whose invoices were cancelled is never invoiced again.
+   GST credit notes for returns stay out of scope, as quotation 4.0 defers them.
+9. **API:**
 
    | Method and path | Who | What |
    | --- | --- | --- |
@@ -738,6 +753,191 @@ Later the same day Ravi changes the stock of Soft to 95 without anything else ch
 - Tests prove every rule above, the summary fields after each kind of change, that one seller can never read or change another's product, the upload form's limits against real object storage, the image job from upload to stored sizes (including metadata removal and every failure reason), and every API answer.
 - `pnpm check` passes.
 
+## Step 14: GST invoices and PDFs
+
+Status: Done (12 October 2026).
+The decisions below were taken on 12 October 2026 with the recommended options; the client's chartered accountant still confirms the format (open points).
+
+### Goal
+
+Every confirmed order gets one GST invoice from each seller in it, numbered from that seller's own sequence, with everything the invoice prints frozen at the moment it is issued.
+The worker turns each invoice into a PDF, and the buyer, the issuing seller, and administrators download it through a link that works for five minutes.
+
+For example, Asha in Pune orders a bamboo toothbrush pack from Green Basket (Maharashtra) and a steel bottle from Bamboo Home (Karnataka).
+When her payment is confirmed, Green Basket issues invoice `GRB/2627/000041` with CGST and SGST, because seller and buyer are both in Maharashtra, and Bamboo Home issues `BMH/2627/000007` with IGST, because the bottle crosses a state border.
+A minute later both PDFs are ready.
+Asha downloads both from her order, and each seller sees only their own invoice in their invoice list.
+
+### What gets built
+
+1. **Issuing invoices** with `issueInvoices` in `packages/core/src/modules/invoices/service.ts`.
+   Payment confirmation (`confirmOrderPayment`, step 12) calls it inside its own transaction, after it marks the order `confirmed`; cash on delivery confirms at checkout, so checkout calls it there.
+   The transaction runs as `system` and already holds the order's row lock, so two confirmations of one order take turns.
+   The `orders`, `order_items`, and `payments` tables belong to the orders and payments modules, so the caller hands over the order's frozen details and the invoices module never reads those tables.
+   For each seller in the order, in order of seller id, it:
+   - takes the seller's next invoice number (item 2);
+   - freezes what the invoice prints: the seller's legal name, trade name, GSTIN, address with state name and code, and support contacts; the buyer's name and delivery address with state name and code; the order number, order date, and payment method; and the seller's order lines;
+   - also freezes the buyer's account id, which is never printed, so the invoices module can tell who may download the invoice without reading the orders tables;
+   - chooses the tax split: CGST plus SGST when the seller's state code equals the delivery address's state code, and IGST otherwise, with the delivery state as the place of supply;
+   - saves the `invoices` row and queues its PDF job in the same transaction.
+
+   Running it again for the same order issues nothing new and returns the invoices that exist, so a replayed confirmation can never use up a second number.
+   The signature is fixed now, so step 12 can rely on it:
+
+   ```ts
+   issueInvoices(tx: Transaction, queue: JobQueue, order: OrderToInvoice): Promise<IssuedInvoice[]>
+
+   interface OrderToInvoice {
+     orderId: string
+     orderNumber: string
+     placedAt: Date
+     paymentMethod: 'razorpay' | 'cod'
+     buyer: {
+       userId: string
+       name: string                            // orders.buyer_name
+       shippingAddress: ShippingAddressSnapshot // orders.shipping_address; the phone is not printed
+     }
+     // The lines to invoice, in the order the buyer sees them, without cancelled ones.
+     // Rows of order_items fit as they are.
+     lines: {
+       id: string; sellerId: string; title: string; sku: string; options: Record<string, string>
+       hsnCode: string; gstRateBps: number; unitPricePaise: number; quantity: number
+       lineTotalPaise: number; discountSharePaise: number; taxablePaise: number; taxPaise: number
+     }[]
+   }
+   // IssuedInvoice is { id: string; sellerId: string; invoiceNumber: string }
+   ```
+
+   The input is checked against this shape, so a mistake in the caller fails loudly instead of printing a wrong invoice.
+
+2. **Invoice numbers** come from the seller's own sequence (`sellers.invoice_seq` and `invoice_seq_fy`), through `takeInvoiceNumber`, added at the end of `modules/sellers/service.ts` because the sellers module owns those columns.
+   It is one conditional `UPDATE` that adds one to the sequence, or starts again at 1 when the Indian financial year (1 April to 31 March, counted in Asia/Kolkata) has changed, and returns the seller's details in the same statement.
+   The row lock it takes makes two confirmations for the same seller wait for each other, so numbers follow each other with no gaps and no repeats, and a confirmation that rolls back gives its number back.
+   The sequence never goes back to 0, which step 4's rule for changing the prefix depends on, and never moves back to an earlier year.
+   The format is `{prefix}/{financial year}/{sequence}`, for example `GRB/2627/000041` for Green Basket's 41st invoice of 2026-27: a prefix of 1 to 4 capital letters or digits, the year as four digits, and a six-digit sequence (999,999 invoices a year per seller).
+   That is at most 16 characters, as GST Rule 46 requires; the design's year written as `2026-27` would have reached 21.
+   Seller invoice prefixes are therefore at most 4 characters (step 4 allowed 6): creating or editing a seller with a longer one answers 400 with "invoicePrefix must be 1 to 4 capital letters or digits", and the database refuses it too.
+   Decided 12 October 2026; the chartered accountant confirms (open point 1).
+3. **Invoice lines** keep the order line's frozen values: title, options, SKU, HSN code, quantity, unit price, discount share, taxable value, GST rate, tax, and total.
+   Within one state, the tax of each line is split in two: CGST is half the line's tax rounded down to the paisa, and SGST is the rest, so the two always add up to the tax frozen on the order line.
+   For example, a line with ₹76.27 of tax shows CGST ₹38.13 and SGST ₹38.14.
+   The invoice totals are the sums of its lines.
+4. **The PDF** is made by a worker job (`invoices.render-pdf`) from the invoice row alone, with a template that is plain data, so the layout can change without touching order data (design doc section 10).
+   It prints:
+   - the title: "Tax Invoice", or "Bill of Supply" when every line is at 0% GST, or "Invoice-cum-Bill of Supply" when only some are;
+   - the invoice number and date, the order number and date, and the payment method;
+   - the seller (sold by) and the buyer (bill to and ship to), each with state name and code;
+   - the place of supply, and that tax is not payable on reverse charge;
+   - the lines with HSN codes, rates, and tax, then the totals and the total in words in Indian numbering, for example "Rupees One Lakh Two Thousand and Fifty Paise Only";
+   - a note that the invoice is computer generated, the authorised signatory line, and page numbers.
+
+   The file is stored privately at `invoices/{sellerId}/{invoiceId}.pdf` (`-cancelled.pdf` once cancelled, item 8), and `pdf_storage_key` is set once it is written.
+   A failed attempt is retried five times over about fifteen minutes.
+   The PDF library is pdfmake 0.3, loaded only from `@ecokart/core/worker`, with the Noto Sans font, which has the rupee sign.
+5. **Downloads through a short-lived signed link:** a new `ObjectStorage.createDownloadUrl(key, { expiresInSeconds, fileName })` signs a download of one private object and tells the browser to save it as `fileName`.
+   Invoice links last five minutes.
+   Step 8's import error report and step 15's statements use the same method.
+6. **Who sees an invoice:** the buyer of the order (by the account id frozen in the invoice), the issuing seller, and administrators, checked in the service and again by row-level security.
+   Anyone else gets 404 for an invoice and an empty list for an order, so neither reveals anything.
+   A seller never sees another seller's invoice, even for the same order.
+7. **Making a PDF again** (administrators): queues the PDF job again for one invoice, for example after the template changes, with the audit entry `invoice.render`.
+   The frozen data never changes, only the file.
+8. **API:**
+
+   | Method and path | Who | What |
+   | --- | --- | --- |
+   | `GET /api/invoices?orderId=` | Anyone signed in | The order's invoices the caller may see, each saying whether its PDF is ready and whether it was cancelled; an empty list for anyone else |
+   | `GET /api/invoices/{id}/pdf` | The buyer, the issuing seller, an administrator | Redirects (302) to a five-minute signed link to the PDF; 409 while the PDF is still being made |
+   | `GET /api/seller/invoices?cursor=&limit=` | The seller | Their own invoices, newest first, 20 a page by default and at most 100 |
+   | `POST /api/admin/invoices/{id}/render` | Administrator | Makes the PDF again (202) |
+
+10. **Database changes,** in three migrations:
+    - `0010_invoice_rules`: an index on `invoices (seller_id, issued_at, id)` for the seller's list; checks that an invoice number is at most 16 capital letters, digits, `/`, or `-`, and that `lines` is a list with at least one line; and a check that a seller who has ever been approved keeps a GSTIN and a PAN.
+      That last check closes a gap in step 4: a suspended seller's GSTIN could be removed and the seller then reinstated without one, which would make an approved seller who cannot issue invoices; `updateSeller` now refuses that removal too.
+    - `0011_invoice_prefix_length_guard` (hand-written): stops `pnpm db:migrate` with a plain message naming any seller whose prefix is longer than 4 characters, without changing any data.
+      An administrator gives each a shorter prefix (allowed until the seller's first invoice), and the migration then runs.
+    - `0012_invoice_prefix_and_cancellation`: invoice prefixes of 1 to 4 characters, and `invoices.cancelled_at` and `cancel_reason`, set together or not at all.
+
+### Smaller decisions made in this step
+
+- **The invoice row and its number are created in the confirmation transaction, and only the PDF waits for the worker.**
+  Design doc 6.6 takes the number inside the confirmation transaction, and 6.3 step 7 says confirmation "queues one invoice per seller"; this reads the two together.
+  A number taken in a background job could leave a gap when the job failed, and GST needs numbers without gaps.
+- **Locks are always taken in the same order:** the order row first (taken by the caller), then each seller's row in order of seller id, so two confirmations that share sellers never deadlock.
+- **A caller that forgets the order's lock cannot number an order twice.**
+  The unique rule of one invoice per order and seller refuses the second confirmation with a 409, and its number goes back with its rollback.
+- **The invoice date is the time of the confirmation transaction,** and the financial year comes from that time in Asia/Kolkata.
+  A confirmation that started at 23:59:59 on 31 March and reaches the sequence after one dated 1 April is refused with a 409 instead of being numbered in the wrong year, and its retry is numbered in the new year.
+  This can happen only within the same second around midnight.
+- **The seller's details are read while their sequence row is locked,** so the invoice shows the details valid at that moment, and later edits never change it.
+- **The buyer's phone number and email are not printed.**
+  GST does not ask for them, and buyers pass invoices on, for example for a warranty claim.
+- **State names** come from a short list of GST state codes in the invoices module and are frozen into the invoice.
+  Step 10 (buyer lane) adds the platform's own list, and the two are merged then.
+- **Invoice lines follow the order the caller gives them,** which is the order the buyer sees.
+- **`issueInvoices` checks that its transaction runs with full access** and stops with a clear error otherwise.
+  Row-level security would hide the sellers' sequence rows from any other context, and the numbering would then fail with a misleading message.
+- **pdfmake rather than PDFKit on its own.**
+  A pdfmake document is plain data, so the template is a function that tests can check without making a PDF, and pdfmake breaks long tables across pages and repeats their header row.
+  It uses PDFKit underneath.
+  It may read only the font files and never fetches anything from the network.
+- **pdfmake's type definitions are patched** (`patches/` and `patchedDependencies` in `pnpm-workspace.yaml`) to drop their reference to the browser's DOM types.
+  That reference made the browser's globals available to every Node file in `packages/core` and broke two existing tests' types.
+- **Tests read the text back out of each PDF** with unpdf (a test-only dependency), so they check what a reader sees, rupee sign included, not only the data that went in.
+- **The fonts are committed** in `packages/core/assets/fonts/` with their licence (SIL Open Font License), taken from the Noto project's official repository.
+  They are the unhinted files, about 430 KB each, because a PDF has no use for hinting.
+- **A PDF made again replaces the old file at the same address,** so the invoice keeps one file for each state.
+- **A cancelled invoice's PDF is a file of its own,** and the job records a file only if the invoice is still in the state the file shows.
+  Otherwise a PDF made just before the cancellation could finish last and replace the cancelled one.
+- **`pnpm db:migrate` prints the database's own message first** when a migration fails, so a migration's plain explanation, such as the prefix guard's, is the first line instead of being buried under the migration's SQL.
+- **Tests count out invoice prefixes** from a sequence that only test databases have, because random 4-character prefixes would collide now and then between test files running at once.
+- **A failed PDF is not recorded on the invoice.**
+  The job retries, and the worker logs the invoice id when it gives up.
+  Until the file exists, the invoice list shows it as not ready and the download answers 409, and an administrator can make it again.
+
+### Not in this step
+
+- Calling `issueInvoices` from payment confirmation and from cash on delivery checkout (step 12).
+  Whichever of steps 12 and 14 merges second adds that one call.
+  Until then, tests and the end-to-end check issue invoices for orders made with the test fixture, the same way step 12 will (`orderToInvoiceFor` in the test fixtures builds the input from the order's rows).
+- Showing invoices on the order screens (step 13); `listOrderInvoices` is ready for them.
+- GST credit notes, which quotation 4.0 defers to a later phase (its section 7).
+  A return is refunded in Razorpay and recorded in EcoKart (step 15), and the seller raises any credit note in their own accounts.
+- Calling `cancelInvoices` from order cancellation (step 13).
+- EcoKart's own invoices, for the delivery charge to buyers and for commission to sellers (open point 3).
+- Emailing invoices; buyers download them from their order.
+- Invoices to business buyers with a GSTIN; the launch sells to consumers.
+- E-invoicing (IRN and QR code), which applies only to sellers with a turnover above ₹5 crore.
+
+### Done when
+
+- On `pnpm dev`, the way step 12 will do it: an order delivered in Maharashtra, with lines from a Maharashtra seller and a Karnataka seller, gets two invoices, one with CGST and SGST and one with IGST, numbered from each seller's sequence.
+  The worker writes both PDFs, the buyer lists and downloads them through the API, and the PDF opens and reads correctly, rupee sign included.
+  Each seller lists and downloads only their own, another buyer gets 404, and an administrator makes one again.
+  When the order is cancelled the way step 13 will do it, both invoices are marked cancelled and their PDFs say so.
+- An administrator creating a seller with a 5-character prefix gets a 400 with a plain message, and on a copy of a database with such a seller, `pnpm db:migrate` stops with a message naming it and runs once its prefix is shortened.
+- Tests prove: numbering per seller and per year, including the reset to 1 in a new year and refusing an earlier year; two confirmations racing for one seller's number get consecutive numbers; two confirmations of the same order make one set of invoices, and without the order's lock the second is refused; two orders sharing two sellers never deadlock; cancelling marks every invoice, keeps the numbers, makes the PDFs again, changes nothing a second time, and a PDF made just before a cancellation never replaces the cancelled one; the frozen details do not change when the seller or product changes later; the tax split, its rounding, and the totals; the document titles; amounts in words; the PDF's contents; the signed link against real object storage; who can see what, in the service and in row-level security; and every API answer.
+- `pnpm check` passes.
+
+### Open points found in this step
+
+1. **The invoice number format** `GRB/2627/000041`, with prefixes of at most 4 characters, was decided on 12 October 2026 over the alternative `GREENB/26/000041`.
+   The chartered accountant should still confirm it before the first real invoice.
+2. **Invoices of cancelled orders** are marked cancelled, keep their numbers, and get a new PDF that says so (decided 12 October 2026).
+   The chartered accountant should confirm that this, rather than a credit note, suits orders cancelled before dispatch.
+3. **EcoKart's own invoices,** decided on 12 October 2026 to be outside step 14 and left to the client's chartered accountant.
+   If the delivery charge belongs to EcoKart (design doc section 11), EcoKart supplies the delivery and should invoice it to the buyer with GST; and the commission EcoKart charges sellers normally needs an invoice to each seller.
+   Neither is in the quotation or the design doc.
+4. **For the chartered accountant to confirm:** the printed fields and layout; the rounding of the CGST and SGST split; the "Bill of Supply" and "Invoice-cum-Bill of Supply" titles for 0% lines, numbered in the same series; the note that the invoice is computer generated instead of a signature; and quantities printed without a unit, because the catalogue does not record units.
+5. **Coupon discounts** lower the taxable value on the seller's invoice, as the order lines record them.
+   If EcoKart pays for a coupon rather than the seller, the chartered accountant should confirm this.
+6. **Names and addresses in Hindi.**
+   Noto Sans has no Devanagari letters, so a name or address typed in Hindi would print as empty boxes.
+   Supporting it means switching fonts letter by letter; a post-launch item unless the client expects Hindi addresses at launch.
+7. **Tax collected at source.**
+   As a marketplace, EcoKart must collect tax at source (TCS) on sellers' sales and file its own return for it (CGST Act section 52).
+   It does not change the seller's invoice, but it changes what each seller is paid, so the chartered accountant should confirm it before step 15 builds the settlement statement.
+
 ## Change log
 
 - 5 October 2026: File created and step 1 written.
@@ -769,3 +969,13 @@ Later the same day Ravi changes the stock of Soft to 95 without anything else ch
   Tests were added for every "Done when" item that had none.
 - 11 October 2026: Test databases and buckets in a linked git worktree carry the worktree's folder name, so the remaining steps can be built in parallel checkouts without their test runs breaking each other.
   Two checkouts running the core tests at once failed at random before (2 to 7 failed tests per run) and pass every time now.
+- 11 October 2026: Step 14 written, with the signature of `issueInvoices` that step 12 calls.
+  Three decisions wait for the client: the invoice number format, what happens to the invoice of a cancelled order, and EcoKart's own invoices for delivery and commission.
+- 11 October 2026: Step 14 built, except the parts that wait for those decisions.
+  While building it: a seller who has been approved can no longer lose their GSTIN or PAN, even while suspended (a gap in step 4 that would have let a reinstated seller sell without being able to invoice); `issueInvoices` checks it runs in a system transaction; pdfmake's type definitions are patched so the browser's types stay out of `packages/core`; and tests read the text back out of each PDF.
+  The design doc was updated in the same change (sections 3, 4, 5.4, 5.7, 6.6, and 11).
+- 11 October 2026: After the planning pass's coordination notes, `issueInvoices` takes the confirmed order's frozen details from its caller instead of reading the orders tables, which the orders and payments modules own.
+  The buyer's account id is frozen in the invoice for download checks, the caller holds the order's row lock, and `takeInvoiceNumber` moved into `modules/sellers/service.ts`.
+- 12 October 2026: The client's three step 14 decisions arrived, all as recommended: invoice numbers like `GRB/2627/000041` with prefixes of at most 4 characters, cancelled invoices marked cancelled through `cancelInvoices` for step 13, and EcoKart's own invoices left to the chartered accountant.
+  Built the same day: the 4-character prefix rule (with a migration that first names any seller whose prefix is too long), `cancelInvoices` with its cancelled PDF, a plain first line from `pnpm db:migrate` when a migration fails, and counted invoice prefixes in tests.
+  The design doc was updated in the same change (sections 5.4, 5.7, 6.6, and 11).

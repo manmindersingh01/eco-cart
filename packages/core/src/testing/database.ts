@@ -26,7 +26,23 @@ export async function recreateTestDatabase(
       webPassword: TEST_WEB_PASSWORD,
       workerPassword: TEST_WORKER_PASSWORD,
     })
+    await createTestCounters(database.migrationUrl)
   } finally {
     await server.end()
+  }
+}
+
+/**
+ * Counters that only test databases have. Invoice prefixes have just 4
+ * characters, so random ones would collide now and then between test files
+ * running at once; `testInvoicePrefixes` counts them here instead.
+ */
+async function createTestCounters(migrationUrl: string): Promise<void> {
+  const client = new Client({ connectionString: migrationUrl })
+  await client.connect()
+  try {
+    await client.query('create sequence test_invoice_prefixes')
+  } finally {
+    await client.end()
   }
 }

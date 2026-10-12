@@ -71,6 +71,27 @@
       "when": 1791235801139,
       "tag": "0009_variant_order",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791710137271,
+      "tag": "0010_invoice_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791797082556,
+      "tag": "0011_invoice_prefix_length_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791797097728,
+      "tag": "0012_invoice_prefix_and_cancellation",
+      "breakpoints": true
     }
   ]
 }

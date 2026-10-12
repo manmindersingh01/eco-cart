@@ -348,11 +348,33 @@ export const invoices = pgTable(
     totalPaise: paise('total_paise').notNull(),
     lines: jsonb('lines').notNull(),
     pdfStorageKey: text('pdf_storage_key'),
+    // Set when the order is cancelled before dispatch; the number stays used.
+    cancelledAt: timestamptz('cancelled_at'),
+    cancelReason: text('cancel_reason'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     unique('invoices_order_id_seller_id_key').on(t.orderId, t.sellerId),
+    // The seller's invoice list: newest first (backend spec step 14).
+    index('invoices_seller_id_issued_at_idx').on(
+      t.sellerId,
+      t.issuedAt.desc(),
+      t.id.desc(),
+    ),
+    // GST Rule 46: at most 16 letters, digits, "/" and "-".
+    check(
+      'invoices_invoice_number_check',
+      sql`invoice_number ~ '^[A-Z0-9][A-Z0-9/-]{0,15}$'`,
+    ),
+    check(
+      'invoices_cancellation_check',
+      sql`(cancelled_at is null) = (cancel_reason is null)`,
+    ),
+    check(
+      'invoices_lines_check',
+      sql`case when jsonb_typeof(lines) = 'array' then jsonb_array_length(lines) > 0 else false end`,
+    ),
     check(
       'invoices_place_of_supply_check',
       sql`place_of_supply_state_code ~ '^[0-9]{2}$'`,

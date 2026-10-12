@@ -1,0 +1,4 @@
+CREATE INDEX "invoices_seller_id_issued_at_idx" ON "invoices" USING btree ("seller_id","issued_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+ALTER TABLE "invoices" ADD CONSTRAINT "invoices_invoice_number_check" CHECK (invoice_number ~ '^[A-Z0-9][A-Z0-9/-]{0,15}$');--> statement-breakpoint
+ALTER TABLE "invoices" ADD CONSTRAINT "invoices_lines_check" CHECK (case when jsonb_typeof(lines) = 'array' then jsonb_array_length(lines) > 0 else false end);--> statement-breakpoint
+ALTER TABLE "sellers" ADD CONSTRAINT "sellers_tax_ids_after_approval_check" CHECK (approved_at is null or (gstin is not null and pan is not null));

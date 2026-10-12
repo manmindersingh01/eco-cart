@@ -79,11 +79,19 @@ export const sellers = pgTable(
       'sellers_commission_bps_check',
       sql`commission_bps between 0 and 10000`,
     ),
+    // At most 4, so an invoice number such as GRB/2627/000041 fits the 16
+    // characters GST allows (backend spec step 14).
     check(
       'sellers_invoice_prefix_check',
-      sql`invoice_prefix ~ '^[A-Z0-9]{1,6}$'`,
+      sql`invoice_prefix ~ '^[A-Z0-9]{1,4}$'`,
     ),
     check('sellers_invoice_seq_check', sql`invoice_seq >= 0`),
+    // Every sale needs a GST invoice, so a seller who was ever approved
+    // keeps their tax details (backend spec step 14).
+    check(
+      'sellers_tax_ids_after_approval_check',
+      sql`approved_at is null or (gstin is not null and pan is not null)`,
+    ),
     check(
       'sellers_invoice_seq_fy_check',
       sql`invoice_seq_fy ~ '^[0-9]{4}-[0-9]{2}$'`,

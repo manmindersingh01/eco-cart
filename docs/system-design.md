@@ -55,6 +55,7 @@ Each of those can be added later if measurements show a need, and the code is st
 | AI chat and vision | `deepseek/deepseek-v4.1-flash` through OpenRouter: DeepSeek's current flash model, reads text and images, 1M context, JSON output | The client's chosen model family at a very low price per token. Reads photographs, so listing drafts from photos and image screening use the same model as every text task. Every JSON reply is validated against a schema and retried once. |
 | AI embeddings | `voyageai/voyage-multimodal-3.5` through OpenRouter at 1024 dimensions | DeepSeek has no embeddings endpoint, and this model embeds text and images into one space. One index serves semantic search, image search, and similar products, and an uploaded photo is embedded directly without a vision call. |
 | Media | Direct browser upload to S3 with presigned URLs; worker resizes into fixed sizes | Uploads never pass through the web app. Images are served from CloudFront with immutable cache headers. |
+| Invoice PDFs | pdfmake (open source, MIT) in the worker, with the Noto Sans font (SIL Open Font License) | The layout is plain data, so the format the chartered accountant approves can change without code that draws pages. It breaks long tables across pages, and Noto Sans has the rupee sign. |
 | Payments | Razorpay hosted checkout, Orders API, and signature-verified webhooks | Fixed by the quotation. No card data ever touches EcoKart. |
 | Email and SMS | A transactional email API (Resend or Amazon SES, one adapter either way); an Indian SMS provider with DLT approval (MSG91 or similar) for OTP. Locally, both go to Mailpit, a mail catcher in Docker. | Email OTP works from day one; SMS OTP switches on when DLT approval arrives. |
 | Hosting | AWS Mumbai, hosting only: ECS Fargate for the web and worker containers, PostgreSQL with pgvector in Docker, S3 + CloudFront, Secrets Manager | Client-owned account as the quotation requires. Infrastructure is defined as code, and staging and production are two environments of the same definition. |
@@ -141,6 +142,9 @@ apps/
       api/admin/sellers/       administrators create, approve, suspend, and reinstate sellers
       api/seller/profile/      a seller's own business details and support contacts
       api/seller/products/     a seller's listings, variants, stock, and photos
+      api/invoices/            an order's invoices and their PDF downloads, for its buyer and sellers
+      api/seller/invoices/     a seller's own invoices
+      api/admin/invoices/      administrators have an invoice PDF made again
       api/categories/          the visible category tree, for anyone
       api/brands/              active brands A to Z, for anyone
       api/admin/categories/    administrators build and change the category tree
@@ -172,14 +176,16 @@ packages/
       schema/                  Drizzle schema, one file per domain
       migrations/              SQL migrations including RLS policies and indexes
     src/jobs.ts                every job queue and its retry settings, created by `pnpm db:migrate`
-    src/worker.ts              worker-only exports (`@ecokart/core/worker`), such as the photo job,
-                               so the web app never loads the image library
+    src/worker.ts              worker-only exports (`@ecokart/core/worker`), such as the photo job
+                               and the invoice PDF job, so the web app never loads the image or
+                               PDF library
     src/errors.ts              the errors services throw; the web app turns each into one HTTP status
     src/index.ts               everything the web app and worker may use; src/env.ts reads required settings
     src/testing/               test database setup and fixtures, used only by tests
     src/lib/
       razorpay.ts  email.ts  sms.ts  cache.ts
-      storage.ts     one S3 client: signed upload forms, reading and writing objects, public photo addresses
+      storage.ts     one S3 client: signed upload forms, signed download links, reading and writing
+                     objects, public photo addresses
       storage-setup.ts  sets up the local bucket (`pnpm db:up`) and the test buckets
       images.ts      photo formats, limits, and sizes
       image-processing.ts  checks photos and makes the sizes; loaded only by the worker
@@ -196,6 +202,7 @@ packages/
         client.ts      one OpenAI-compatible HTTP client; base URL, key, model from env
         chat.ts        TextModel and VisionModel on top of the chat client
         embed.ts       Embedder on top of the embeddings client
+    assets/fonts/              Noto Sans for invoice PDFs, with its licence
 compose.yaml                   local PostgreSQL 16 with pgvector, Mailpit, and SeaweedFS (S3-compatible
                                object storage standing in for S3 and CloudFront), for development
 ```
@@ -338,11 +345,12 @@ sellers
   slug              text UNIQUE
   display_name      text
   legal_name        text
-  gstin, pan        text, nullable until approval, which needs both
+  gstin, pan        text, nullable until approval, which needs both; kept from then on,
+                    because every sale needs a GST invoice
   line1, city, state_code, pincode
   support_email, support_phone
   commission_bps    int, nullable   overrides the platform default when set
-  invoice_prefix    text UNIQUE     used in GST invoice numbers
+  invoice_prefix    text UNIQUE     1 to 4 capital letters or digits, used in GST invoice numbers
   invoice_seq       int default 0
   invoice_seq_fy    text            financial year the sequence belongs to, e.g. 2026-27
   status            text   pending | approved | suspended
@@ -607,17 +615,21 @@ invoices
   id                          uuid PK
   order_id                    uuid FK orders
   seller_id                   uuid FK sellers
-  invoice_number              text UNIQUE   {seller prefix}/{FY}/{sequence}
-  issued_at                   timestamptz
-  seller_snapshot             jsonb   legal name, GSTIN, address
-  buyer_snapshot              jsonb   name, address, state code
-  place_of_supply_state_code  char(2)
+  invoice_number              text UNIQUE   {seller prefix}/{FY}/{sequence}, at most 16 characters,
+                                            e.g. GRB/2627/000041 (section 11)
+  issued_at                   timestamptz   the time of the payment confirmation
+  seller_snapshot             jsonb   legal and trade name, GSTIN, address with state name, support contacts
+  buyer_snapshot              jsonb   name, delivery address with state name, order number and date,
+                                      payment method, and the buyer's account id (not printed)
+  place_of_supply_state_code  char(2)   the delivery address's state
   is_interstate               boolean
   taxable_paise, cgst_paise, sgst_paise, igst_paise, total_paise   bigint
   lines                       jsonb   the invoice lines exactly as printed
   pdf_storage_key             text, nullable until the worker renders it
-  created_at
+  cancelled_at, cancel_reason   set when the order is cancelled before dispatch; the number stays used
+  created_at, updated_at
   UNIQUE (order_id, seller_id)
+  INDEX (seller_id, issued_at DESC, id DESC)     the seller's invoice list
 ```
 
 One buyer order can contain items from several sellers.
@@ -925,10 +937,16 @@ Cash on delivery skips steps 3 to 6 and confirms immediately. Its payment row is
 
 ### 6.6 Invoices
 
-A worker job renders each invoice to PDF from the `invoices` row using the format approved by the client's chartered accountant.
+Payment confirmation (and cash on delivery checkout, which confirms at once) issues the invoices inside its own transaction, handing over the order's frozen details, one for each seller in the order, taking the sellers in order of their id so two confirmations never deadlock.
+Each invoice takes the next number from the seller's own sequence with one conditional update, whose row lock makes confirmations for the same seller take turns; a confirmation that rolls back gives its number back, so numbers never repeat or leave gaps.
+The sequence starts again at 1 at the start of each financial year (1 April, counted in Asia/Kolkata).
+The invoice freezes the seller's details, the buyer's delivery address, and the seller's order lines, and a job to make its PDF is queued in the same transaction.
 Intra-state orders split GST into CGST and SGST; inter-state orders use IGST, decided by comparing the seller's state code with the shipping address state code.
-Invoice numbers come from the seller's own sequence, incremented with a row lock inside the confirmation transaction, and reset at the start of each financial year.
-Buyers and sellers download the PDF through a short-lived signed URL.
+Within a state, each line's tax is split with CGST rounded down to the paisa and SGST taking the rest, so the two always add up to the tax on the order line.
+A worker job renders each invoice to PDF from the `invoices` row alone, using the format approved by the client's chartered accountant, and stores it privately.
+The buyer, the issuing seller, and administrators download the PDF through a signed link that lasts five minutes, and administrators can have a PDF made again.
+When an order is cancelled before dispatch, its invoices are marked cancelled, with the time and reason, and keep their numbers, as GST requires; each PDF is made again with a cancelled notice.
+GST credit notes for returns are deferred, as quotation 4.0 says.
 
 ### 6.7 Catalogue import
 
@@ -1048,6 +1066,9 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | Roles | Open | One role per account; a seller uses a separate seller account | One account can be both buyer and seller |
 | Commission base | Open | Applied to the seller's line total after the coupon discount share | Applied before discounts |
 | Delivery revenue | Open | Delivery charge belongs to the platform | Passed through to sellers |
+| Invoice number format | Decided 12 October 2026; the chartered accountant confirms | `GRB/2627/000041`: a prefix of 1 to 4 characters, the financial year as four digits, and a six-digit sequence, within the 16 characters GST allows | `GREENB/26/000041`, keeping prefixes of up to 6 characters and writing only the year the financial year starts in |
+| Invoices of cancelled orders | Decided 12 October 2026; the chartered accountant confirms | Mark the invoice cancelled, keep its number used, and make its PDF again with "Cancelled" on it; GST credit notes stay deferred, as quotation 4.0 says | Leave the invoice as it is, and the seller handles the cancellation in their own accounts |
+| EcoKart's own invoices | Decided 12 October 2026: not part of the launch build; for the client's chartered accountant | An invoice from EcoKart for the delivery charge, if the delivery charge belongs to EcoKart, and for the commission it charges sellers, decided with the chartered accountant | Leave both to EcoKart's own accounting software |
 | GST rates that depend on price | Open | Clothing and footwear are taxed at 5% up to ₹2,500 a piece and 18% above it. An optional price limit and higher rate on the category, applied to each order line from its own price at checkout. Needs the chartered accountant's agreement before approval copies rates onto products (backend spec, step 7). | A rate per product set by hand, or separate categories per price band |
 
 Open rows are recommendations and are built as written unless the client decides otherwise.

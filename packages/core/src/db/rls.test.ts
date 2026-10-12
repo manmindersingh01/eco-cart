@@ -16,6 +16,7 @@ import {
   cartItems,
   carts,
   emailOutbox,
+  invoices,
   orderItems,
   orders,
   paymentEvents,
@@ -510,5 +511,123 @@ describe('worker', () => {
         worker.execute(sql`alter table products add column hacked text`),
       ),
     ).toBe(INSUFFICIENT_PRIVILEGE)
+  })
+})
+
+// Invoices (backend spec step 14).
+const invoiceFor = (
+  order: typeof order1,
+  s: typeof sellerA,
+): typeof invoices.$inferInsert => ({
+  orderId: order.order.id,
+  sellerId: s.seller.id,
+  invoiceNumber: `T${crypto.randomUUID().slice(0, 8).toUpperCase()}/1`,
+  issuedAt: new Date(),
+  sellerSnapshot: {},
+  buyerSnapshot: {},
+  placeOfSupplyStateCode: '27',
+  isInterstate: false,
+  taxablePaise: 42_373,
+  cgstPaise: 3_813,
+  sgstPaise: 3_814,
+  totalPaise: 50_000,
+  lines: [{}],
+})
+
+describe('invoices', () => {
+  // order1 gets an invoice from each seller, order2 one from seller B.
+  const invoiceIds: Record<'order1A' | 'order1B' | 'order2B', string> = {
+    order1A: '',
+    order1B: '',
+    order2B: '',
+  }
+
+  beforeAll(async () => {
+    const rows = await owner
+      .insert(invoices)
+      .values([
+        invoiceFor(order1, sellerA),
+        invoiceFor(order1, sellerB),
+        invoiceFor(order2, sellerB),
+      ])
+      .returning({ id: invoices.id })
+    invoiceIds.order1A = rows[0]!.id
+    invoiceIds.order1B = rows[1]!.id
+    invoiceIds.order2B = rows[2]!.id
+  })
+
+  const visibleInvoices = (context: RequestContext) =>
+    withContext(
+      web,
+      context,
+      async (tx) =>
+        new Set(
+          (
+            await tx
+              .select({ id: invoices.id })
+              .from(invoices)
+              .where(inArray(invoices.id, Object.values(invoiceIds)))
+          ).map((row) => row.id),
+        ),
+    )
+
+  test('a buyer sees every invoice of their own orders only', async () => {
+    expect(await visibleInvoices(as.buyer(buyer1))).toEqual(
+      new Set([invoiceIds.order1A, invoiceIds.order1B]),
+    )
+    expect(await visibleInvoices(as.buyer(buyer2))).toEqual(
+      new Set([invoiceIds.order2B]),
+    )
+  })
+
+  test('a seller sees only the invoices they issued, even in a shared order', async () => {
+    expect(await visibleInvoices(as.seller(sellerA))).toEqual(
+      new Set([invoiceIds.order1A]),
+    )
+    expect(await visibleInvoices(as.seller(sellerB))).toEqual(
+      new Set([invoiceIds.order1B, invoiceIds.order2B]),
+    )
+  })
+
+  test('administrators and the worker see every invoice; visitors none', async () => {
+    expect(await visibleInvoices(as.admin())).toEqual(
+      new Set(Object.values(invoiceIds)),
+    )
+    expect(await visibleInvoices(as.anonymous())).toEqual(new Set())
+    const seen = await worker
+      .select({ id: invoices.id })
+      .from(invoices)
+      .where(inArray(invoices.id, Object.values(invoiceIds)))
+    expect(seen).toHaveLength(3)
+  })
+
+  test('buyers and sellers cannot issue an invoice', async () => {
+    for (const context of [as.buyer(buyer1), as.seller(sellerA)]) {
+      const code = await errorCode(
+        withContext(web, context, (tx) =>
+          tx.insert(invoices).values({
+            ...invoiceFor(order2, sellerA),
+            orderId: order2.order.id,
+          }),
+        ),
+      )
+      expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    }
+  })
+
+  test('a seller cannot change an invoice they issued', async () => {
+    const changed = await withContext(web, as.seller(sellerA), (tx) =>
+      tx
+        .update(invoices)
+        .set({ totalPaise: 1, taxablePaise: 1, cgstPaise: 0, sgstPaise: 0 })
+        .where(eq(invoices.id, invoiceIds.order1A))
+        .returning({ id: invoices.id }),
+    )
+    expect(changed).toEqual([])
+    const [row] = await owner
+      .select({ totalPaise: invoices.totalPaise })
+      .from(invoices)
+      .where(eq(invoices.id, invoiceIds.order1A))
+    expect(row).toEqual({ totalPaise: 50_000 })
   })
 })

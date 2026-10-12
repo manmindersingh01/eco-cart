@@ -122,6 +122,20 @@ export type {
   VariantView,
 } from './modules/catalogue/types.ts'
 export {
+  cancelInvoices,
+  getInvoiceDownload,
+  issueInvoices,
+  listOrderInvoices,
+  listOwnInvoices,
+  RENDER_INVOICE_QUEUE,
+  rerenderInvoice,
+} from './modules/invoices/service.ts'
+export type {
+  InvoiceDownload,
+  InvoiceSummary,
+  IssuedInvoice,
+} from './modules/invoices/types.ts'
+export {
   createObjectStorage,
   loadStorageConfig,
   type ObjectStorage,

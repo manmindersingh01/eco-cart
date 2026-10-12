@@ -1,4 +1,4 @@
-import { desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, lte, or, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
 import { sellers } from '../../db/schema/index.ts'
@@ -365,11 +365,13 @@ export async function updateSeller(
       const current = await lockSeller(tx, sellerId)
       const merged = { ...current, ...changes }
       const issues = taxIdIssues(merged)
-      if (current.status === 'approved') {
+      // Also while suspended: reinstating brings the seller back as approved,
+      // and every sale needs a GST invoice with these details.
+      if (current.approvedAt) {
         if (!merged.gstin)
-          issues.push('gstin is needed while the seller is approved')
+          issues.push('gstin is needed once the seller has been approved')
         if (!merged.pan)
-          issues.push('pan is needed while the seller is approved')
+          issues.push('pan is needed once the seller has been approved')
       }
       if (issues.length > 0) {
         throw new ValidationError('Those seller details are not valid', issues)
@@ -588,4 +590,86 @@ export async function findSellerForOwner(
     throw new Error(`Seller ${row.id} has an unknown status ${row.status}`)
   }
   return { id: row.id, status: row.status }
+}
+
+// Invoice numbers (backend spec step 14). The sellers module owns each
+// seller's sequence; the invoices module turns it into an invoice number.
+
+/** The seller's details as their invoice prints them, read under the lock. */
+export interface InvoicingSeller {
+  id: string
+  legalName: string
+  displayName: string
+  gstin: string | null
+  line1: string
+  city: string
+  stateCode: string
+  pincode: string
+  supportEmail: string
+  supportPhone: string
+  invoicePrefix: string
+}
+
+/**
+ * Takes the seller's next invoice sequence number in `financialYear` (like
+ * `2026-27`): one more than the last, or 1 for the first invoice of a new
+ * year. One conditional UPDATE: its row lock makes two confirmations for the
+ * same seller take turns, and a transaction that rolls back gives its number
+ * back, so numbers never repeat and never leave a gap.
+ *
+ * The sequence never returns to 0, which the rule against changing the
+ * invoice prefix after the first invoice relies on, and never moves back to
+ * an earlier year.
+ */
+export async function takeInvoiceNumber(
+  tx: Transaction,
+  sellerId: string,
+  financialYear: string,
+): Promise<{ sequence: number; seller: InvoicingSeller }> {
+  const [row] = await tx
+    .update(sellers)
+    .set({
+      // Both expressions read the row as it was before this UPDATE.
+      invoiceSeq: sql`case when ${sellers.invoiceSeqFy} = ${financialYear} then ${sellers.invoiceSeq} + 1 else 1 end`,
+      invoiceSeqFy: financialYear,
+    })
+    .where(
+      and(
+        eq(sellers.id, sellerId),
+        // Year strings like 2026-27 sort in time order.
+        or(
+          isNull(sellers.invoiceSeqFy),
+          lte(sellers.invoiceSeqFy, financialYear),
+        ),
+      ),
+    )
+    .returning({
+      sequence: sellers.invoiceSeq,
+      id: sellers.id,
+      legalName: sellers.legalName,
+      displayName: sellers.displayName,
+      gstin: sellers.gstin,
+      line1: sellers.line1,
+      city: sellers.city,
+      stateCode: sellers.stateCode,
+      pincode: sellers.pincode,
+      supportEmail: sellers.supportEmail,
+      supportPhone: sellers.supportPhone,
+      invoicePrefix: sellers.invoicePrefix,
+    })
+  if (row) {
+    const { sequence, ...seller } = row
+    return { sequence, seller }
+  }
+
+  const [exists] = await tx
+    .select({ year: sellers.invoiceSeqFy })
+    .from(sellers)
+    .where(eq(sellers.id, sellerId))
+  if (!exists) throw new Error(`There is no seller ${sellerId}`)
+  // Only possible within a second of midnight on 31 March: a confirmation
+  // that started in the old year reached the sequence after one in the new.
+  throw new ConflictError(
+    `Invoice numbers have moved on to ${exists.year}; try again`,
+  )
 }
