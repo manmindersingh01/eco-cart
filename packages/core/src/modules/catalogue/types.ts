@@ -13,6 +13,7 @@ import {
   text,
   wholeNumber,
 } from '../../lib/validation.ts'
+import type { SellerLabel } from '../sellers/service.ts'
 
 const isActive = z.boolean()
 const sortOrder = wholeNumber(0, 10_000)
@@ -333,4 +334,86 @@ export interface ImageUpload {
   fields: Record<string, string>
   maxBytes: number
   expiresAt: Date
+}
+
+/* Listing moderation (backend spec step 7). */
+
+/** Highest first: the order of the review queue. */
+export const RISK_LEVELS = ['high', 'medium', 'low'] as const
+export type RiskLevel = (typeof RISK_LEVELS)[number]
+
+/** Something screening found, for the administrator who reviews the listing. */
+export interface ScreeningFlag {
+  /** For example `prohibited_term` or `large_discount`. */
+  code: string
+  /** Plain words, for example: "gun" appears in the title. */
+  detail: string
+}
+
+export const approval = strictObject({
+  /** Left out: the category's rate. */
+  gstRateBps: gstRateBps.optional(),
+})
+
+export const rejection = strictObject({
+  /** Shown to the seller. */
+  reason: text(500),
+})
+
+/** One submission of a listing and what became of it. */
+export interface ReviewView {
+  id: string
+  submittedAt: Date
+  /** Null until screening has finished. */
+  risk: RiskLevel | null
+  flags: ScreeningFlag[]
+  /**
+   * Null while the review is open; withdrawn when the seller took the
+   * listing back before a decision.
+   */
+  decision: 'approved' | 'rejected' | 'withdrawn' | null
+  /**
+   * The administrator who decided, or the seller who withdrew; null for a
+   * decision the system made.
+   */
+  decidedBy: string | null
+  decidedAt: Date | null
+  /** Why it was rejected, as the seller sees it. */
+  reason: string | null
+}
+
+/** One open review in the administrators' queue. */
+export interface ReviewQueueItem {
+  reviewId: string
+  submittedAt: Date
+  /** Null until screening has finished. */
+  risk: RiskLevel | null
+  flags: ScreeningFlag[]
+  product: {
+    id: string
+    slug: string
+    title: string
+    categoryName: string
+    minPricePaise: number | null
+    maxPricePaise: number | null
+    thumbnailUrl: string | null
+    /** Set when the product was on sale before, so this is a new version. */
+    publishedAt: Date | null
+  }
+  seller: SellerLabel
+}
+
+export interface ReviewQueueOptions {
+  /** Only reviews of this risk level. */
+  risk?: string
+  cursor?: string
+  limit?: number
+}
+
+/** A product as the administrator reviewing it sees it. */
+export interface ProductForReview {
+  product: ProductView
+  seller: SellerLabel
+  /** The most recent reviews first. */
+  reviews: ReviewView[]
 }

@@ -1,0 +1,8 @@
+DROP INDEX "product_moderation_open_created_at_idx";--> statement-breakpoint
+ALTER TABLE "product_moderation" ADD COLUMN "risk_rank" smallint GENERATED ALWAYS AS (case ai_risk when 'high' then 0 when 'medium' then 1 when 'low' then 2 else 3 end) STORED NOT NULL;--> statement-breakpoint
+CREATE INDEX "product_moderation_open_queue_idx" ON "product_moderation" USING btree ("risk_rank","submitted_at","id") WHERE decision is null;--> statement-breakpoint
+CREATE UNIQUE INDEX "product_moderation_open_product_id_unique" ON "product_moderation" USING btree ("product_id") WHERE decision is null;--> statement-breakpoint
+ALTER TABLE "product_moderation" ADD CONSTRAINT "product_moderation_decided_check" CHECK ((decision is null) = (decided_at is null) and (decision is not null or decided_by is null));--> statement-breakpoint
+ALTER TABLE "product_moderation" ADD CONSTRAINT "product_moderation_reason_check" CHECK (decision is distinct from 'rejected' or reason is not null);--> statement-breakpoint
+ALTER TABLE "products" ADD CONSTRAINT "products_approved_check" CHECK (status <> 'approved' or (gst_rate_bps is not null and hsn_code is not null and published_at is not null));--> statement-breakpoint
+ALTER POLICY "web_insert" ON "product_moderation" TO ecokart_web WITH CHECK (app.has_full_access() or (decision is null and decided_by is null and ai_risk is null and ai_flags = '[]'::jsonb and exists (select 1 from products p where p.id = product_moderation.product_id and p.seller_id = app.seller_id())));

@@ -1,4 +1,6 @@
-DROP POLICY "web_all" ON "ai_requests" CASCADE;--> statement-breakpoint
+ALTER TABLE "ai_requests" DROP CONSTRAINT "ai_requests_counts_check";--> statement-breakpoint
+ALTER TABLE "ai_requests" ADD COLUMN "cost_micro_usd" bigint;--> statement-breakpoint
+ALTER TABLE "ai_requests" ADD CONSTRAINT "ai_requests_counts_check" CHECK (input_tokens >= 0 and output_tokens >= 0 and cost_micro_usd >= 0 and latency_ms >= 0);--> statement-breakpoint
 CREATE POLICY "web_select" ON "ai_requests" AS PERMISSIVE FOR SELECT TO "ecokart_web" USING (app.has_full_access() or ((user_id is null and seller_id is null) or user_id = app.user_id() or seller_id = app.seller_id()));--> statement-breakpoint
 CREATE POLICY "web_insert" ON "ai_requests" AS PERMISSIVE FOR INSERT TO "ecokart_web" WITH CHECK (app.has_full_access() or (((user_id is null and seller_id is null) or user_id = app.user_id() or seller_id = app.seller_id()) and status in ('queued', 'running')));--> statement-breakpoint
 CREATE POLICY "web_update" ON "ai_requests" AS PERMISSIVE FOR UPDATE TO "ecokart_web" USING (app.has_full_access() or (((user_id is null and seller_id is null) or user_id = app.user_id() or seller_id = app.seller_id()) and status in ('queued', 'running'))) WITH CHECK (app.has_full_access() or ((user_id is null and seller_id is null) or user_id = app.user_id() or seller_id = app.seller_id()));

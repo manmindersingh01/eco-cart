@@ -1,15 +1,23 @@
-import { and, desc, eq, gt, inArray } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import { createDatabase } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
 import { createPool, type DatabasePool } from '../../db/pool.ts'
-import { auditLogs, platformSettings, sellers } from '../../db/schema/index.ts'
+import {
+  auditLogs,
+  platformSettings,
+  productModeration,
+  products,
+  sellers,
+} from '../../db/schema/index.ts'
 import {
   DEVELOPMENT_BRANDS,
   DEVELOPMENT_CATEGORIES,
+  DEVELOPMENT_PRODUCTS,
   DEVELOPMENT_SELLERS,
   DEVELOPMENT_SETTINGS,
   seedDevelopmentData,
+  seedExampleProducts,
   type ExampleCategory,
 } from '../../db/seed.ts'
 import { requireEnv } from '../../env.ts'
@@ -19,6 +27,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../errors.ts'
+import { createObjectStorage, loadStorageConfig } from '../../lib/storage.ts'
 import { createTestUser } from '../../testing/fixtures.ts'
 import { getSetting, listSettings, updateSetting } from './service.ts'
 
@@ -250,6 +259,20 @@ describe('updateSetting', () => {
     ).toEqual(['website is not allowed here'])
   })
 
+  test('refuses a company state code that is not a GST state code', async () => {
+    expect(
+      await validationIssues(
+        save(admin, 'company_details', {
+          ...company,
+          gstin: '99AABCG1234K1Z9',
+          address: { ...company.address, stateCode: '99' },
+        }),
+      ),
+    ).toEqual([
+      'address.stateCode must be a GST state code, like 27 for Maharashtra',
+    ])
+  })
+
   test('explains what is wrong in plain words', async () => {
     expect(
       await validationIssues(
@@ -369,4 +392,57 @@ describe('seedDevelopmentData', () => {
     ).rejects.toThrow('The development seed never runs in production')
     expect(await owner.select().from(platformSettings)).toEqual([])
   })
+
+  test('adds the example products once, approved, each with a photo (step 7)', async () => {
+    const development = { NODE_ENV: 'development' }
+    const services = {
+      db: web,
+      worker: connect(requireEnv('WORKER_DATABASE_URL')),
+      storage: createObjectStorage(loadStorageConfig()),
+    }
+    await expect(
+      seedExampleProducts(services, { NODE_ENV: 'production' }),
+    ).rejects.toThrow('The development seed never runs in production')
+    await seedDevelopmentData(web, development)
+
+    const titles = DEVELOPMENT_PRODUCTS.map((product) => product.title)
+    expect(await seedExampleProducts(services, development)).toEqual(titles)
+    const seeded = await owner
+      .select({
+        status: products.status,
+        gstRateBps: products.gstRateBps,
+        hsnCode: products.hsnCode,
+        hasPhoto: sql<boolean>`${products.primaryImageId} is not null`,
+        risk: productModeration.aiRisk,
+        decision: productModeration.decision,
+      })
+      .from(products)
+      .innerJoin(sellers, eq(sellers.id, products.sellerId))
+      .innerJoin(
+        productModeration,
+        eq(productModeration.productId, products.id),
+      )
+      .where(
+        and(
+          inArray(products.title, titles),
+          // Other test files list products with the same titles.
+          inArray(
+            sellers.invoicePrefix,
+            DEVELOPMENT_SELLERS.map((seller) => seller.invoicePrefix),
+          ),
+        ),
+      )
+    // Every example category's rate is 5%.
+    expect(seeded).toEqual(
+      titles.map(() => ({
+        status: 'approved',
+        gstRateBps: 500,
+        hsnCode: expect.stringMatching(/^\d{4}$/),
+        hasPhoto: true,
+        risk: 'low',
+        decision: 'approved',
+      })),
+    )
+    expect(await seedExampleProducts(services, development)).toEqual([])
+  }, 60_000)
 })

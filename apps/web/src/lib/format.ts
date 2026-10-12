@@ -1,3 +1,5 @@
+import { stateName } from '@ecokart/core/states'
+
 const inr = new Intl.NumberFormat('en-IN', {
   style: 'currency',
   currency: 'INR',
@@ -50,4 +52,9 @@ export function formatStatusLabel(status: string): string {
     .replaceAll(/[_-]+/g, ' ')
     .replaceAll(/\s+/g, ' ')
     .replace(/^./, (first) => first.toUpperCase())
+}
+
+/** A GST state code as its name, for example Maharashtra for 27. */
+export function formatState(stateCode: string): string {
+  return stateName(stateCode) ?? stateCode
 }

@@ -75,22 +75,64 @@
     {
       "idx": 10,
       "version": "7",
-      "when": 1791709430294,
-      "tag": "0010_ai_request_policies",
+      "when": 1791709023841,
+      "tag": "0010_moderation_queue_and_checks",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "7",
-      "when": 1791709441979,
-      "tag": "0011_ai_daily_usage",
+      "when": 1791709038971,
+      "tag": "0011_product_decision_guard",
       "breakpoints": true
     },
     {
       "idx": 12,
       "version": "7",
-      "when": 1791796992795,
-      "tag": "0012_ai_cost_in_dollars",
+      "when": 1791796990994,
+      "tag": "0012_review_withdrawal",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791799238508,
+      "tag": "0013_invoice_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791799246297,
+      "tag": "0014_invoice_prefix_length_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791799246654,
+      "tag": "0015_invoice_prefix_and_cancellation",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791799475813,
+      "tag": "0016_ai_request_policies_and_cost",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791799486009,
+      "tag": "0017_ai_daily_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791799486495,
+      "tag": "0018_ai_requests_drop_old",
       "breakpoints": true
     }
   ]

@@ -7,8 +7,11 @@ import {
   registerNotificationJobs,
   type StorageConfig,
 } from '@ecokart/core'
+import {
+  registerCatalogueJobs,
+  registerInvoiceJobs,
+} from '@ecokart/core/worker'
 import type { AiSettings } from '@ecokart/core'
-import { registerCatalogueJobs } from '@ecokart/core/worker'
 import { PgBoss } from 'pg-boss'
 
 export interface WorkerOptions {
@@ -66,6 +69,10 @@ export async function startWorker(
   const db = createDatabase(pool)
   await registerNotificationJobs(boss, { db, ...options.notifications })
   await registerCatalogueJobs(boss, {
+    db,
+    storage: createObjectStorage(options.storage),
+  })
+  await registerInvoiceJobs(boss, {
     db,
     storage: createObjectStorage(options.storage),
   })

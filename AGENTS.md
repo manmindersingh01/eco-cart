@@ -58,7 +58,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 
 - Follow the layout in design doc section 4: routes in `apps/web/src/app/`, business logic in `packages/core/src/modules/<domain>/` (`service.ts`, `queries.ts`, `jobs.ts`, `types.ts`), schema in `packages/core/src/db/schema/`, SQL migrations in `packages/core/src/db/migrations/`, worker job registration in `apps/worker/src/worker.ts`, external clients in `packages/core/src/lib/`.
 - The worker runs `packages/core` and its own code as TypeScript directly on Node.js, so use only type-level TypeScript syntax (no `enum`, `namespace`, or constructor parameter properties) and import local files with their `.ts` extension.
-- Code that only the worker runs and that loads heavy libraries (the image library `sharp`) is exported from `@ecokart/core/worker`, never from `@ecokart/core`, so the web app never loads it.
+- Code that only the worker runs and that loads heavy libraries (the image library `sharp`, the PDF library `pdfmake`) is exported from `@ecokart/core/worker`, never from `@ecokart/core`, so the web app never loads it.
 - The worker refuses to start while a queue in `packages/core/src/jobs.ts` is missing, so a deploy that skipped `pnpm db:migrate` fails loudly.
 - Pages, server actions, and API routes call module services.
   They never write SQL themselves.
@@ -176,7 +176,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Log every AI call in `ai_requests`.
   Check the cache on `(feature, input_hash)` first, and enforce the daily platform and per-seller limits before calling out.
 - Run deterministic checks before AI checks.
-  For example, listing screening checks price above MRP and prohibited terms before asking the model.
+  For example, listing screening checks prohibited terms and an implausibly large discount (70% or more below the MRP) before asking the model.
 - The shopping assistant answers only from the product data it was given and says so when it cannot answer.
   It returns a structured object with cited product ids, and the storefront renders product cards from that object, never raw model text as HTML.
 

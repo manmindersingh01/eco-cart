@@ -1,6 +1,6 @@
 {
-  "id": "38321be4-48a8-454c-9b3d-08a0d17df023",
-  "prevId": "0aa2c453-318c-4fca-9200-3b3068d23b0c",
+  "id": "4eb1004a-bc20-4c92-9b68-9484c3e402f6",
+  "prevId": "166bef52-39c9-42b5-9bfa-96e940a3dec6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -63,8 +63,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "cost_micro_usd": {
-          "name": "cost_micro_usd",
+        "cost_micro_inr": {
+          "name": "cost_micro_inr",
           "type": "bigint",
           "primaryKey": false,
           "notNull": false
@@ -205,33 +205,15 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {
-        "web_select": {
-          "name": "web_select",
+        "web_all": {
+          "name": "web_all",
           "as": "PERMISSIVE",
-          "for": "SELECT",
+          "for": "ALL",
           "to": [
             "ecokart_web"
           ],
-          "using": "app.has_full_access() or ((user_id is null and seller_id is null) or user_id = app.user_id() or seller_id = app.seller_id())"
-        },
-        "web_insert": {
-          "name": "web_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": [
-            "ecokart_web"
-          ],
-          "withCheck": "app.has_full_access() or (((user_id is null and seller_id is null) or user_id = app.user_id() or seller_id = app.seller_id()) and status in ('queued', 'running'))"
-        },
-        "web_update": {
-          "name": "web_update",
-          "as": "PERMISSIVE",
-          "for": "UPDATE",
-          "to": [
-            "ecokart_web"
-          ],
-          "using": "app.has_full_access() or (((user_id is null and seller_id is null) or user_id = app.user_id() or seller_id = app.seller_id()) and status in ('queued', 'running'))",
-          "withCheck": "app.has_full_access() or ((user_id is null and seller_id is null) or user_id = app.user_id() or seller_id = app.seller_id())"
+          "using": "app.has_full_access() or (user_id is null and seller_id is null) or user_id = app.user_id() or seller_id = app.seller_id()",
+          "withCheck": "app.has_full_access() or (user_id is null and seller_id is null) or user_id = app.user_id() or seller_id = app.seller_id()"
         },
         "worker_all": {
           "name": "worker_all",
@@ -255,7 +237,7 @@
         },
         "ai_requests_counts_check": {
           "name": "ai_requests_counts_check",
-          "value": "input_tokens >= 0 and output_tokens >= 0 and cost_micro_usd >= 0 and latency_ms >= 0"
+          "value": "input_tokens >= 0 and output_tokens >= 0 and cost_micro_inr >= 0 and latency_ms >= 0"
         }
       },
       "isRLSEnabled": true
@@ -1928,6 +1910,16 @@
           "primaryKey": false,
           "notNull": false
         },
+        "risk_rank": {
+          "name": "risk_rank",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "case ai_risk when 'high' then 0 when 'medium' then 1 when 'low' then 2 else 3 end",
+            "type": "stored"
+          }
+        },
         "ai_request_id": {
           "name": "ai_request_id",
           "type": "uuid",
@@ -1995,17 +1987,45 @@
           "method": "btree",
           "with": {}
         },
-        "product_moderation_open_created_at_idx": {
-          "name": "product_moderation_open_created_at_idx",
+        "product_moderation_open_queue_idx": {
+          "name": "product_moderation_open_queue_idx",
           "columns": [
             {
-              "expression": "created_at",
+              "expression": "risk_rank",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "submitted_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
+          "where": "decision is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "product_moderation_open_product_id_unique": {
+          "name": "product_moderation_open_product_id_unique",
+          "columns": [
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
           "where": "decision is null",
           "concurrently": false,
           "method": "btree",
@@ -2072,7 +2092,7 @@
           "to": [
             "ecokart_web"
           ],
-          "withCheck": "exists (select 1 from products p where p.id = product_moderation.product_id and (p.seller_id = app.seller_id() or app.has_full_access()))"
+          "withCheck": "app.has_full_access() or (decision is null and decided_by is null and ai_risk is null and ai_flags = '[]'::jsonb and exists (select 1 from products p where p.id = product_moderation.product_id and p.seller_id = app.seller_id()))"
         },
         "web_update": {
           "name": "web_update",
@@ -2081,8 +2101,8 @@
           "to": [
             "ecokart_web"
           ],
-          "using": "app.has_full_access()",
-          "withCheck": "app.has_full_access()"
+          "using": "app.has_full_access() or (decision is null and exists (select 1 from products p where p.id = product_moderation.product_id and p.seller_id = app.seller_id()))",
+          "withCheck": "app.has_full_access() or (decision = 'withdrawn' and exists (select 1 from products p where p.id = product_moderation.product_id and p.seller_id = app.seller_id()))"
         },
         "worker_all": {
           "name": "worker_all",
@@ -2102,7 +2122,15 @@
         },
         "product_moderation_decision_check": {
           "name": "product_moderation_decision_check",
-          "value": "decision in ('approved', 'rejected')"
+          "value": "decision in ('approved', 'rejected', 'withdrawn')"
+        },
+        "product_moderation_decided_check": {
+          "name": "product_moderation_decided_check",
+          "value": "(decision is null) = (decided_at is null) and (decision is not null or decided_by is null)"
+        },
+        "product_moderation_reason_check": {
+          "name": "product_moderation_reason_check",
+          "value": "decision is distinct from 'rejected' or reason is not null"
         }
       },
       "isRLSEnabled": true
@@ -2785,6 +2813,10 @@
         "products_rating_check": {
           "name": "products_rating_check",
           "value": "rating_avg between 0 and 5 and rating_count >= 0"
+        },
+        "products_approved_check": {
+          "name": "products_approved_check",
+          "value": "status <> 'approved' or (gst_rate_bps is not null and hsn_code is not null and published_at is not null)"
         }
       },
       "isRLSEnabled": true

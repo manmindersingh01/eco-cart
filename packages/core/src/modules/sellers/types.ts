@@ -26,9 +26,11 @@ export const businessDetails = strictObject({
   pincode,
   supportEmail: email,
   supportPhone: phoneNumber,
+  // At most 4, so an invoice number such as GRB/2627/000041 stays within the
+  // 16 characters GST allows (backend spec step 14).
   invoicePrefix: z
     .string()
-    .regex(/^[A-Z0-9]{1,6}$/, 'must be 1 to 6 capital letters or digits'),
+    .regex(/^[A-Z0-9]{1,4}$/, 'must be 1 to 4 capital letters or digits'),
   // Null uses the platform commission from settings.
   commissionBps: wholeNumber(0, 10_000).nullable(),
 })

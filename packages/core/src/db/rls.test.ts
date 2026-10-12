@@ -16,9 +16,11 @@ import {
   cartItems,
   carts,
   emailOutbox,
+  invoices,
   orderItems,
   orders,
   paymentEvents,
+  productModeration,
   productVariants,
   products,
   sellerLedgerEntries,
@@ -68,6 +70,8 @@ async function errorCode(promise: Promise<unknown>): Promise<string> {
 
 const INSUFFICIENT_PRIVILEGE = '42501'
 const RESTRICT_VIOLATION = '23001'
+const UNIQUE_VIOLATION = '23505'
+const CHECK_VIOLATION = '23514'
 
 // Two sellers, two buyers, an administrator, and data that belongs to each.
 let sellerA: Awaited<ReturnType<typeof createTestSeller>>
@@ -510,5 +514,332 @@ describe('worker', () => {
         worker.execute(sql`alter table products add column hacked text`),
       ),
     ).toBe(INSUFFICIENT_PRIVILEGE)
+  })
+})
+
+/** Seller A opening a review of their approved product, with `values`. */
+const openReviewAsSellerA = (
+  values: Partial<typeof productModeration.$inferInsert>,
+) =>
+  errorCode(
+    withContext(web, as.seller(sellerA), (tx) =>
+      tx
+        .insert(productModeration)
+        .values({ productId: approvedA.product.id, ...values }),
+    ),
+  )
+
+/** Changes one review as `context`; the rows it changed. */
+const changeReviewAs = (
+  context: RequestContext,
+  reviewId: string,
+  values: Partial<typeof productModeration.$inferInsert>,
+) =>
+  withContext(web, context, (tx) =>
+    tx
+      .update(productModeration)
+      .set(values)
+      .where(eq(productModeration.id, reviewId))
+      .returning({ id: productModeration.id }),
+  )
+
+describe('listing reviews', () => {
+  // One open review each for seller A's and seller B's drafts.
+  let reviewA: string
+  let reviewB: string
+
+  beforeAll(async () => {
+    const rows = await owner
+      .insert(productModeration)
+      .values([
+        { productId: draftA.product.id },
+        { productId: draftB.product.id },
+      ])
+      .returning({ id: productModeration.id })
+    reviewA = rows[0]!.id
+    reviewB = rows[1]!.id
+  })
+
+  const reviewIdsAs = (context: RequestContext) =>
+    withContext(web, context, async (tx) =>
+      (
+        await tx
+          .select({ id: productModeration.id })
+          .from(productModeration)
+          .where(inArray(productModeration.id, [reviewA, reviewB]))
+      ).map((row) => row.id),
+    )
+
+  test('a seller sees the reviews of their own products only', async () => {
+    expect(await reviewIdsAs(as.seller(sellerA))).toEqual([reviewA])
+    expect(await reviewIdsAs(as.anonymous())).toEqual([])
+    expect(await reviewIdsAs(as.buyer(buyer1))).toEqual([])
+    expect(new Set(await reviewIdsAs(as.admin()))).toEqual(
+      new Set([reviewA, reviewB]),
+    )
+  })
+
+  test('a seller opens only an undecided, unscreened review of their own product', async () => {
+    expect(
+      await openReviewAsSellerA({
+        decision: 'approved',
+        decidedAt: new Date(),
+      }),
+    ).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(await openReviewAsSellerA({ aiRisk: 'low' })).toBe(
+      INSUFFICIENT_PRIVILEGE,
+    )
+    expect(
+      await openReviewAsSellerA({
+        aiFlags: [{ code: 'large_discount', detail: 'x' }],
+      }),
+    ).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(await openReviewAsSellerA({ productId: draftB.product.id })).toBe(
+      INSUFFICIENT_PRIVILEGE,
+    )
+  })
+
+  test('only full access screens or decides a review; a seller may only withdraw their own', async () => {
+    const decidedAt = new Date()
+    expect(
+      await errorCode(
+        changeReviewAs(as.seller(sellerA), reviewA, { aiRisk: 'low' }),
+      ),
+    ).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(
+      await errorCode(
+        changeReviewAs(as.seller(sellerA), reviewA, {
+          decision: 'approved',
+          decidedAt,
+        }),
+      ),
+    ).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(
+      await changeReviewAs(as.seller(sellerA), reviewB, {
+        decision: 'withdrawn',
+        decidedAt,
+      }),
+    ).toEqual([])
+    expect(
+      await changeReviewAs(as.admin(), reviewA, { aiRisk: 'low' }),
+    ).toEqual([{ id: reviewA }])
+    expect(
+      await changeReviewAs(as.seller(sellerA), reviewA, {
+        decision: 'withdrawn',
+        decidedBy: sellerA.owner.id,
+        decidedAt,
+      }),
+    ).toEqual([{ id: reviewA }])
+    // Once decided, a review is closed to the seller.
+    expect(
+      await changeReviewAs(as.seller(sellerA), reviewA, { reason: 'Changed' }),
+    ).toEqual([])
+  })
+
+  test('a seller can never approve or reject their own product, or set its rate', async () => {
+    const change = (values: Partial<typeof products.$inferInsert>) =>
+      errorCode(
+        withContext(web, as.seller(sellerA), (tx) =>
+          tx
+            .update(products)
+            .set(values)
+            .where(eq(products.id, draftA.product.id)),
+        ),
+      )
+    expect(
+      await change({
+        status: 'approved',
+        gstRateBps: 500,
+        hsnCode: '3924',
+        publishedAt: new Date(),
+      }),
+    ).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(await change({ status: 'rejected' })).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(await change({ gstRateBps: 500 })).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(await change({ publishedAt: new Date() })).toBe(
+      INSUFFICIENT_PRIVILEGE,
+    )
+    expect(
+      await errorCode(
+        withContext(web, as.seller(sellerA), (tx) =>
+          tx.insert(products).values({
+            sellerId: sellerA.seller.id,
+            categoryId: draftA.product.categoryId,
+            title: 'Approved from the start',
+            slug: `self-approved-${crypto.randomUUID()}`,
+            status: 'approved',
+            gstRateBps: 500,
+            hsnCode: '3924',
+            publishedAt: new Date(),
+          }),
+        ),
+      ),
+    ).toBe(INSUFFICIENT_PRIVILEGE)
+    // Changes the seller may make still work, for example taking an
+    // approved listing off sale.
+    const archived = await withContext(web, as.seller(sellerA), (tx) =>
+      tx
+        .update(products)
+        .set({ status: 'archived' })
+        .where(eq(products.id, approvedA.product.id))
+        .returning({ id: products.id }),
+    )
+    expect(archived).toEqual([{ id: approvedA.product.id }])
+    await owner
+      .update(products)
+      .set({ status: 'approved' })
+      .where(eq(products.id, approvedA.product.id))
+  })
+
+  test('the database keeps one open review per product and every decision whole', async () => {
+    expect(
+      await errorCode(
+        owner
+          .insert(productModeration)
+          .values({ productId: draftB.product.id }),
+      ),
+    ).toBe(UNIQUE_VIOLATION)
+    expect(
+      await errorCode(
+        owner
+          .update(productModeration)
+          .set({ decision: 'approved' })
+          .where(eq(productModeration.id, reviewB)),
+      ),
+    ).toBe(CHECK_VIOLATION)
+    expect(
+      await errorCode(
+        owner
+          .update(productModeration)
+          .set({ decision: 'rejected', decidedAt: new Date() })
+          .where(eq(productModeration.id, reviewB)),
+      ),
+    ).toBe(CHECK_VIOLATION)
+    expect(
+      await errorCode(
+        owner
+          .update(products)
+          .set({ status: 'approved', publishedAt: null })
+          .where(eq(products.id, approvedB.product.id)),
+      ),
+    ).toBe(CHECK_VIOLATION)
+  })
+})
+
+// Invoices (backend spec step 14).
+const invoiceFor = (
+  order: typeof order1,
+  s: typeof sellerA,
+): typeof invoices.$inferInsert => ({
+  orderId: order.order.id,
+  sellerId: s.seller.id,
+  invoiceNumber: `T${crypto.randomUUID().slice(0, 8).toUpperCase()}/1`,
+  issuedAt: new Date(),
+  sellerSnapshot: {},
+  buyerSnapshot: {},
+  placeOfSupplyStateCode: '27',
+  isInterstate: false,
+  taxablePaise: 42_373,
+  cgstPaise: 3_813,
+  sgstPaise: 3_814,
+  totalPaise: 50_000,
+  lines: [{}],
+})
+
+describe('invoices', () => {
+  // order1 gets an invoice from each seller, order2 one from seller B.
+  const invoiceIds: Record<'order1A' | 'order1B' | 'order2B', string> = {
+    order1A: '',
+    order1B: '',
+    order2B: '',
+  }
+
+  beforeAll(async () => {
+    const rows = await owner
+      .insert(invoices)
+      .values([
+        invoiceFor(order1, sellerA),
+        invoiceFor(order1, sellerB),
+        invoiceFor(order2, sellerB),
+      ])
+      .returning({ id: invoices.id })
+    invoiceIds.order1A = rows[0]!.id
+    invoiceIds.order1B = rows[1]!.id
+    invoiceIds.order2B = rows[2]!.id
+  })
+
+  const visibleInvoices = (context: RequestContext) =>
+    withContext(
+      web,
+      context,
+      async (tx) =>
+        new Set(
+          (
+            await tx
+              .select({ id: invoices.id })
+              .from(invoices)
+              .where(inArray(invoices.id, Object.values(invoiceIds)))
+          ).map((row) => row.id),
+        ),
+    )
+
+  test('a buyer sees every invoice of their own orders only', async () => {
+    expect(await visibleInvoices(as.buyer(buyer1))).toEqual(
+      new Set([invoiceIds.order1A, invoiceIds.order1B]),
+    )
+    expect(await visibleInvoices(as.buyer(buyer2))).toEqual(
+      new Set([invoiceIds.order2B]),
+    )
+  })
+
+  test('a seller sees only the invoices they issued, even in a shared order', async () => {
+    expect(await visibleInvoices(as.seller(sellerA))).toEqual(
+      new Set([invoiceIds.order1A]),
+    )
+    expect(await visibleInvoices(as.seller(sellerB))).toEqual(
+      new Set([invoiceIds.order1B, invoiceIds.order2B]),
+    )
+  })
+
+  test('administrators and the worker see every invoice; visitors none', async () => {
+    expect(await visibleInvoices(as.admin())).toEqual(
+      new Set(Object.values(invoiceIds)),
+    )
+    expect(await visibleInvoices(as.anonymous())).toEqual(new Set())
+    const seen = await worker
+      .select({ id: invoices.id })
+      .from(invoices)
+      .where(inArray(invoices.id, Object.values(invoiceIds)))
+    expect(seen).toHaveLength(3)
+  })
+
+  test('buyers and sellers cannot issue an invoice', async () => {
+    for (const context of [as.buyer(buyer1), as.seller(sellerA)]) {
+      const code = await errorCode(
+        withContext(web, context, (tx) =>
+          tx.insert(invoices).values({
+            ...invoiceFor(order2, sellerA),
+            orderId: order2.order.id,
+          }),
+        ),
+      )
+      expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    }
+  })
+
+  test('a seller cannot change an invoice they issued', async () => {
+    const changed = await withContext(web, as.seller(sellerA), (tx) =>
+      tx
+        .update(invoices)
+        .set({ totalPaise: 1, taxablePaise: 1, cgstPaise: 0, sgstPaise: 0 })
+        .where(eq(invoices.id, invoiceIds.order1A))
+        .returning({ id: invoices.id }),
+    )
+    expect(changed).toEqual([])
+    const [row] = await owner
+      .select({ totalPaise: invoices.totalPaise })
+      .from(invoices)
+      .where(eq(invoices.id, invoiceIds.order1A))
+    expect(row).toEqual({ totalPaise: 50_000 })
   })
 })

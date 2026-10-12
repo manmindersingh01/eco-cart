@@ -123,12 +123,69 @@ export type {
   VariantView,
 } from './modules/catalogue/types.ts'
 export {
+  approveProduct,
+  archiveProduct,
+  getProductForReview,
+  listReviewQueue,
+  moveToDraft,
+  rejectProduct,
+  submitProduct,
+  takeDownProduct,
+} from './modules/catalogue/moderation.ts'
+export {
+  screenListing,
+  SCREEN_LISTING_QUEUE,
+  type ScreeningDependencies,
+} from './modules/catalogue/screening.ts'
+export type {
+  ProductForReview,
+  ReviewQueueItem,
+  ReviewView,
+  RiskLevel,
+  ScreeningFlag,
+} from './modules/catalogue/types.ts'
+export type { SellerLabel } from './modules/sellers/service.ts'
+export {
+  cancelInvoices,
+  getInvoiceDownload,
+  issueInvoices,
+  listOrderInvoices,
+  listOwnInvoices,
+  RENDER_INVOICE_QUEUE,
+  rerenderInvoice,
+} from './modules/invoices/service.ts'
+export type {
+  InvoiceDownload,
+  InvoiceSummary,
+  IssuedInvoice,
+} from './modules/invoices/types.ts'
+export {
   createObjectStorage,
   loadStorageConfig,
   type ObjectStorage,
   type StorageConfig,
   type UploadForm,
 } from './lib/storage.ts'
+export {
+  addAddress,
+  deleteAddress,
+  getAddress,
+  getShippingAddress,
+  listAddresses,
+  MAX_ADDRESSES,
+  updateAddress,
+} from './modules/addresses/service.ts'
+export type {
+  AddressUpdate,
+  AddressView,
+  NewAddress,
+} from './modules/addresses/types.ts'
+export {
+  GST_STATES,
+  isGstStateCode,
+  stateName,
+  type GstState,
+} from './lib/states.ts'
 // AI client, request log, cache, and daily limits (backend spec step 17).
 export {
   AiProviderError,

@@ -1,15 +1,19 @@
 import { randomUUID } from 'node:crypto'
+import { eq, sql } from 'drizzle-orm'
 import type { Database } from '../db/client.ts'
 import {
+  addresses,
   brands,
   categories,
   orderItems,
   orders,
+  productImages,
   productVariants,
   products,
   sellers,
   users,
 } from '../db/schema/index.ts'
+import type { OrderToInvoice } from '../modules/invoices/types.ts'
 
 /*
  * Test data, inserted as the database owner so row-level security does not
@@ -56,11 +60,28 @@ export async function createTestSeller(
       pincode: '411001',
       supportEmail: `support-${suffix}@example.test`,
       supportPhone: '+919800000000',
-      invoicePrefix: suffix.slice(0, 6).toUpperCase(),
+      invoicePrefix: (await testInvoicePrefixes(db))[0]!,
       status,
     })
     .returning()
   return { owner, seller: seller! }
+}
+
+/**
+ * Free invoice prefixes such as T01A, unique within the test run. Prefixes
+ * have only 4 characters, so the test database counts them out
+ * (testing/database.ts) instead of leaving them to chance.
+ */
+export async function testInvoicePrefixes(
+  db: Database,
+  count = 1,
+): Promise<string[]> {
+  const result = await db.execute<{ n: string }>(
+    sql`select nextval('test_invoice_prefixes') as n from generate_series(1, ${count})`,
+  )
+  return result.rows.map(
+    ({ n }) => `T${Number(n).toString(36).toUpperCase().padStart(3, '0')}`,
+  )
 }
 
 export async function createTestCategory(db: Database) {
@@ -97,6 +118,7 @@ export async function createTestProduct(
   },
 ) {
   const suffix = uniqueSuffix()
+  const status = options.status ?? 'approved'
   const [product] = await db
     .insert(products)
     .values({
@@ -105,7 +127,10 @@ export async function createTestProduct(
       brandId: options.brandId ?? null,
       title: `Bamboo bottle ${suffix}`,
       slug: `bamboo-bottle-${suffix}`,
-      status: options.status ?? 'approved',
+      status,
+      // An approved product has been published (backend spec step 7).
+      publishedAt:
+        status === 'approved' || status === 'archived' ? new Date() : null,
       hsnCode: '3924',
       gstRateBps: 1800,
       minPricePaise: 50_000,
@@ -200,4 +225,219 @@ export async function createTestOrder(
     .returning()
 
   return { order: order!, items }
+}
+
+/**
+ * A photo of the product in the given state, as if the worker had processed
+ * it, so a listing can be submitted for review (backend spec step 7).
+ */
+export async function createTestPhoto(
+  db: Database,
+  productId: string,
+  status: 'processing' | 'ready' | 'failed' = 'ready',
+) {
+  const id = randomUUID()
+  const [photo] = await db
+    .insert(productImages)
+    .values({
+      id,
+      productId,
+      storageKey: `images/${id}`,
+      status,
+      ...(status === 'ready'
+        ? { contentHash: `hash-${id}`, width: 1200, height: 1200 }
+        : {}),
+      ...(status === 'failed' ? { failureReason: 'The file is damaged' } : {}),
+    })
+    .returning()
+  return photo!
+}
+
+/**
+ * A saved delivery address in Pune (Maharashtra, 27). It is the buyer's
+ * default unless it is deleted or `isDefault` says otherwise; the database
+ * allows only one live default per buyer.
+ */
+export async function createTestAddress(
+  db: Database,
+  options: {
+    userId: string
+    isDefault?: boolean
+    stateCode?: string
+    deleted?: boolean
+  },
+) {
+  const [address] = await db
+    .insert(addresses)
+    .values({
+      userId: options.userId,
+      fullName: 'Asha Patil',
+      phone: '+919800000001',
+      line1: '4 FC Road',
+      city: 'Pune',
+      stateCode: options.stateCode ?? '27',
+      pincode: '411004',
+      isDefault: options.isDefault ?? !options.deleted,
+      deletedAt: options.deleted ? new Date() : null,
+    })
+    .returning()
+  return address!
+}
+
+// Invoices (backend spec step 14).
+
+/** An approved seller that can issue invoices: a GSTIN and PAN for its state. */
+export async function createTestInvoicingSeller(
+  db: Database,
+  options: { stateCode?: string } = {},
+) {
+  const stateCode = options.stateCode ?? '27'
+  const { owner, seller } = await createTestSeller(db, 'approved')
+  const [ready] = await db
+    .update(sellers)
+    .set({
+      stateCode,
+      gstin: `${stateCode}AAACE1234F1Z5`,
+      pan: 'AAACE1234F',
+      approvedAt: new Date(),
+    })
+    .where(eq(sellers.id, seller.id))
+    .returning()
+  return { owner, seller: ready! }
+}
+
+export interface TestOrderLine {
+  sellerId: string
+  productId: string
+  variantId: string
+  title?: string
+  options?: Record<string, string>
+  hsnCode?: string
+  gstRateBps?: number
+  unitPricePaise?: number
+  quantity?: number
+  discountSharePaise?: number
+  status?: string
+}
+
+/**
+ * An order with lines priced as given (by default one ₹500 unit at 18%),
+ * delivered in `shippingStateCode`. Tax is back-calculated from each line's
+ * tax-inclusive amount after its discount, as checkout does. Lines are
+ * inserted one at a time, so they keep the given order.
+ */
+export async function createTestOrderWithLines(
+  db: Database,
+  options: {
+    buyerId: string
+    lines: TestOrderLine[]
+    shippingStateCode?: string
+    paymentMethod?: 'razorpay' | 'cod'
+    status?: 'pending_payment' | 'confirmed' | 'cancelled' | 'completed'
+  },
+) {
+  const lines = options.lines.map((line) => {
+    const gstRateBps = line.gstRateBps ?? 1800
+    const unitPricePaise = line.unitPricePaise ?? 50_000
+    const quantity = line.quantity ?? 1
+    const discountSharePaise = line.discountSharePaise ?? 0
+    const lineTotalPaise = unitPricePaise * quantity
+    const net = lineTotalPaise - discountSharePaise
+    const taxablePaise = Math.round((net * 10_000) / (10_000 + gstRateBps))
+    return {
+      ...line,
+      gstRateBps,
+      unitPricePaise,
+      quantity,
+      discountSharePaise,
+      lineTotalPaise,
+      taxablePaise,
+      taxPaise: net - taxablePaise,
+      commissionPaise: Math.floor(net / 10),
+    }
+  })
+  const sum = (amount: (line: (typeof lines)[number]) => number) =>
+    lines.reduce((total, line) => total + amount(line), 0)
+  const subtotalPaise = sum((line) => line.lineTotalPaise)
+  const discountPaise = sum((line) => line.discountSharePaise)
+
+  const [order] = await db
+    .insert(orders)
+    .values({
+      orderNumber: `EK-TEST-${uniqueSuffix()}`,
+      userId: options.buyerId,
+      status: options.status ?? 'confirmed',
+      paymentMethod: options.paymentMethod ?? 'razorpay',
+      subtotalPaise,
+      discountPaise,
+      taxPaise: sum((line) => line.taxPaise),
+      totalPaise: subtotalPaise - discountPaise,
+      shippingAddress: {
+        fullName: 'Asha Patil',
+        phone: '+919800000001',
+        line1: '4 FC Road',
+        line2: 'Shivajinagar',
+        landmark: null,
+        city: 'Pune',
+        stateCode: options.shippingStateCode ?? '27',
+        pincode: '411004',
+      },
+      buyerName: 'Asha Patil',
+      buyerPhone: '+919800000001',
+      buyerEmail: 'asha@example.test',
+    })
+    .returning()
+
+  const items = []
+  for (const line of lines) {
+    const [item] = await db
+      .insert(orderItems)
+      .values({
+        orderId: order!.id,
+        sellerId: line.sellerId,
+        productId: line.productId,
+        variantId: line.variantId,
+        title: line.title ?? 'Bamboo bottle',
+        sku: `SKU-${uniqueSuffix()}`,
+        options: line.options ?? {},
+        hsnCode: line.hsnCode ?? '3924',
+        gstRateBps: line.gstRateBps,
+        unitPricePaise: line.unitPricePaise,
+        unitMrpPaise: line.unitPricePaise,
+        quantity: line.quantity,
+        lineTotalPaise: line.lineTotalPaise,
+        discountSharePaise: line.discountSharePaise,
+        taxablePaise: line.taxablePaise,
+        taxPaise: line.taxPaise,
+        commissionBps: 1000,
+        commissionPaise: line.commissionPaise,
+        ...(line.status ? { status: line.status } : {}),
+      })
+      .returning()
+    items.push(item!)
+  }
+  return { order: order!, items }
+}
+
+/**
+ * What payment confirmation (step 12) hands to `issueInvoices` for an order
+ * made above: the order's frozen details and its lines in their order,
+ * without cancelled ones.
+ */
+export function orderToInvoiceFor(
+  order: typeof orders.$inferSelect,
+  items: (typeof orderItems.$inferSelect)[],
+): OrderToInvoice {
+  return {
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    placedAt: order.placedAt,
+    paymentMethod: order.paymentMethod === 'cod' ? 'cod' : 'razorpay',
+    buyer: {
+      userId: order.userId,
+      name: order.buyerName,
+      shippingAddress: order.shippingAddress,
+    },
+    lines: items.filter((item) => item.status !== 'cancelled'),
+  }
 }
