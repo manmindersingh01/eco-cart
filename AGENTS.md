@@ -176,7 +176,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Log every AI call in `ai_requests`.
   Check the cache on `(feature, input_hash)` first, and enforce the daily platform and per-seller limits before calling out.
 - Run deterministic checks before AI checks.
-  For example, listing screening checks price above MRP and prohibited terms before asking the model.
+  For example, listing screening checks prohibited terms and an implausibly large discount (70% or more below the MRP) before asking the model.
 - The shopping assistant answers only from the product data it was given and says so when it cannot answer.
   It returns a structured object with cited product ids, and the storefront renders product cards from that object, never raw model text as HTML.
 

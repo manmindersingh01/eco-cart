@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./worker": "./src/worker.ts",
-    "./testing": "./src/testing/index.ts"
+    "./testing": "./src/testing/index.ts",
+    "./states": "./src/lib/states.ts"
   },
   "scripts": {
     "typecheck": "tsc",

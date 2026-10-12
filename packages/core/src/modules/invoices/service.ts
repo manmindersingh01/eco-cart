@@ -19,6 +19,7 @@ import {
   type Page,
 } from '../../lib/pagination.ts'
 import type { JobQueue, QueueDefinition } from '../../lib/queue.ts'
+import { stateName } from '../../lib/states.ts'
 import type { ObjectStorage } from '../../lib/storage.ts'
 import { uniqueViolation } from '../../lib/postgres.ts'
 import {
@@ -36,7 +37,6 @@ import {
   formatInvoiceNumber,
   invoiceFileName,
 } from './numbers.ts'
-import { gstStateName } from './state-names.ts'
 import {
   invoiceBuyerSnapshot,
   invoiceLines,
@@ -162,7 +162,7 @@ export async function issueInvoices(
     name: order.buyer.name,
     shippingAddress: {
       ...shippingAddress,
-      stateName: gstStateName(shippingAddress.stateCode),
+      stateName: stateName(shippingAddress.stateCode) ?? null,
     },
     orderNumber: order.orderNumber,
     orderPlacedAt: order.placedAt.toISOString(),
@@ -188,7 +188,7 @@ export async function issueInvoices(
         line1: seller.line1,
         city: seller.city,
         stateCode: seller.stateCode,
-        stateName: gstStateName(seller.stateCode),
+        stateName: stateName(seller.stateCode) ?? null,
         pincode: seller.pincode,
       },
       supportEmail: seller.supportEmail,

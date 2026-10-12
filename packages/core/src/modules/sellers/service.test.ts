@@ -250,6 +250,11 @@ describe('createSeller', () => {
       'pincode must be a six-digit PIN code',
     ],
     [
+      'two digits that are not a GST state code',
+      { stateCode: '99', gstin: null, pan: null },
+      'stateCode must be a GST state code, like 27 for Maharashtra',
+    ],
+    [
       'a phone without +91',
       { supportPhone: '02012340001' },
       'supportPhone must be in international format',

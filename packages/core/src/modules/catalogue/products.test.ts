@@ -128,11 +128,20 @@ const searchText = async (id: string) =>
       .where(eq(products.id, id))
   )[0]!.text
 
-/** Sets a status directly, for states that later steps reach. */
+/**
+ * Sets a status directly, for states that other functions reach. An approved
+ * product has a GST rate, an HSN code, and a publication time.
+ */
 const setStatus = (id: string, status: string, publishedAt?: Date) =>
   owner
     .update(products)
-    .set({ status, ...(publishedAt ? { publishedAt } : {}) })
+    .set({
+      status,
+      ...(status === 'approved'
+        ? { gstRateBps: 1800, hsnCode: '3924', publishedAt: new Date() }
+        : {}),
+      ...(publishedAt ? { publishedAt } : {}),
+    })
     .where(eq(products.id, id))
 
 describe('createProduct', () => {

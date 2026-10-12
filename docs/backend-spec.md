@@ -37,10 +37,10 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | 4 | Seller accounts: create, approve, suspend | 5.3, 5.4 | Done |
 | 5 | Category tree with GST rates, and brands | 5.5 | Done |
 | 6 | Products, variants, stock, and image upload | 5.5, 6.2 | Done |
-| 7 | Listing moderation: submit, deterministic screening, approve, reject | 6.2 | Planned |
+| 7 | Listing moderation: submit, deterministic screening, approve, reject | 6.2 | Done |
 | 8 | Catalogue import from CSV and Excel with a row-level error report | 5.11, 6.7 | Planned |
 | 9 | Storefront reads: home, category, product, keyword search, filters, sorting, keyset pagination | 6.8 | Planned |
-| 10 | Buyer addresses | 5.3 | Planned |
+| 10 | Buyer addresses | 5.3 | Done |
 | 11 | Cart (guest and logged in) and coupons | 5.6 | Planned |
 | 12 | Checkout, Razorpay, webhook, payment confirmation, cash on delivery, order expiry | 6.3 | Planned |
 | 13 | Orders: buyer view, seller dispatch, delivery, cancellation | 6.4 | Planned |
@@ -124,9 +124,9 @@ Checkout, payment confirmation, order expiry, cancellation, and refunds run as `
 | --- | --- | --- |
 | `addresses` | The owning buyer; full access | The owning buyer; full access |
 | `sellers` | Anyone, if approved; the seller's own account; full access | Add: full access. Change: the seller itself; full access |
-| `products` | Anyone, if the product is approved and not deleted and its seller is approved (step 4); the owning seller; full access | The owning seller; full access |
+| `products` | Anyone, if the product is approved and not deleted and its seller is approved (step 4); the owning seller; full access | The owning seller; full access. Only full access approves or rejects a product or sets its GST rate and publication time (a trigger, step 7) |
 | `product_variants`, `product_images` | Anyone who can see the product | The owning seller; full access |
-| `product_moderation` | The owning seller; full access | Add: the owning seller; full access. Decide: full access |
+| `product_moderation` | The owning seller; full access | Add: the owning seller, only an undecided, unscreened review (step 7); full access. Screen and decide: full access. Withdraw: the owning seller, only their own open review |
 | `product_embeddings` | Anyone who can see the product | Worker only |
 | `carts`, `cart_items` | The owning buyer, or the guest holding the cart's token; full access | Same |
 | `orders` | The buyer; any seller with an item in the order; full access | Full access (the buyer may add their own) |
@@ -451,21 +451,7 @@ If Green Basket is suspended for fake listings, Ravi is signed out everywhere, c
    Seller accounts are made only through the seller flow above, so a seller account always has a business.
 7. **Audit entries** for `seller.create`, `seller.update`, `seller.approve`, `seller.suspend`, and `seller.reinstate` (administrator), and `seller.update_contacts` (the seller).
    A create records the new details; every other entry records the values before and after, and an edit only the fields it changed.
-8. **Cancelling invoices** with `cancelInvoices`, for an order cancelled before dispatch (decided 12 October 2026).
-   Step 13's cancellation calls it inside its own transaction, which runs as `system` and holds the order's row lock:
-
-   ```ts
-   cancelInvoices(tx: Transaction, queue: JobQueue, input: { orderId: string; reason: string }): Promise<IssuedInvoice[]>
-   // reason: 1 to 500 characters, printed on the PDF, for example "Cancelled by the buyer before dispatch"
-   // returns the invoices this call cancelled; none when they were cancelled already
-   ```
-
-   It marks every invoice of the order cancelled, with the time and reason, and keeps its number used, as GST requires; GST returns list such invoices as cancelled.
-   Each PDF is made again with a "This invoice is cancelled" notice, the date and reason, and a light "CANCELLED" mark across the page.
-   Until the new PDF exists, the old one cannot be downloaded (409), and the invoice lists show the cancellation.
-   Calling it again changes nothing, and an order whose invoices were cancelled is never invoiced again.
-   GST credit notes for returns stay out of scope, as quotation 4.0 defers them.
-9. **API:**
+8. **API:**
 
    | Method and path | Who | What |
    | --- | --- | --- |
@@ -753,6 +739,261 @@ Later the same day Ravi changes the stock of Soft to 95 without anything else ch
 - Tests prove every rule above, the summary fields after each kind of change, that one seller can never read or change another's product, the upload form's limits against real object storage, the image job from upload to stored sizes (including metadata removal and every failure reason), and every API answer.
 - `pnpm check` passes.
 
+## Step 7: Listing moderation
+
+Status: Done (11 October 2026; extended 12 October 2026 with the client's answers).
+
+### Goal
+
+A seller submits a finished listing for review.
+A background job screens it at once with fixed rules (no AI yet), and an administrator works through the open reviews, riskiest first, and approves or rejects each one.
+Approval copies the GST rate and HSN code onto the product and puts it on the storefront; rejection sends it back to the seller with a reason.
+A seller can bring a listing back to draft at any time to change it, and an administrator can take down a listing that is on sale.
+
+For example, Green Basket submits "Bamboo Toothbrush, Pack of 4" with one ready photo.
+The screening job finds nothing wrong and marks it low risk.
+An administrator approves it, the product gets the 5% rate and HSN code 9603 of Bamboo Toothbrushes, and buyers can see it.
+Had the title said "toy gun" while "gun" is a prohibited term, the review would have been marked high risk with the flag `prohibited_term`, and the administrator would have rejected it with "Toy weapons cannot be sold on EcoKart".
+
+### What gets built
+
+1. **Submit** (the seller, `submitProduct` in `packages/core/src/modules/catalogue/moderation.ts`): a `draft` or `rejected` product moves to `pending_review`, the old rejection reason is cleared, a new `product_moderation` row is added, and a screening job is queued, all in one transaction (design doc 6.2 steps 1 and 2).
+   Submitting is refused with a list of what to fix when the listing could never be sold as it is:
+   - no ready photo, because the storefront needs a main image;
+   - a photo still being processed, so the reviewer sees the photos the buyer will see;
+   - no active variant, because the product would have no price;
+   - no HSN code, from the product or its category's default, because every order line needs one;
+   - a category that is no longer active or now has subcategories, or a brand that is no longer active.
+   A seller whose business is still `pending` can submit; an approved listing of a pending seller stays hidden until the seller is approved (step 4).
+2. **Screening** (`screenListing` in `screening.ts`, run by the worker from the queue `catalogue.screen-listing`): reads the listing, runs the fixed checks, and stores the flags and the risk level on the review.
+   It does nothing once the review has a decision, so a retry or a late job never changes a decided review.
+
+   | Flag | When | Risk |
+   | --- | --- | --- |
+   | `prohibited_term` | A word or phrase from the `prohibited_terms` setting appears in the title, description, highlights, attribute names or values, or option names or values | High |
+   | `large_discount` | A variant's price is 70% or more below its MRP, which usually means an inflated MRP | Medium |
+   | `missing_description` | The description is empty | Medium |
+
+   The review's risk is the highest risk of its flags, and `low` when there are none.
+   Step 20 adds the AI checks in the same job, after these.
+3. **The review queue** (administrators, `listReviewQueue`): the open reviews, highest risk first, then oldest first, so no listing waits forever behind newer ones.
+   Reviews whose screening has not finished come last.
+   Each entry shows the product (title, thumbnail, category, price range), the seller (name and status), when it was submitted, its risk and flags, and whether the product was on sale before.
+   An optional `risk` filter shows one level only, for example all low-risk reviews.
+4. **One product for review** (administrators, `getProductForReview`): the whole listing as the seller sees it, the seller's name and status, and the product's 20 most recent reviews with their flags, decisions, and reasons.
+5. **Approve** (administrators, `approveProduct`), only after screening has finished:
+   - the GST rate is copied from the category, unless the administrator gives another current GST rate;
+   - the HSN code is the product's own, or else the category's default, and is copied onto the product;
+   - the product becomes `approved`, its first publication time is set (and kept on later approvals), and its summary fields are rebuilt;
+   - the review records the decision, the administrator, and the time;
+   - `audit_logs` gets `product.approve` with the status, rate, and HSN code before and after.
+   The listing is checked again first (active variant, HSN code, category, brand), because a category or brand may have changed while it waited.
+6. **Reject** (administrators, `rejectProduct`) with a reason of up to 500 characters, at any time, even before screening finishes: the product becomes `rejected` with the reason the seller sees, the review records the decision, and `audit_logs` gets `product.reject`.
+   The seller edits the listing and submits it again, which opens a new review, so the history of every decision is kept.
+7. **Archive** (the seller, `archiveProduct`): an `approved` product becomes `archived`, which takes it off the storefront and keeps it for past orders (design doc 6.2).
+8. **Move back to draft** (the seller, `moveToDraft`), so a listing can change after it was submitted:
+   - from `pending_review`: the open review is closed as `withdrawn`, recording the seller and the time, and leaves the queue;
+   - from `approved`: the listing leaves the storefront until it is approved again, and keeps its web address and first publication time;
+   - from `archived`: the listing comes back to be changed and submitted again.
+   The seller then edits the draft and submits it, which opens a new review.
+   A draft or rejected listing can already change, so moving it answers 409.
+   Price, MRP, stock, and the active flag never need this, because they change at any time (step 6).
+9. **Take down** (administrators, `takeDownProduct`) with a reason of up to 500 characters: an `approved` listing becomes `rejected` with the reason the seller sees, for example after a buyer's complaint, and `audit_logs` gets `product.take_down`.
+   The seller changes it and submits it again like any rejected listing.
+10. **A category's GST rate change reaches its approved products** (decided 12 October 2026; the client may still confirm it).
+    When an administrator changes a category's rate, every approved product in it that still has the category's old rate gets the new one, in the same transaction, and `audit_logs` gets `category.update_product_rates` with the old and new rate and the number of products.
+    A product whose rate an administrator chose at approval keeps its own rate.
+11. **Extension points for other steps**, marked in the code:
+    - step 9 refreshes the storefront cache after approve, archive, move back to draft, and take down;
+    - step 18 queues the product's embeddings in the approval transaction;
+    - step 20 adds the AI checks to the screening job.
+12. **API:**
+
+    | Method and path | Who | What |
+    | --- | --- | --- |
+    | `POST /api/seller/products/{id}/submit` | The seller | Submit a draft or rejected listing for review |
+    | `POST /api/seller/products/{id}/move-to-draft` | The seller | Bring a listing under review, on sale, or archived back to draft |
+    | `POST /api/seller/products/{id}/archive` | The seller | Take an approved listing off sale |
+    | `GET /api/admin/moderation?risk=&cursor=&limit=` | Administrator | The open reviews, highest risk first, 20 a page by default and at most 100 |
+    | `GET /api/admin/products/{id}` | Administrator | One product with its seller and review history |
+    | `POST /api/admin/products/{id}/approve` | Administrator | Approve, with `{}` or `{ "gstRateBps": 500 }` to override the rate |
+    | `POST /api/admin/products/{id}/reject` | Administrator | Reject with `{ "reason": "..." }` |
+    | `POST /api/admin/products/{id}/take-down` | Administrator | Take a listing on sale off the storefront with `{ "reason": "..." }` |
+
+    Every answer is 200 with the product (and, for the administrator, its seller and reviews); a product in the wrong state answers 409, for example approving one that is not waiting for review.
+13. **Database changes:**
+    - the review queue index becomes `(risk_rank, submitted_at, id) WHERE decision IS NULL`, where `risk_rank` is a generated column (0 high, 1 medium, 2 low, 3 not screened yet), because sorting the risk text gives high, low, medium;
+    - one open review per product at most (a unique index on `product_id` where `decision` is null), so two submits at the same moment cannot open two reviews;
+    - checks that a decision, its time, and its administrator go together, that a rejection has a reason, and that an approved product has a GST rate, an HSN code, and a publication time, because order lines need all three;
+    - a seller (the web app without full access) can add a review only as an undecided, unscreened one, and change one only to withdraw their own open review;
+    - a review's decision can also be `withdrawn`;
+    - a database trigger refuses, for the web app without full access, any change that approves or rejects a product, or sets its GST rate or publication time, so a missed permission check in the code can never let a seller approve their own listing.
+14. **Example approved products in `pnpm db:seed`:** two listings for each example seller, each with variants and a generated photo, created, submitted, screened, and approved through the same services.
+    The seed runs the photo and screening jobs itself as the worker's database user, so it works without the worker running.
+
+### Smaller decisions made in this step
+
+- **Moderation lives in the catalogue module** (`moderation.ts` and `screening.ts`), not in a separate `modules/moderation/`.
+  `product_moderation` is a catalogue table, and approving writes product columns that only the catalogue changes, so one module keeps one owner for both.
+  Design doc section 4 is updated to match.
+- **"Price above MRP" is not a screening flag.**
+  The database already refuses a price above the MRP (step 6), so the flag could never appear.
+  A very large discount (70% or more) is flagged instead, because an inflated MRP is the real problem the check was for.
+- **Some problems refuse the submission, others only flag it.**
+  A problem the seller must fix before the listing could be sold refuses the submission at once with a list, so nobody waits for a review that can only end in rejection.
+  A problem an administrator should judge (a prohibited term, a large discount, an empty description) becomes a flag.
+- **Approval waits for screening; rejection does not.**
+  Every approved listing has been through the fixed checks, and an obviously bad listing can still be rejected straight away.
+- **Prohibited terms match whole words and phrases,** ignoring upper and lower case, punctuation, and spacing, so "gun" flags "Toy Gun" and "toy-gun" but not "begun" or "Burgundy".
+  Plural forms are separate terms ("gun", "guns"); the setting's description in the admin console says so.
+  Words in any script count, so Hindi terms work too.
+- **Only text the seller entered is screened;** brand and category names come from administrators.
+- **The GST rate follows the category, the HSN code does not.**
+  Sellers never set the rate, and a rate change by law applies to every sale from that day, so a category's new rate reaches its approved products (unless an administrator chose their rate).
+  An HSN code may be the seller's own choice, so a new category default does not overwrite it; a wrong code is fixed through a new review.
+- **A withdrawn review stays in the history,** with the seller who withdrew it, so the administrator sees every submission.
+- **A take-down is a rejection of a listing on sale,** not a new kind of review: the product shows the reason like any rejection, and the audit log records who took it down and why.
+- **Seller actions on a listing are not audited,** like every other seller change to listings (step 6); the review rows record each submission.
+  Administrator decisions are audited.
+- **The screening job is exported from `@ecokart/core`,** because it loads no heavy library; the worker registers it with the photo job.
+- **Screening looks at every variant, active or not,** because a seller can switch a variant on at any time without a review.
+- **An approval locks the product's category row before the product,** the same order a category change takes (the category, then its products).
+  So an approval during a rate change waits for it and copies the new rate, never one that is about to be replaced; a test holds a rate change open to prove it.
+- **Approving and rejecting answer with what the administrator sees:** the product, its seller, and its reviews.
+- **The catalogue reads seller names through the sellers module** (`getSellerLabels`), never from the `sellers` table, because a module owns its tables.
+- **The seed runs the photo and screening jobs as `ecokart_worker`,** on the same server as `DATABASE_URL`, with the `WORKER_DATABASE_PASSWORD` that `packages/core/.env` already holds for `pnpm db:migrate`, and it uploads its example photos to the local bucket.
+
+### Not in this step
+
+- AI checks in screening (step 20), embeddings (step 18), and refreshing the storefront cache (step 9).
+- Emails telling a seller a listing was approved or rejected; like the seller emails of step 4, they are a post-launch suggestion, and the seller sees the status and reason in the portal.
+- Approving or rejecting many listings at once: a post-launch suggestion.
+- Keeping the version on sale while changes wait for review: a listing that changes leaves the storefront until it is approved again (decided 12 October 2026).
+
+### Done when
+
+- On `pnpm dev`, through the real API: an administrator saves a prohibited term; a seller creates a listing with a photo and submits it; the worker screens it and the administrator sees it high in the queue with the flag; the administrator rejects it with a reason; the seller sees the reason, fixes the title, and submits again; the administrator approves it with the category's rate; the product shows to visitors; and the seller archives it, which hides it again.
+  Then an administrator takes down a listing on sale, the seller fixes and resubmits it, and after its approval the seller moves it back to draft (it leaves the storefront), submits it, and withdraws it from review.
+- Tests prove: each submission rule and the readiness list; one open review per product, even for two submits at the same moment; each screening flag, whole-word matching, the risk levels, and that a decided review is never changed; the queue order, risk filter, and pages; approval copying the rate, the override, and the HSN code, and waiting for screening; rejection with its reason; two administrators deciding at the same moment, of whom only one succeeds; an approval during a category rate change; archiving; moving back to draft from each state, and a withdrawal and an approval at the same moment; take-downs; a category's new rate reaching approved products but not a rate an administrator chose; the audit entries; the row-level security and trigger rules for reviews and products; the seed's example products; and every API answer.
+- `pnpm check` passes.
+
+### Open points found in this step
+
+- **Price-dependent GST rates** (design doc section 11, open since step 5) need the client's and the chartered accountant's decision, and must be settled before checkout freezes rates on order lines in step 12.
+  Until then approval copies the category's single rate (decided 12 October 2026), which is right for every category except clothing and footwear.
+- **A category's new GST rate reaching its approved products** was decided on 12 October 2026 as recommended; the client may still confirm it.
+- The 70% large-discount threshold is a starting point for administrators to confirm.
+
+## Step 10: Buyer addresses
+
+Status: Done (11 October 2026).
+
+### Goal
+
+A signed-in buyer keeps a small book of delivery addresses: they add, edit, and delete addresses and choose which one is the default.
+Checkout (step 12) takes one of them and copies it onto the order, so a later edit never changes a past order.
+
+For example, Asha saves her home in Pune (Maharashtra, state code 27), which becomes her default because it is her first address.
+She adds her office in Bengaluru (Karnataka, 29) and makes it the default, and home stops being the default in the same change.
+When she later deletes the office, home becomes the default again.
+
+### What gets built
+
+1. **Addresses** in a new module, `packages/core/src/modules/addresses/` (`service.ts` and `types.ts`), which owns the `addresses` table:
+   - **List** (the buyer): every address that is not deleted, the default first and then the newest first, as one answer.
+   - **Add** (the buyer): full name (up to 100 characters), a delivery phone, address line 1 (up to 200), an optional line 2 (up to 200) and landmark (up to 100), city (up to 100), state code, PIN code, and optionally `isDefault: true`.
+     The first address becomes the default whatever was sent.
+   - **Edit** (the buyer): any of those fields, and `isDefault: true` to make the address the default.
+     `isDefault: false` is refused with a plain message, because a buyer with addresses always has exactly one default; they make another address the default instead.
+     An empty change answers 400.
+   - **Delete** (the buyer): a soft delete (`deleted_at`), as design doc section 5.1 says for addresses.
+     If it was the default, the newest remaining address becomes the default.
+     A deleted address answers 404 from then on.
+   - **At most 20 addresses per buyer**, not counting deleted ones; adding a 21st answers 409 "delete one first".
+   - **Checks on each field:** the phone is an Indian mobile number (`+91` and ten digits starting with 6 to 9), the state code is one of the GST state codes below, and the PIN code has six digits and does not start with 0.
+     A blank line 2 or landmark (an empty string, as a form sends it) is stored as empty (null).
+2. **Exactly one default, even when two changes arrive at once.**
+   Every change first takes a lock for that buyer (a transaction-level advisory lock on their id), so two changes to one buyer's addresses run one after the other.
+   Two "add my first address" requests at the same moment leave exactly one default, and two adds at 19 addresses cannot make 21.
+   The existing unique index `addresses_one_default_per_user_idx` stays as the database's backstop.
+3. **Buyers only.**
+   The service refuses any request context other than `buyer` with 403, and every query also filters on the buyer's id, with row-level security (the owner or full access) as the safety net.
+   Another buyer's address answers 404, the same as one that does not exist, so an id reveals nothing.
+4. **For checkout (step 12):** `getShippingAddress(tx, buyerId, addressId)` returns one of the buyer's live addresses as the order's `ShippingAddressSnapshot` (full name, phone, line 1, line 2, landmark, city, state code, PIN code), or 404 for a deleted address or someone else's.
+   It takes the buyer's id rather than a request context, because checkout runs as `system`.
+5. **The list of GST state codes** in `packages/core/src/lib/states.ts`: the 36 states and union territories with their two-digit codes and names, for example 27 Maharashtra and 38 Ladakh, and `stateName(code)`.
+   The shared `stateCode` format in `validation.ts` now accepts only these codes, so addresses, sellers, and the company details all refuse codes such as 00 or 99, which only looked right because they had two digits.
+   Invoices (step 14) print the name next to the code.
+   The file imports nothing, so the browser can use it too (`@ecokart/core/states`), and the admin console now shows "Pune, Maharashtra" instead of "Pune, 27".
+6. **`requireBuyer`** in `apps/web/src/lib/request-context.ts`: a signed-in buyer, or 401 or 403.
+   Steps 11 to 13 use it too.
+7. **API** for the signed-in buyer:
+
+   | Method and path | What |
+   | --- | --- |
+   | `GET /api/account/addresses` | Every live address, the default first |
+   | `POST /api/account/addresses` | Add an address |
+   | `GET /api/account/addresses/{id}` | One address |
+   | `PATCH /api/account/addresses/{id}` | Edit an address, or make it the default |
+   | `DELETE /api/account/addresses/{id}` | Delete an address |
+
+   Adding answers 201 and deleting 204; every other answer is 200.
+   Each address comes back with its state name as well as its code.
+   Signed out answers 401, a seller or administrator 403, someone else's or a deleted address 404, input that breaks a rule 400 with the reasons, and a 21st address 409.
+8. **A test fixture,** `createTestAddress`, for the cart, checkout, and order tests of steps 11 to 13.
+
+### Smaller decisions made in this step
+
+- **The buyer's own API lives under `/api/account/`,** next to `/api/seller/` and `/api/admin/`.
+  What only a signed-in buyer has goes there: addresses now, and orders and returns in steps 13 and 15.
+  What a guest also uses keeps a path of its own, for example the cart at `/api/cart` in step 11.
+  Checkout is an action on the cart rather than something kept in the account, so it is `/api/checkout` (step 12), and Razorpay's webhook stays at `/api/webhooks/razorpay`.
+  So the buyer's routes are `/api/account/addresses`, `/api/cart`, `/api/checkout`, and `/api/account/orders`.
+- **A new `addresses` module** owns the table, and design doc section 4 lists it.
+- **The list is one answer, not pages,** because a buyer has at most 20 live addresses, like the category tree in step 5.
+  The existing index on `user_id` finds them.
+- **No database change.**
+  The columns, the checks (international phone format, two digits for the state code, six digits for the PIN code), the one-default index, row-level security, the grants (the web app may not DELETE rows, which matches soft delete), and the `updated_at` trigger all came with step 1.
+  The stricter rules (Indian mobile, the state list, text lengths) are checked in the service, and the database keeps its broader checks, so a new state or union territory needs only a code change.
+- **An advisory lock, not row locks,** serialises one buyer's changes.
+  Locking the buyer's address rows cannot stop two "first address" requests, because there are no rows to lock yet.
+- **Edits change the row in place.**
+  Nothing refers to an address by foreign key, and an order copies the address into `orders.shipping_address` at checkout, so editing or deleting an address never changes a past order.
+- **The delivery phone must be an Indian mobile number,** because couriers call or text the person receiving the parcel.
+  It is asked for each address, rather than taken from the account, because a gift may go to someone else.
+- **Address changes are not written to `audit_logs`,** which is for administrator actions, as with seller listing edits in step 6.
+- **The state list leaves out codes no delivery address can have:** 97 (Other Territory, for offshore areas), and the retired 25 (Daman and Diu, merged into 26 in 2020) and 28 (Andhra Pradesh before 2014, now 37).
+
+### Not in this step
+
+- Address screens in the storefront; the frontend comes after the backend steps.
+- Checking the PIN code against the state, and limiting delivery to some PIN codes or states (see the open points).
+- Profile editing, and linking an email and a phone number to one account: a small step of its own after step 13 (see the open points).
+- Administrators reading or changing buyers' address books; every order keeps its own copy of the address, which step 13 shows.
+
+### Done when
+
+- On `pnpm dev`, through the real API: a buyer signs in with an email code, adds a first address that becomes the default, adds a second and makes it the default, edits the first, deletes the default and sees the other become the default again, and a seller is refused.
+- Tests prove: every field rule and the state list; the first address becoming the default; switching the default; the newest address taking over when the default is deleted; the limit of 20; the empty change; that one buyer can never read, change, or delete another's address; that two changes at the same moment leave exactly one default and never more than 20 addresses; `getShippingAddress` for a live, a deleted, and another buyer's address; the stricter `stateCode` for sellers and company details; and every API answer (200, 201, 204, 400, 401, 403, 404, 409).
+- `pnpm check` passes.
+
+### Open points found in this step
+
+- A delivery phone must be an Indian mobile number, as built (agreed with the project lead on 12 October 2026).
+  The client still has to confirm it; design doc section 11 lists it.
+  Accepting any phone number in international format instead would change one rule in `modules/addresses/types.ts` and its tests.
+- The chartered accountant should confirm the state list: 36 codes, leaving out 97, 25, and 28.
+- Delivery is open to every PIN code in India.
+  If the client's couriers cannot reach some areas, a list of serviceable PIN codes can be added when the courier is chosen.
+- A buyer who picks the wrong state gets the wrong kind of GST on the invoice (CGST plus SGST instead of IGST, or the other way round).
+  The PIN code's first digit names its postal region, so comparing it with the state would catch most such mistakes, but some border villages are served by a post office in the next state, so a strict check could refuse real addresses.
+  Suggested for after launch: fill in the state from the PIN code using India Post's directory.
+- Timeline week 3 lists buyer profile editing next to saved addresses, but step 2 left it out.
+  Decided 12 October 2026: it is not part of this step, and becomes a small step of its own after step 13.
+  Changing one's own name already works through Better Auth (`POST /api/auth/update-user`).
+  That step adds a phone number to an email account and an email to a phone account, each confirmed with a code sent to it.
+  It also closes a gap found here: Better Auth's phone plugin refuses a new phone number through `update-user` but accepts `phoneNumber: null`, so a buyer who signed up with a phone number could remove the only way they can sign in.
+
 ## Step 14: GST invoices and PDFs
 
 Status: Done (12 October 2026).
@@ -842,7 +1083,21 @@ Asha downloads both from her order, and each seller sees only their own invoice 
    A seller never sees another seller's invoice, even for the same order.
 7. **Making a PDF again** (administrators): queues the PDF job again for one invoice, for example after the template changes, with the audit entry `invoice.render`.
    The frozen data never changes, only the file.
-8. **API:**
+8. **Cancelling invoices** with `cancelInvoices`, for an order cancelled before dispatch (decided 12 October 2026).
+   Step 13's cancellation calls it inside its own transaction, which runs as `system` and holds the order's row lock:
+
+   ```ts
+   cancelInvoices(tx: Transaction, queue: JobQueue, input: { orderId: string; reason: string }): Promise<IssuedInvoice[]>
+   // reason: 1 to 500 characters, printed on the PDF, for example "Cancelled by the buyer before dispatch"
+   // returns the invoices this call cancelled; none when they were cancelled already
+   ```
+
+   It marks every invoice of the order cancelled, with the time and reason, and keeps its number used, as GST requires; GST returns list such invoices as cancelled.
+   Each PDF is made again with a "This invoice is cancelled" notice, the date and reason, and a light "CANCELLED" mark across the page.
+   Until the new PDF exists, the old one cannot be downloaded (409), and the invoice lists show the cancellation.
+   Calling it again changes nothing, and an order whose invoices were cancelled is never invoiced again.
+   GST credit notes for returns stay out of scope, as quotation 4.0 defers them.
+9. **API:**
 
    | Method and path | Who | What |
    | --- | --- | --- |
@@ -852,11 +1107,11 @@ Asha downloads both from her order, and each seller sees only their own invoice 
    | `POST /api/admin/invoices/{id}/render` | Administrator | Makes the PDF again (202) |
 
 10. **Database changes,** in three migrations:
-    - `0010_invoice_rules`: an index on `invoices (seller_id, issued_at, id)` for the seller's list; checks that an invoice number is at most 16 capital letters, digits, `/`, or `-`, and that `lines` is a list with at least one line; and a check that a seller who has ever been approved keeps a GSTIN and a PAN.
+    - `0013_invoice_rules`: an index on `invoices (seller_id, issued_at, id)` for the seller's list; checks that an invoice number is at most 16 capital letters, digits, `/`, or `-`, and that `lines` is a list with at least one line; and a check that a seller who has ever been approved keeps a GSTIN and a PAN.
       That last check closes a gap in step 4: a suspended seller's GSTIN could be removed and the seller then reinstated without one, which would make an approved seller who cannot issue invoices; `updateSeller` now refuses that removal too.
-    - `0011_invoice_prefix_length_guard` (hand-written): stops `pnpm db:migrate` with a plain message naming any seller whose prefix is longer than 4 characters, without changing any data.
+    - `0014_invoice_prefix_length_guard` (hand-written): stops `pnpm db:migrate` with a plain message naming any seller whose prefix is longer than 4 characters, without changing any data.
       An administrator gives each a shorter prefix (allowed until the seller's first invoice), and the migration then runs.
-    - `0012_invoice_prefix_and_cancellation`: invoice prefixes of 1 to 4 characters, and `invoices.cancelled_at` and `cancel_reason`, set together or not at all.
+    - `0015_invoice_prefix_and_cancellation`: invoice prefixes of 1 to 4 characters, and `invoices.cancelled_at` and `cancel_reason`, set together or not at all.
 
 ### Smaller decisions made in this step
 
@@ -872,8 +1127,7 @@ Asha downloads both from her order, and each seller sees only their own invoice 
 - **The seller's details are read while their sequence row is locked,** so the invoice shows the details valid at that moment, and later edits never change it.
 - **The buyer's phone number and email are not printed.**
   GST does not ask for them, and buyers pass invoices on, for example for a warranty claim.
-- **State names** come from a short list of GST state codes in the invoices module and are frozen into the invoice.
-  Step 10 (buyer lane) adds the platform's own list, and the two are merged then.
+- **State names** come from the platform's list of GST state codes (`lib/states.ts`, step 10) and are frozen into the invoice, so a later rename never changes an issued invoice.
 - **Invoice lines follow the order the caller gives them,** which is the order the buyer sees.
 - **`issueInvoices` checks that its transaction runs with full access** and stops with a clear error otherwise.
   Row-level security would hide the sellers' sequence rows from any other context, and the numbering would then fail with a misleading message.
@@ -969,6 +1223,17 @@ Asha downloads both from her order, and each seller sees only their own invoice 
   Tests were added for every "Done when" item that had none.
 - 11 October 2026: Test databases and buckets in a linked git worktree carry the worktree's folder name, so the remaining steps can be built in parallel checkouts without their test runs breaking each other.
   Two checkouts running the core tests at once failed at random before (2 to 7 failed tests per run) and pass every time now.
+- 11 October 2026: Step 7 written.
+- 11 October 2026: Step 7 built.
+  While building it: screening covers inactive variants too, an approval locks the category before the product so a rate change at the same moment cannot leave a stale rate, the seed runs the photo and screening jobs as the worker's database user, and re-copying a category's new rate to approved products waits for the client's decision.
+  The design doc was updated in the same change (sections 4, 5.5, 6.2, and 8).
+- 11 October 2026: Step 10 written.
+- 11 October 2026: Step 10 built.
+  While building it: the stricter state code check also covers sellers and the company details, the seller portal shows the state's name next to its code, and a test fixture for saved addresses was added for steps 11 to 13.
+- 12 October 2026: Step 7 extended with the client's answers to its questions: a seller can move a listing back to draft from review, sale, or archive (a review is then withdrawn), an administrator can take down a listing on sale, a category's new GST rate reaches its approved products, approval copies the single category rate until price-dependent rates are settled, and moderation stays in the catalogue module with the large-discount flag.
+  The design doc was updated in the same change (sections 4, 5.5, 6.2, and 11).
+- 12 October 2026: Step 10's open questions answered.
+  Buyer profile editing becomes a small step of its own after step 13, and the delivery phone stays an Indian mobile number until the client confirms it (design doc section 11).
 - 11 October 2026: Step 14 written, with the signature of `issueInvoices` that step 12 calls.
   Three decisions wait for the client: the invoice number format, what happens to the invoice of a cancelled order, and EcoKart's own invoices for delivery and commission.
 - 11 October 2026: Step 14 built, except the parts that wait for those decisions.
@@ -979,3 +1244,6 @@ Asha downloads both from her order, and each seller sees only their own invoice 
 - 12 October 2026: The client's three step 14 decisions arrived, all as recommended: invoice numbers like `GRB/2627/000041` with prefixes of at most 4 characters, cancelled invoices marked cancelled through `cancelInvoices` for step 13, and EcoKart's own invoices left to the chartered accountant.
   Built the same day: the 4-character prefix rule (with a migration that first names any seller whose prefix is too long), `cancelInvoices` with its cancelled PDF, a plain first line from `pnpm db:migrate` when a migration fails, and counted invoice prefixes in tests.
   The design doc was updated in the same change (sections 5.4, 5.7, 6.6, and 11).
+- 12 October 2026: Step 14 merged with main after steps 7 and 10.
+  Its migrations were generated again on top of step 7's and are now `0013_invoice_rules`, `0014_invoice_prefix_length_guard`, and `0015_invoice_prefix_and_cancellation`, with the same SQL; invoices take state names from step 10's `lib/states.ts`.
+  A slip from the earlier edit was corrected: the cancellation item had landed in step 4's list instead of step 14's.

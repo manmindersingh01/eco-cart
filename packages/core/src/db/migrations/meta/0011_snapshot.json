@@ -1,6 +1,6 @@
 {
-  "id": "e8c84efa-03fd-4dd4-aae8-bf7572844153",
-  "prevId": "d0568609-f703-4acb-9bed-52fa8f7cee1a",
+  "id": "166bef52-39c9-42b5-9bfa-96e940a3dec6",
+  "prevId": "fb77eb2c-6319-451d-8c9f-5e46a716e64b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1910,6 +1910,16 @@
           "primaryKey": false,
           "notNull": false
         },
+        "risk_rank": {
+          "name": "risk_rank",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "type": "stored",
+            "as": "case ai_risk when 'high' then 0 when 'medium' then 1 when 'low' then 2 else 3 end"
+          }
+        },
         "ai_request_id": {
           "name": "ai_request_id",
           "type": "uuid",
@@ -1977,17 +1987,45 @@
           "method": "btree",
           "concurrently": false
         },
-        "product_moderation_open_created_at_idx": {
-          "name": "product_moderation_open_created_at_idx",
+        "product_moderation_open_queue_idx": {
+          "name": "product_moderation_open_queue_idx",
           "columns": [
             {
-              "expression": "created_at",
+              "expression": "risk_rank",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "submitted_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "decision is null",
+          "concurrently": false
+        },
+        "product_moderation_open_product_id_unique": {
+          "name": "product_moderation_open_product_id_unique",
+          "columns": [
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
           "with": {},
           "method": "btree",
           "where": "decision is null",
@@ -2054,7 +2092,7 @@
           "to": [
             "ecokart_web"
           ],
-          "withCheck": "exists (select 1 from products p where p.id = product_moderation.product_id and (p.seller_id = app.seller_id() or app.has_full_access()))"
+          "withCheck": "app.has_full_access() or (decision is null and decided_by is null and ai_risk is null and ai_flags = '[]'::jsonb and exists (select 1 from products p where p.id = product_moderation.product_id and p.seller_id = app.seller_id()))"
         },
         "web_update": {
           "name": "web_update",
@@ -2085,6 +2123,14 @@
         "product_moderation_decision_check": {
           "name": "product_moderation_decision_check",
           "value": "decision in ('approved', 'rejected')"
+        },
+        "product_moderation_decided_check": {
+          "name": "product_moderation_decided_check",
+          "value": "(decision is null) = (decided_at is null) and (decision is not null or decided_by is null)"
+        },
+        "product_moderation_reason_check": {
+          "name": "product_moderation_reason_check",
+          "value": "decision is distinct from 'rejected' or reason is not null"
         }
       },
       "isRLSEnabled": true
@@ -2767,6 +2813,10 @@
         "products_rating_check": {
           "name": "products_rating_check",
           "value": "rating_avg between 0 and 5 and rating_count >= 0"
+        },
+        "products_approved_check": {
+          "name": "products_approved_check",
+          "value": "status <> 'approved' or (gst_rate_bps is not null and hsn_code is not null and published_at is not null)"
         }
       },
       "isRLSEnabled": true
@@ -3676,35 +3726,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "invoices_seller_id_issued_at_idx": {
-          "name": "invoices_seller_id_issued_at_idx",
-          "columns": [
-            {
-              "expression": "seller_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "issued_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "invoices_order_id_orders_id_fk": {
           "name": "invoices_order_id_orders_id_fk",
@@ -3792,14 +3814,6 @@
         }
       },
       "checkConstraints": {
-        "invoices_invoice_number_check": {
-          "name": "invoices_invoice_number_check",
-          "value": "invoice_number ~ '^[A-Z0-9][A-Z0-9/-]{0,15}$'"
-        },
-        "invoices_lines_check": {
-          "name": "invoices_lines_check",
-          "value": "case when jsonb_typeof(lines) = 'array' then jsonb_array_length(lines) > 0 else false end"
-        },
         "invoices_place_of_supply_check": {
           "name": "invoices_place_of_supply_check",
           "value": "place_of_supply_state_code ~ '^[0-9]{2}$'"
@@ -6680,10 +6694,6 @@
         "sellers_invoice_seq_check": {
           "name": "sellers_invoice_seq_check",
           "value": "invoice_seq >= 0"
-        },
-        "sellers_tax_ids_after_approval_check": {
-          "name": "sellers_tax_ids_after_approval_check",
-          "value": "approved_at is null or (gstin is not null and pan is not null)"
         },
         "sellers_invoice_seq_fy_check": {
           "name": "sellers_invoice_seq_fy_check",

@@ -60,3 +60,15 @@ export async function requireSeller(headers: Headers): Promise<{
   }
   return { session, context }
 }
+
+/** A signed-in buyer, or 401 / 403. */
+export async function requireBuyer(headers: Headers): Promise<{
+  session: Session
+  context: Extract<RequestContext, { role: 'buyer' }>
+}> {
+  const { session, context } = await requireSignedIn(headers)
+  if (context.role !== 'buyer') {
+    throw new ForbiddenError('This needs a buyer account')
+  }
+  return { session, context }
+}
