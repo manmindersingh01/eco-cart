@@ -259,6 +259,20 @@ describe('updateSetting', () => {
     ).toEqual(['website is not allowed here'])
   })
 
+  test('refuses a company state code that is not a GST state code', async () => {
+    expect(
+      await validationIssues(
+        save(admin, 'company_details', {
+          ...company,
+          gstin: '99AABCG1234K1Z9',
+          address: { ...company.address, stateCode: '99' },
+        }),
+      ),
+    ).toEqual([
+      'address.stateCode must be a GST state code, like 27 for Maharashtra',
+    ])
+  })
+
   test('explains what is wrong in plain words', async () => {
     expect(
       await validationIssues(

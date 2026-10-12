@@ -149,6 +149,7 @@ apps/
       api/admin/moderation/    administrators' queue of listings waiting for review
       api/admin/products/      administrators review one listing, approve or reject it, and
                                take down a listing on sale
+      api/account/addresses/   a signed-in buyer's saved delivery addresses
       api/webhooks/razorpay/route.ts
     src/lib/                   api.ts (handleErrors, one HTTP answer per error), request-context.ts,
                                auth.ts, db.ts, queue.ts, storage.ts, sellers.ts, settings.ts
@@ -163,6 +164,7 @@ packages/
       auth/  catalogue/  cart/  checkout/  orders/  payments/  ledger/
       invoices/  returns/  search/  ai/  imports/  notifications/
       settings/  audit/  sellers/  rate-limits/
+      addresses/
         (each module has service.ts, plus jobs.ts, types.ts, or config.ts where needed; the
          catalogue splits its services by topic: categories.ts, brands.ts,
          tree.ts for the in-memory category tree, products.ts, images.ts,
@@ -198,6 +200,8 @@ packages/
       mailpit.ts     local mail catcher, for development and tests only
       pagination.ts  keyset pagination with exact (microsecond) cursors
       slug.ts        readable names for web addresses, numbered when taken
+      states.ts      the GST state codes with their names; imports nothing, so the browser
+                     can use it too (`@ecokart/core/states`)
       ai/
         client.ts      one OpenAI-compatible HTTP client; base URL, key, model from env
         chat.ts        TextModel and VisionModel on top of the chat client
@@ -328,6 +332,10 @@ addresses
   INDEX (user_id)
   UNIQUE (user_id) WHERE is_default AND deleted_at IS NULL     one default address per buyer
 ```
+
+A buyer keeps up to 20 addresses, and always has exactly one default while they have any.
+The delivery phone must be an Indian mobile number, and the state code must be one of the 36 GST state codes; the database checks only the broader formats.
+Deleting an address sets `deleted_at`, and nothing refers to an address by foreign key, because an order copies the address into `orders.shipping_address` at checkout (backend spec, step 10).
 
 One account has one role.
 A seller account is created by an administrator through the seller onboarding, which creates the owner's account with the `seller` role through Better Auth (its internal `createUser`) and the linked `sellers` row together.
@@ -1071,5 +1079,6 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | Commission base | Open | Applied to the seller's line total after the coupon discount share | Applied before discounts |
 | Delivery revenue | Open | Delivery charge belongs to the platform | Passed through to sellers |
 | GST rates that depend on price | Open | Clothing and footwear are taxed at 5% up to ₹2,500 a piece and 18% above it. An optional price limit and higher rate on the category, applied to each order line from its own price at checkout. Until the chartered accountant agrees, approval copies the category's single rate (backend spec, step 7); it must be settled before checkout freezes rates on order lines (step 12). | A rate per product set by hand, or separate categories per price band |
+| Delivery phone | Open | An Indian mobile number, because couriers call or text the person receiving the parcel (backend spec, step 10) | Any phone number in international format |
 
 Open rows are recommendations and are built as written unless the client decides otherwise.

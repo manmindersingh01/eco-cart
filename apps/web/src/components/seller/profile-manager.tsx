@@ -7,7 +7,7 @@ import { Field, Input } from '@/components/ui/form-controls'
 import { PageHeader } from '@/components/ui/page-header'
 import { issuesFor } from '@/lib/admin-settings'
 import { ApiError, apiRequest } from '@/lib/api-client'
-import { formatIndianDate } from '@/lib/format'
+import { formatIndianDate, formatState } from '@/lib/format'
 import {
   changedSellerContacts,
   contactValuesFromSeller,
@@ -159,7 +159,10 @@ export function SellerProfileManager({
           <dl className="mt-5 grid gap-4 sm:grid-cols-2">
             <Detail label="Address" value={seller.line1} />
             <Detail label="City" value={seller.city} />
-            <Detail label="GST state code" value={seller.stateCode} />
+            <Detail
+              label="State"
+              value={`${formatState(seller.stateCode)} (${seller.stateCode})`}
+            />
             <Detail label="PIN code" value={seller.pincode} />
           </dl>
         </Card>

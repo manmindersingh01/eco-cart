@@ -151,3 +151,23 @@ export {
   type StorageConfig,
   type UploadForm,
 } from './lib/storage.ts'
+export {
+  addAddress,
+  deleteAddress,
+  getAddress,
+  getShippingAddress,
+  listAddresses,
+  MAX_ADDRESSES,
+  updateAddress,
+} from './modules/addresses/service.ts'
+export type {
+  AddressUpdate,
+  AddressView,
+  NewAddress,
+} from './modules/addresses/types.ts'
+export {
+  GST_STATES,
+  isGstStateCode,
+  stateName,
+  type GstState,
+} from './lib/states.ts'

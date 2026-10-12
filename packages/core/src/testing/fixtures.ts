@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Database } from '../db/client.ts'
 import {
+  addresses,
   brands,
   categories,
   orderItems,
@@ -231,4 +232,35 @@ export async function createTestPhoto(
     })
     .returning()
   return photo!
+}
+
+/**
+ * A saved delivery address in Pune (Maharashtra, 27). It is the buyer's
+ * default unless it is deleted or `isDefault` says otherwise; the database
+ * allows only one live default per buyer.
+ */
+export async function createTestAddress(
+  db: Database,
+  options: {
+    userId: string
+    isDefault?: boolean
+    stateCode?: string
+    deleted?: boolean
+  },
+) {
+  const [address] = await db
+    .insert(addresses)
+    .values({
+      userId: options.userId,
+      fullName: 'Asha Patil',
+      phone: '+919800000001',
+      line1: '4 FC Road',
+      city: 'Pune',
+      stateCode: options.stateCode ?? '27',
+      pincode: '411004',
+      isDefault: options.isDefault ?? !options.deleted,
+      deletedAt: options.deleted ? new Date() : null,
+    })
+    .returning()
+  return address!
 }

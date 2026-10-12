@@ -40,7 +40,7 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | 7 | Listing moderation: submit, deterministic screening, approve, reject | 6.2 | Done |
 | 8 | Catalogue import from CSV and Excel with a row-level error report | 5.11, 6.7 | Planned |
 | 9 | Storefront reads: home, category, product, keyword search, filters, sorting, keyset pagination | 6.8 | Planned |
-| 10 | Buyer addresses | 5.3 | Planned |
+| 10 | Buyer addresses | 5.3 | Done |
 | 11 | Cart (guest and logged in) and coupons | 5.6 | Planned |
 | 12 | Checkout, Razorpay, webhook, payment confirmation, cash on delivery, order expiry | 6.3 | Planned |
 | 13 | Orders: buyer view, seller dispatch, delivery, cancellation | 6.4 | Planned |
@@ -883,6 +883,116 @@ Had the title said "toy gun" while "gun" is a prohibited term, the review would 
 - **A category's new GST rate reaching its approved products** was decided on 12 October 2026 as recommended; the client may still confirm it.
 - The 70% large-discount threshold is a starting point for administrators to confirm.
 
+## Step 10: Buyer addresses
+
+Status: Done (11 October 2026).
+
+### Goal
+
+A signed-in buyer keeps a small book of delivery addresses: they add, edit, and delete addresses and choose which one is the default.
+Checkout (step 12) takes one of them and copies it onto the order, so a later edit never changes a past order.
+
+For example, Asha saves her home in Pune (Maharashtra, state code 27), which becomes her default because it is her first address.
+She adds her office in Bengaluru (Karnataka, 29) and makes it the default, and home stops being the default in the same change.
+When she later deletes the office, home becomes the default again.
+
+### What gets built
+
+1. **Addresses** in a new module, `packages/core/src/modules/addresses/` (`service.ts` and `types.ts`), which owns the `addresses` table:
+   - **List** (the buyer): every address that is not deleted, the default first and then the newest first, as one answer.
+   - **Add** (the buyer): full name (up to 100 characters), a delivery phone, address line 1 (up to 200), an optional line 2 (up to 200) and landmark (up to 100), city (up to 100), state code, PIN code, and optionally `isDefault: true`.
+     The first address becomes the default whatever was sent.
+   - **Edit** (the buyer): any of those fields, and `isDefault: true` to make the address the default.
+     `isDefault: false` is refused with a plain message, because a buyer with addresses always has exactly one default; they make another address the default instead.
+     An empty change answers 400.
+   - **Delete** (the buyer): a soft delete (`deleted_at`), as design doc section 5.1 says for addresses.
+     If it was the default, the newest remaining address becomes the default.
+     A deleted address answers 404 from then on.
+   - **At most 20 addresses per buyer**, not counting deleted ones; adding a 21st answers 409 "delete one first".
+   - **Checks on each field:** the phone is an Indian mobile number (`+91` and ten digits starting with 6 to 9), the state code is one of the GST state codes below, and the PIN code has six digits and does not start with 0.
+     A blank line 2 or landmark (an empty string, as a form sends it) is stored as empty (null).
+2. **Exactly one default, even when two changes arrive at once.**
+   Every change first takes a lock for that buyer (a transaction-level advisory lock on their id), so two changes to one buyer's addresses run one after the other.
+   Two "add my first address" requests at the same moment leave exactly one default, and two adds at 19 addresses cannot make 21.
+   The existing unique index `addresses_one_default_per_user_idx` stays as the database's backstop.
+3. **Buyers only.**
+   The service refuses any request context other than `buyer` with 403, and every query also filters on the buyer's id, with row-level security (the owner or full access) as the safety net.
+   Another buyer's address answers 404, the same as one that does not exist, so an id reveals nothing.
+4. **For checkout (step 12):** `getShippingAddress(tx, buyerId, addressId)` returns one of the buyer's live addresses as the order's `ShippingAddressSnapshot` (full name, phone, line 1, line 2, landmark, city, state code, PIN code), or 404 for a deleted address or someone else's.
+   It takes the buyer's id rather than a request context, because checkout runs as `system`.
+5. **The list of GST state codes** in `packages/core/src/lib/states.ts`: the 36 states and union territories with their two-digit codes and names, for example 27 Maharashtra and 38 Ladakh, and `stateName(code)`.
+   The shared `stateCode` format in `validation.ts` now accepts only these codes, so addresses, sellers, and the company details all refuse codes such as 00 or 99, which only looked right because they had two digits.
+   Invoices (step 14) print the name next to the code.
+   The file imports nothing, so the browser can use it too (`@ecokart/core/states`), and the admin console now shows "Pune, Maharashtra" instead of "Pune, 27".
+6. **`requireBuyer`** in `apps/web/src/lib/request-context.ts`: a signed-in buyer, or 401 or 403.
+   Steps 11 to 13 use it too.
+7. **API** for the signed-in buyer:
+
+   | Method and path | What |
+   | --- | --- |
+   | `GET /api/account/addresses` | Every live address, the default first |
+   | `POST /api/account/addresses` | Add an address |
+   | `GET /api/account/addresses/{id}` | One address |
+   | `PATCH /api/account/addresses/{id}` | Edit an address, or make it the default |
+   | `DELETE /api/account/addresses/{id}` | Delete an address |
+
+   Adding answers 201 and deleting 204; every other answer is 200.
+   Each address comes back with its state name as well as its code.
+   Signed out answers 401, a seller or administrator 403, someone else's or a deleted address 404, input that breaks a rule 400 with the reasons, and a 21st address 409.
+8. **A test fixture,** `createTestAddress`, for the cart, checkout, and order tests of steps 11 to 13.
+
+### Smaller decisions made in this step
+
+- **The buyer's own API lives under `/api/account/`,** next to `/api/seller/` and `/api/admin/`.
+  What only a signed-in buyer has goes there: addresses now, and orders and returns in steps 13 and 15.
+  What a guest also uses keeps a path of its own, for example the cart at `/api/cart` in step 11.
+  Checkout is an action on the cart rather than something kept in the account, so it is `/api/checkout` (step 12), and Razorpay's webhook stays at `/api/webhooks/razorpay`.
+  So the buyer's routes are `/api/account/addresses`, `/api/cart`, `/api/checkout`, and `/api/account/orders`.
+- **A new `addresses` module** owns the table, and design doc section 4 lists it.
+- **The list is one answer, not pages,** because a buyer has at most 20 live addresses, like the category tree in step 5.
+  The existing index on `user_id` finds them.
+- **No database change.**
+  The columns, the checks (international phone format, two digits for the state code, six digits for the PIN code), the one-default index, row-level security, the grants (the web app may not DELETE rows, which matches soft delete), and the `updated_at` trigger all came with step 1.
+  The stricter rules (Indian mobile, the state list, text lengths) are checked in the service, and the database keeps its broader checks, so a new state or union territory needs only a code change.
+- **An advisory lock, not row locks,** serialises one buyer's changes.
+  Locking the buyer's address rows cannot stop two "first address" requests, because there are no rows to lock yet.
+- **Edits change the row in place.**
+  Nothing refers to an address by foreign key, and an order copies the address into `orders.shipping_address` at checkout, so editing or deleting an address never changes a past order.
+- **The delivery phone must be an Indian mobile number,** because couriers call or text the person receiving the parcel.
+  It is asked for each address, rather than taken from the account, because a gift may go to someone else.
+- **Address changes are not written to `audit_logs`,** which is for administrator actions, as with seller listing edits in step 6.
+- **The state list leaves out codes no delivery address can have:** 97 (Other Territory, for offshore areas), and the retired 25 (Daman and Diu, merged into 26 in 2020) and 28 (Andhra Pradesh before 2014, now 37).
+
+### Not in this step
+
+- Address screens in the storefront; the frontend comes after the backend steps.
+- Checking the PIN code against the state, and limiting delivery to some PIN codes or states (see the open points).
+- Profile editing, and linking an email and a phone number to one account: a small step of its own after step 13 (see the open points).
+- Administrators reading or changing buyers' address books; every order keeps its own copy of the address, which step 13 shows.
+
+### Done when
+
+- On `pnpm dev`, through the real API: a buyer signs in with an email code, adds a first address that becomes the default, adds a second and makes it the default, edits the first, deletes the default and sees the other become the default again, and a seller is refused.
+- Tests prove: every field rule and the state list; the first address becoming the default; switching the default; the newest address taking over when the default is deleted; the limit of 20; the empty change; that one buyer can never read, change, or delete another's address; that two changes at the same moment leave exactly one default and never more than 20 addresses; `getShippingAddress` for a live, a deleted, and another buyer's address; the stricter `stateCode` for sellers and company details; and every API answer (200, 201, 204, 400, 401, 403, 404, 409).
+- `pnpm check` passes.
+
+### Open points found in this step
+
+- A delivery phone must be an Indian mobile number, as built (agreed with the project lead on 12 October 2026).
+  The client still has to confirm it; design doc section 11 lists it.
+  Accepting any phone number in international format instead would change one rule in `modules/addresses/types.ts` and its tests.
+- The chartered accountant should confirm the state list: 36 codes, leaving out 97, 25, and 28.
+- Delivery is open to every PIN code in India.
+  If the client's couriers cannot reach some areas, a list of serviceable PIN codes can be added when the courier is chosen.
+- A buyer who picks the wrong state gets the wrong kind of GST on the invoice (CGST plus SGST instead of IGST, or the other way round).
+  The PIN code's first digit names its postal region, so comparing it with the state would catch most such mistakes, but some border villages are served by a post office in the next state, so a strict check could refuse real addresses.
+  Suggested for after launch: fill in the state from the PIN code using India Post's directory.
+- Timeline week 3 lists buyer profile editing next to saved addresses, but step 2 left it out.
+  Decided 12 October 2026: it is not part of this step, and becomes a small step of its own after step 13.
+  Changing one's own name already works through Better Auth (`POST /api/auth/update-user`).
+  That step adds a phone number to an email account and an email to a phone account, each confirmed with a code sent to it.
+  It also closes a gap found here: Better Auth's phone plugin refuses a new phone number through `update-user` but accepts `phoneNumber: null`, so a buyer who signed up with a phone number could remove the only way they can sign in.
+
 ## Change log
 
 - 5 October 2026: File created and step 1 written.
@@ -918,5 +1028,10 @@ Had the title said "toy gun" while "gun" is a prohibited term, the review would 
 - 11 October 2026: Step 7 built.
   While building it: screening covers inactive variants too, an approval locks the category before the product so a rate change at the same moment cannot leave a stale rate, the seed runs the photo and screening jobs as the worker's database user, and re-copying a category's new rate to approved products waits for the client's decision.
   The design doc was updated in the same change (sections 4, 5.5, 6.2, and 8).
+- 11 October 2026: Step 10 written.
+- 11 October 2026: Step 10 built.
+  While building it: the stricter state code check also covers sellers and the company details, the seller portal shows the state's name next to its code, and a test fixture for saved addresses was added for steps 11 to 13.
 - 12 October 2026: Step 7 extended with the client's answers to its questions: a seller can move a listing back to draft from review, sale, or archive (a review is then withdrawn), an administrator can take down a listing on sale, a category's new GST rate reaches its approved products, approval copies the single category rate until price-dependent rates are settled, and moderation stays in the catalogue module with the large-discount flag.
   The design doc was updated in the same change (sections 4, 5.5, 6.2, and 11).
+- 12 October 2026: Step 10's open questions answered.
+  Buyer profile editing becomes a small step of its own after step 13, and the delivery phone stays an Indian mobile number until the client confirms it (design doc section 11).
