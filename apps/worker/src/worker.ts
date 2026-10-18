@@ -11,6 +11,7 @@ import {
 import {
   checkVideoTools,
   registerCatalogueJobs,
+  registerImportJobs,
   registerInvoiceJobs,
   registerSellerJobs,
   type VideoTools,
@@ -81,6 +82,10 @@ export async function startWorker(
     ai: options.ai ? createAiModels(options.ai) : null,
   })
   await registerInvoiceJobs(boss, {
+    db,
+    storage: createObjectStorage(options.storage),
+  })
+  await registerImportJobs(boss, {
     db,
     storage: createObjectStorage(options.storage),
   })

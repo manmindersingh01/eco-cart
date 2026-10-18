@@ -163,6 +163,31 @@ export type {
   VideoView,
 } from './modules/catalogue/types.ts'
 export {
+  createImport,
+  createImportUpload,
+  getImport,
+  getImportErrorReport,
+  listImports,
+  READ_IMPORT_QUEUE,
+  RUN_IMPORT_QUEUE,
+  setImportMapping,
+} from './modules/imports/service.ts'
+export {
+  IMPORT_FIELD_INFO,
+  IMPORT_FIELDS,
+  MAX_IMPORT_BYTES,
+  MAX_IMPORT_COLUMNS,
+  MAX_IMPORT_ROWS,
+  type ImportErrorReport,
+  type ImportField,
+  type ImportFieldInfo,
+  type ImportFileType,
+  type ImportStatus,
+  type ImportSummary,
+  type ImportUpload,
+  type ImportView,
+} from './modules/imports/types.ts'
+export {
   approveProduct,
   archiveProduct,
   getProductForReview,

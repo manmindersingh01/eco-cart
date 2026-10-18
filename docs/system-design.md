@@ -230,6 +230,8 @@ packages/
       image-processing.ts  checks photos and makes the sizes; loaded only by the worker
       videos.ts      video formats and limits
       video-processing.ts  checks and converts videos with ffmpeg; loaded only by the worker
+      spreadsheets.ts  reads CSV and Excel catalogue files as text; loaded only by the worker
+      csv.ts         writes CSV files people download, with formulas made harmless
       queue.ts       sends pg-boss jobs inside the caller's transaction
       encryption.ts  seals short secrets, such as queued sign-in codes
       config.ts      validates environment variables at startup
@@ -1061,6 +1063,8 @@ GST credit notes for returns are deferred, as quotation 4.0 says.
 1. The seller uploads a CSV or XLSX file straight to object storage and a `catalogue_imports` row is created.
 2. A job reads the headers and the first few rows, asks the text model for a suggested mapping from the seller's column names to EcoKart fields, and stores it with a confidence per column.
 3. The seller reviews and confirms the mapping in the portal.
+   Until the AI suggestion arrives (step 19), the seller chooses every column by hand.
+   Each row becomes one draft with one variant, and a file has at most 5,000 rows and 10 MB.
 4. A job validates every row deterministically (required fields, price and MRP numeric and sane, stock non-negative, category resolvable), optionally asks the text model to propose missing descriptions or categories for rows that lack them, and creates draft products and variants for valid rows.
 5. Failed rows are written to an error report CSV with row numbers and reasons, and the seller submits the valid drafts for review.
 

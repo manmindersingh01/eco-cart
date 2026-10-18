@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, isNull, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm'
 import type { Transaction } from '../../db/client.ts'
 import type { RequestContext } from '../../db/context.ts'
 import {
@@ -354,6 +354,34 @@ export async function readProductView(
     images: images.map((image) => toImageView(image, photos)),
     video: video ? toVideoView(video, photos) : null,
   }
+}
+
+/**
+ * The SKUs from `skus` that the seller's products already use, in lower
+ * case, so an import never makes a second product with the same SKU.
+ * Deleted products do not count.
+ */
+export async function findUsedSkus(
+  tx: Transaction,
+  sellerId: string,
+  skus: readonly string[],
+): Promise<Set<string>> {
+  if (skus.length === 0) return new Set()
+  const rows = await tx
+    .select({ sku: sql<string>`lower(${productVariants.sku})` })
+    .from(productVariants)
+    .innerJoin(products, eq(products.id, productVariants.productId))
+    .where(
+      and(
+        eq(products.sellerId, sellerId),
+        isNull(products.deletedAt),
+        inArray(
+          sql`lower(${productVariants.sku})`,
+          skus.map((sku) => sku.toLowerCase()),
+        ),
+      ),
+    )
+  return new Set(rows.map((row) => row.sku))
 }
 
 /** Creates a draft listing with its variants. */

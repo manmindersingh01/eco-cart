@@ -4,6 +4,7 @@ import { catalogueQueues } from './modules/catalogue/images.ts'
 import { screeningQueues } from './modules/catalogue/screening.ts'
 import { storefrontCacheQueues } from './modules/catalogue/storefront-cache.ts'
 import { videoQueues } from './modules/catalogue/videos.ts'
+import { importQueues } from './modules/imports/service.ts'
 import { invoiceQueues } from './modules/invoices/service.ts'
 import { notificationQueues } from './modules/notifications/jobs.ts'
 import { sellerQueues } from './modules/sellers/documents.ts'
@@ -18,6 +19,7 @@ export const QUEUES: QueueDefinition[] = [
   ...videoQueues,
   ...screeningQueues,
   ...draftQueues,
+  ...importQueues,
   ...invoiceQueues,
   ...storefrontCacheQueues,
   ...sellerQueues,
