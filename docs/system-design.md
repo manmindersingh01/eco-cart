@@ -144,8 +144,12 @@ apps/
       api/auth/[...all]/route.ts   Better Auth: sign-in codes, sessions, administrator account endpoints
       api/me/route.ts          the signed-in account, its role, and its seller id
       api/admin/settings/      administrators read and change platform settings
-      api/admin/sellers/       administrators create, approve, suspend, and reinstate sellers
+      api/admin/sellers/       administrators create, approve, suspend, and reinstate sellers,
+                               and ask a seller for verification documents
+      api/admin/seller-documents/  administrators' queue of documents to review; one request's
+                               history, file downloads, accepting, rejecting, and cancelling
       api/seller/profile/      a seller's own business details and support contacts
+      api/seller/documents/    the documents asked of a seller, and uploading them
       api/seller/products/     a seller's listings, variants, stock, and photos; submitting
                                for review, moving back to draft, and archiving
       api/invoices/            an order's invoices and their PDF downloads, for its buyer and sellers
@@ -277,7 +281,7 @@ Three rules keep this maintainable.
 | Domain | Tables |
 | --- | --- |
 | Identity | `users`, `sessions`, `accounts`, `verifications`, `auth_rate_limits` (the five managed by Better Auth), `addresses` |
-| Sellers | `sellers` |
+| Sellers | `sellers`, `seller_document_requests`, `seller_document_files` |
 | Catalogue | `categories`, `brands`, `products`, `product_variants`, `product_images`, `product_videos`, `product_moderation`, `product_embeddings` |
 | Cart and promotions | `carts`, `cart_items`, `coupons` |
 | Orders | `orders`, `order_items`, `shipments`, `order_events`, `return_requests`, `invoices` |
@@ -288,7 +292,7 @@ Three rules keep this maintainable.
 | AI and search | `ai_requests`, `search_queries` |
 | Platform | `platform_settings`, `content_pages`, `email_outbox`, `audit_logs`, `rate_limits`, `cache_invalidations` |
 
-That is 38 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
+That is 41 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
 Better Auth keeps its rate-limit counters in `auth_rate_limits`; our own `rate_limits` table, with a different shape, serves the per-address sign-in code limit, and later checkout, search, and AI.
 
 ### 5.3 Identity
@@ -398,6 +402,14 @@ sellers
   created_at, updated_at
   INDEX (status, created_at DESC, id DESC)     the administrators' seller list
   INDEX (created_at DESC, id DESC)
+
+seller_document_requests        a document an administrator asks a seller for: GST certificate, PAN card,
+                                bank proof, business registration, address proof, or other, with a note;
+                                requested | processing | received | accepted | cancelled (with a reason).
+                                A seller is approved only once every request is accepted or cancelled.
+seller_document_files           each file the seller uploads for a request (PDF, JPEG, or PNG, at most 10 MB),
+                                with the worker's check (photos re-encoded) and the administrator's
+                                acceptance or rejection reason, kept as the request's history
 ```
 
 ### 5.5 Catalogue

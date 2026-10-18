@@ -30,6 +30,7 @@
     "pg": "catalog:",
     "pg-boss": "catalog:",
     "sharp": "catalog:",
+    "unpdf": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
@@ -40,7 +41,6 @@
     "drizzle-kit": "catalog:",
     "prettier": "catalog:",
     "typescript": "catalog:",
-    "unpdf": "catalog:",
     "vitest": "catalog:"
   }
 }

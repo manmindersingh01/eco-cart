@@ -5,6 +5,7 @@ import { storefrontCacheQueues } from './modules/catalogue/storefront-cache.ts'
 import { videoQueues } from './modules/catalogue/videos.ts'
 import { invoiceQueues } from './modules/invoices/service.ts'
 import { notificationQueues } from './modules/notifications/jobs.ts'
+import { sellerQueues } from './modules/sellers/documents.ts'
 
 /**
  * Every job queue, created and kept up to date by `pnpm db:migrate`. A module
@@ -17,4 +18,5 @@ export const QUEUES: QueueDefinition[] = [
   ...screeningQueues,
   ...invoiceQueues,
   ...storefrontCacheQueues,
+  ...sellerQueues,
 ]
