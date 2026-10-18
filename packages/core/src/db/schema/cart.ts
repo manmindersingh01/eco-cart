@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   boolean,
   check,
+  index,
   integer,
   pgTable,
   text,
@@ -103,7 +104,9 @@ export const coupons = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  () => [
+  (t) => [
+    // The administrators' coupon list, newest first (backend spec step 11).
+    index('coupons_created_at_idx').on(t.createdAt.desc(), t.id.desc()),
     check('coupons_code_check', sql`code = upper(code) and code <> ''`),
     check(
       'coupons_discount_type_check',

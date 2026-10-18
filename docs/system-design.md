@@ -543,6 +543,7 @@ coupons
   is_active           boolean
   created_by          uuid FK users
   created_at, updated_at
+  INDEX (created_at DESC, id DESC)   the administrators' coupon list
 ```
 
 Cart items store no price.
