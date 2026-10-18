@@ -145,11 +145,12 @@ apps/
       api/me/route.ts          the signed-in account, its role, and its seller id
       api/admin/settings/      administrators read and change platform settings
       api/admin/sellers/       administrators create, approve, suspend, and reinstate sellers,
-                               and ask a seller for verification documents
+                               ask a seller for verification documents, and enter their bank account
       api/admin/seller-documents/  administrators' queue of documents to review; one request's
                                history, file downloads, accepting, rejecting, and cancelling
       api/seller/profile/      a seller's own business details and support contacts
       api/seller/documents/    the documents asked of a seller, and uploading them
+      api/seller/bank-account/ the bank account a seller's payouts go to, last 4 digits only
       api/seller/products/     a seller's listings, variants, stock, and photos; submitting
                                for review, moving back to draft, and archiving
       api/invoices/            an order's invoices and their PDF downloads, for its buyer and sellers
@@ -163,6 +164,9 @@ apps/
       api/admin/products/      administrators review one listing, approve or reject it, and
                                take down a listing on sale
       api/account/addresses/   a signed-in buyer's saved delivery addresses
+      api/account/return-photos/  a buyer's return photos: upload, add, and follow the check
+      api/return-photos/[id]/file/  a return photo through a short-lived link, for its buyer,
+                               the seller of the return, and administrators
       api/admin/ai/usage/      administrators see AI calls, tokens, and cost per day, and today's calls against the limit
       api/home/                the home page: new arrivals and a row per top-level category
       api/products/[slug]/     one product page, for anyone
@@ -286,15 +290,15 @@ Three rules keep this maintainable.
 | Sellers | `sellers`, `seller_document_requests`, `seller_document_files` |
 | Catalogue | `categories`, `brands`, `products`, `product_variants`, `product_images`, `product_videos`, `product_moderation`, `product_embeddings` |
 | Cart and promotions | `carts`, `cart_items`, `coupons` |
-| Orders | `orders`, `order_items`, `shipments`, `order_events`, `return_requests`, `invoices` |
+| Orders | `orders`, `order_items`, `shipments`, `order_events`, `return_requests`, `return_photos`, `invoices` |
 | Payments | `payments`, `payment_events`, `refunds` |
-| Seller money | `seller_ledger_entries` |
+| Seller money | `seller_ledger_entries`, `seller_bank_accounts` |
 | Reviews | `reviews` |
 | Imports | `catalogue_imports`, `catalogue_import_rows` |
 | AI and search | `ai_requests`, `search_queries` |
 | Platform | `platform_settings`, `content_pages`, `email_outbox`, `audit_logs`, `rate_limits`, `cache_invalidations` |
 
-That is 41 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
+That is 43 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
 Better Auth keeps its rate-limit counters in `auth_rate_limits`; our own `rate_limits` table, with a different shape, serves the per-address sign-in code limit, and later checkout, search, and AI.
 
 ### 5.3 Identity
@@ -688,6 +692,10 @@ return_requests
   INDEX (user_id)
   INDEX (seller_id)
 
+return_photos     a buyer's photo for a return: uploaded before the return is sent, checked and
+                  re-encoded by the worker (processing | ready | failed), private, and attached
+                  to the return request it was sent with, whose images list its storage key
+
 invoices
   id                          uuid PK
   order_id                    uuid FK orders
@@ -778,6 +786,10 @@ seller_ledger_entries
   created_by         uuid FK users, nullable
   created_at
   INDEX (seller_id, created_at, id)
+
+seller_bank_accounts   the account a seller's payouts go to, one per seller, entered by administrators:
+                       account holder, IFSC, the account number sealed with MESSAGE_ENCRYPTION_KEY,
+                       and its last 4 digits, the only part ever shown
 ```
 
 The ledger is append only.
@@ -895,7 +907,7 @@ platform_settings
   updated_by  uuid FK users, nullable
   updated_at
   keys: commission_bps, delivery_charge_paise, free_delivery_threshold_paise,
-        cod_enabled, payment_timeout_minutes, ai_daily_limit_platform,
+        cod_enabled, return_window_days, payment_timeout_minutes, ai_daily_limit_platform,
         ai_daily_limit_seller, prohibited_terms, company_details
 
 content_pages

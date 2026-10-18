@@ -143,6 +143,18 @@ describe('getSetting', () => {
     expect(await read('commission_bps')).toBe(1000)
   })
 
+  test('the return window is 1 to 90 days, with no default', async () => {
+    await expect(read('return_window_days')).rejects.toThrow(NotConfiguredError)
+    expect(
+      await validationIssues(save(admin, 'return_window_days', 0)),
+    ).toEqual(['must be at least 1'])
+    expect(
+      await validationIssues(save(admin, 'return_window_days', 91)),
+    ).toEqual(['must be at most 90'])
+    await save(admin, 'return_window_days', 7)
+    expect(await read('return_window_days')).toBe(7)
+  })
+
   test('refuses a saved value that breaks the rule', async () => {
     // Only someone editing the table by hand could do this.
     await owner

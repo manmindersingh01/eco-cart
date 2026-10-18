@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import {
   bigserial,
+  char,
   check,
   index,
   pgTable,
@@ -8,13 +9,14 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 import { users } from './auth.ts'
-import { createdAt, paise } from './columns.ts'
+import { createdAt, paise, updatedAt, uuidPrimaryKey } from './columns.ts'
 import { orderItems, orders, returnRequests } from './orders.ts'
 import {
   currentSellerId,
   fullAccess,
   webInsert,
   webSelect,
+  webUpdate,
   workerPolicy,
 } from './rls.ts'
 import { sellers } from './sellers.ts'
@@ -68,6 +70,51 @@ export const sellerLedgerEntries = pgTable(
     ),
     webSelect(sql`seller_id = ${currentSellerId} or ${fullAccess}`),
     webInsert(fullAccess),
+    workerPolicy(),
+  ],
+).enableRLS()
+
+/**
+ * The bank account a seller's payouts go to, entered by administrators
+ * (design doc 5.9). The account number is sealed with MESSAGE_ENCRYPTION_KEY;
+ * only its last 4 digits are kept readable, for showing.
+ */
+export const sellerBankAccounts = pgTable(
+  'seller_bank_accounts',
+  {
+    id: uuidPrimaryKey(),
+    sellerId: uuid('seller_id')
+      .notNull()
+      .unique()
+      .references(() => sellers.id),
+    accountHolder: text('account_holder').notNull(),
+    accountNumberSealed: text('account_number_sealed').notNull(),
+    accountNumberLast4: char('account_number_last4', { length: 4 }).notNull(),
+    ifsc: char('ifsc', { length: 11 }).notNull(),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  () => [
+    check(
+      'seller_bank_accounts_account_holder_check',
+      sql`char_length(account_holder) between 1 and 100`,
+    ),
+    check(
+      'seller_bank_accounts_account_number_sealed_check',
+      sql`account_number_sealed like 'v1.%'`,
+    ),
+    check(
+      'seller_bank_accounts_account_number_last4_check',
+      sql`account_number_last4 ~ '^[0-9]{4}$'`,
+    ),
+    check(
+      'seller_bank_accounts_ifsc_check',
+      sql`ifsc ~ '^[A-Z]{4}0[A-Z0-9]{6}$'`,
+    ),
+    webSelect(sql`seller_id = ${currentSellerId} or ${fullAccess}`),
+    webInsert(fullAccess),
+    webUpdate(fullAccess),
     workerPolicy(),
   ],
 ).enableRLS()

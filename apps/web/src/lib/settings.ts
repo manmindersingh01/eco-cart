@@ -1,6 +1,7 @@
 import {
   loadAiConfig,
   loadAuthConfig,
+  loadLedgerConfig,
   loadStorageConfig,
   requireEnv,
   trustedProxyCount,
@@ -19,4 +20,6 @@ export function checkWebSettings(env: NodeJS.ProcessEnv = process.env): void {
   trustedProxyCount(env)
   // AI (backend spec step 17).
   loadAiConfig(env)
+  // Sealing sellers' bank account numbers (step 15).
+  loadLedgerConfig(env)
 }

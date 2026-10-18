@@ -190,6 +190,20 @@
       "when": 1792345069227,
       "tag": "0026_seller_document_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1792346513171,
+      "tag": "0027_bank_accounts_and_return_photos",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792346522543,
+      "tag": "0028_bank_account_and_return_photo_grants",
+      "breakpoints": true
     }
   ]
 }

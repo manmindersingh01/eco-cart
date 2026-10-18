@@ -13,6 +13,7 @@ import {
   registerCatalogueJobs,
   registerImportJobs,
   registerInvoiceJobs,
+  registerReturnJobs,
   registerSellerJobs,
   type VideoTools,
 } from '@ecokart/core/worker'
@@ -91,6 +92,10 @@ export async function startWorker(
   })
   await registerStorefrontCacheJobs(boss, { db })
   await registerSellerJobs(boss, {
+    db,
+    storage: createObjectStorage(options.storage),
+  })
+  await registerReturnJobs(boss, {
     db,
     storage: createObjectStorage(options.storage),
   })

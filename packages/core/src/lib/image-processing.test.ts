@@ -2,7 +2,11 @@ import { createHash } from 'node:crypto'
 import { crc32 } from 'node:zlib'
 import sharp from 'sharp'
 import { describe, expect, test } from 'vitest'
-import { ImageRejectedError, prepareProductImage } from './image-processing.ts'
+import {
+  ImageRejectedError,
+  prepareProductImage,
+  prepareReturnPhoto,
+} from './image-processing.ts'
 
 /** A solid-colour photo, with optional EXIF data. */
 const photo = (
@@ -148,6 +152,75 @@ describe('prepareProductImage', () => {
 
   test('refuses a file that claims more than 50 megapixels without decoding it', async () => {
     expect(await reasonFor(pngClaiming(10_000, 10_000))).toBe(
+      'The image is too large; it can have at most 50 megapixels',
+    )
+  })
+})
+
+async function returnReason(bytes: Buffer): Promise<string> {
+  const error = await prepareReturnPhoto(bytes).then(
+    () => null,
+    (caught: unknown) => caught,
+  )
+  if (!(error instanceof ImageRejectedError)) {
+    throw new Error(`Expected the photo to be refused, got ${String(error)}`)
+  }
+  return error.message
+}
+
+describe('prepareReturnPhoto', () => {
+  test('keeps one upright JPEG without metadata, at most 2000 pixels', async () => {
+    const original = await sharp({
+      create: { width: 3000, height: 2000, channels: 3, background: '#a33' },
+    })
+      .withExif({ IFD0: { Make: 'PhoneCo' } })
+      .withMetadata({ orientation: 6 })
+      .webp()
+      .toBuffer()
+    const prepared = await prepareReturnPhoto(original)
+    const stored = await sharp(prepared.bytes).metadata()
+    expect(stored.format).toBe('jpeg')
+    expect(stored.exif).toBeUndefined()
+    expect(stored.orientation).toBeUndefined()
+    // Turned upright, then shrunk to fit 2000 pixels.
+    expect([stored.width, stored.height]).toEqual([1333, 2000])
+    expect([prepared.width, prepared.height]).toEqual([1333, 2000])
+    expect(prepared.contentHash).toBe(
+      createHash('sha256').update(prepared.bytes).digest('hex'),
+    )
+  })
+
+  test('keeps a small photo at its size and turns transparency white', async () => {
+    const png = await sharp({
+      create: {
+        width: 400,
+        height: 300,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .png()
+      .toBuffer()
+    const prepared = await prepareReturnPhoto(png)
+    expect([prepared.width, prepared.height]).toEqual([400, 300])
+    const { data } = await sharp(prepared.bytes)
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    expect([...data.subarray(0, 3)].every((value) => value > 250)).toBe(true)
+  })
+
+  test('refuses what cannot show the item', async () => {
+    expect(await returnReason(await photo(300, 200))).toBe(
+      'The photo is too small to show the item; it needs at least 320 pixels on its longer side',
+    )
+    expect(await returnReason(Buffer.from('%PDF-1.7'))).toBe(
+      'The file is not a JPEG, PNG, WebP, or AVIF image',
+    )
+    const whole = await photo(1600, 1200)
+    expect(await returnReason(whole.subarray(0, whole.length / 2))).toBe(
+      'The file is damaged and cannot be read',
+    )
+    expect(await returnReason(pngClaiming(10_000, 10_000))).toBe(
       'The image is too large; it can have at most 50 megapixels',
     )
   })
