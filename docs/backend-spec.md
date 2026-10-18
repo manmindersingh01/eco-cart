@@ -46,7 +46,7 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | 13 | Orders: buyer view, seller dispatch, delivery, cancellation | 6.4 | Planned |
 | 14 | GST invoices and PDFs | 6.6 | Done |
 | 15 | Returns, refunds, seller ledger, and settlement CSV | 5.9, 6.5 | Planned |
-| 16 | Reviews and content pages | 5.10, 5.13 | Planned |
+| 16 | Reviews and content pages | 5.10, 5.13 | Done |
 | 17 | AI client, request log, cache, and daily limits | 3.2, 5.12 | Done |
 | 18 | Embeddings, natural-language search, image search, similar products | 6.8 | Planned |
 | 19 | AI listing builder from photos and AI-assisted import mapping | 6.2, 6.7 | Planned |

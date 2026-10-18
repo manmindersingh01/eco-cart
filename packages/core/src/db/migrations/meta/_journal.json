@@ -162,6 +162,20 @@
       "when": 1792344327412,
       "tag": "0022_storefront_search_functions_and_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792344737725,
+      "tag": "0023_reviews_and_content_pages",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792344750908,
+      "tag": "0024_product_rating_function",
+      "breakpoints": true
     }
   ]
 }
