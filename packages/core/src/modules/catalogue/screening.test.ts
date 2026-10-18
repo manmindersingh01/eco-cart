@@ -1,16 +1,29 @@
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { z } from 'zod'
 import { createDatabase } from '../../db/client.ts'
 import { createPool, type DatabasePool } from '../../db/pool.ts'
-import { productModeration } from '../../db/schema/index.ts'
+import { aiRequests, productModeration } from '../../db/schema/index.ts'
 import { requireEnv } from '../../env.ts'
+import { createAiModels, type AiModels } from '../../lib/ai/index.ts'
+import { imageSizeKey } from '../../lib/images.ts'
+import { createObjectStorage, loadStorageConfig } from '../../lib/storage.ts'
+import {
+  fakeChatReply,
+  startFakeAiServer,
+  type FakeAiServer,
+} from '../../testing/ai.ts'
 import {
   createTestCategory,
+  createTestPhoto,
   createTestProduct,
   createTestSeller,
   createTestUser,
 } from '../../testing/fixtures.ts'
+import { waitUntil } from '../../testing/locks.ts'
+import { DAY_MS, indianDayStart } from '../ai/days.ts'
+import { settingDefinitions } from '../settings/definitions.ts'
 import {
   deterministicFlags,
   largeDiscountFlags,
@@ -172,6 +185,8 @@ describe('risk', () => {
   })
 })
 
+const storage = createObjectStorage(loadStorageConfig())
+
 describe('screenListing', () => {
   const pools: DatabasePool[] = []
   const connect = (url: string) => {
@@ -217,17 +232,18 @@ describe('screenListing', () => {
 
   test('stores the flags and the risk on the review', async () => {
     const review = await openReview()
-    await screenListing({ db: worker }, review.id)
+    await screenListing({ db: worker, storage, ai: null }, review.id)
     expect(await reviewRow(review.id)).toMatchObject({
       aiFlags: [
         { code: 'missing_description', detail: 'The description is empty' },
+        { code: 'ai_not_checked', detail: 'AI checks are switched off' },
       ],
       aiRisk: 'medium',
       riskRank: 1,
       decision: null,
     })
     // Running again gives the same result.
-    await screenListing({ db: worker }, review.id)
+    await screenListing({ db: worker, storage, ai: null }, review.id)
     expect((await reviewRow(review.id)).aiRisk).toBe('medium')
   })
 
@@ -238,7 +254,7 @@ describe('screenListing', () => {
       .update(productModeration)
       .set({ decision: 'approved', decidedBy: admin.id, decidedAt: new Date() })
       .where(eq(productModeration.id, review.id))
-    await screenListing({ db: worker }, review.id)
+    await screenListing({ db: worker, storage, ai: null }, review.id)
     expect(await reviewRow(review.id)).toMatchObject({
       aiFlags: [],
       aiRisk: null,
@@ -247,7 +263,239 @@ describe('screenListing', () => {
 
   test('does nothing for a review that does not exist', async () => {
     await expect(
-      screenListing({ db: worker }, randomUUID()),
+      screenListing({ db: worker, storage, ai: null }, randomUUID()),
     ).resolves.toBeUndefined()
+  })
+})
+
+describe('screenListing with the AI checks (step 20)', () => {
+  const pools: DatabasePool[] = []
+  const connect = (url: string) => {
+    const pool = createPool(url, 'ai-screening-test')
+    pools.push(pool)
+    return createDatabase(pool)
+  }
+  const worker = connect(requireEnv('WORKER_DATABASE_URL'))
+  const owner = connect(requireEnv('MIGRATION_DATABASE_URL'))
+  let fake: FakeAiServer
+  let ai: AiModels
+  let sellerId: string
+  let categoryId: string
+
+  beforeAll(async () => {
+    fake = await startFakeAiServer()
+    ai = createAiModels(fake.settings())
+    sellerId = (await createTestSeller(owner)).seller.id
+    categoryId = (await createTestCategory(owner)).id
+  })
+
+  afterAll(async () => {
+    await fake.close()
+    await Promise.all(pools.map((pool) => pool.end()))
+  })
+
+  const fine = { prohibited: false, prohibitedReason: '', photos: [] }
+  // The default: the settings tests own platform_settings, so nothing here saves one.
+  const PLATFORM_LIMIT = settingDefinitions.ai_daily_limit_platform.default!
+
+  /** A listing waiting for review with `photoCount` ready photos. */
+  async function openReview(photoCount = 0) {
+    const { product } = await createTestProduct(owner, {
+      sellerId,
+      categoryId,
+      status: 'pending_review',
+    })
+    const photos = []
+    for (let i = 0; i < photoCount; i++) {
+      photos.push(await createTestPhoto(owner, product.id))
+    }
+    // A photo still being processed is never shown to the model.
+    await createTestPhoto(owner, product.id, 'processing')
+    const [review] = await owner
+      .insert(productModeration)
+      .values({ productId: product.id })
+      .returning()
+    return { review: review!, product, photos }
+  }
+
+  const reviewRow = async (id: string) =>
+    (
+      await owner
+        .select()
+        .from(productModeration)
+        .where(eq(productModeration.id, id))
+    )[0]!
+
+  const screen = (reviewId: string, options = {}) =>
+    screenListing({ db: worker, storage, ai }, reviewId, options)
+
+  const userContent = (index = 0) =>
+    z
+      .object({
+        messages: z.array(z.object({ role: z.string(), content: z.unknown() })),
+      })
+      .parse(fake.requests[index]!.body).messages[1]!.content
+
+  test('sends the text and every ready photo in one call, and stores its answer', async () => {
+    const { review, product, photos } = await openReview(2)
+    fake.requests.length = 0
+    fake.queue(fakeChatReply(fine, { costUsd: 0.000_3 }))
+    await screen(review.id)
+
+    expect(fake.requests).toHaveLength(1)
+    const [text, ...images] = z
+      .array(z.object({ type: z.string() }).loose())
+      .parse(userContent())
+    expect(text).toMatchObject({ type: 'text' })
+    expect(JSON.stringify(text)).toContain(`Title: ${product.title}`)
+    expect(images).toEqual(
+      photos.map((photo) => ({
+        type: 'image_url',
+        image_url: {
+          url: storage.publicUrl(imageSizeKey(photo.storageKey, 'card')),
+        },
+      })),
+    )
+
+    const row = await reviewRow(review.id)
+    expect(row).toMatchObject({
+      aiFlags: [
+        { code: 'missing_description', detail: 'The description is empty' },
+      ],
+      aiRisk: 'medium',
+    })
+    const [call] = await owner
+      .select()
+      .from(aiRequests)
+      .where(eq(aiRequests.id, row.aiRequestId!))
+    expect(call).toMatchObject({
+      feature: 'screening',
+      sellerId,
+      status: 'succeeded',
+      costMicroUsd: 300,
+    })
+  })
+
+  test('flags what the model found, and ignores photos the listing does not have', async () => {
+    const { review } = await openReview(2)
+    fake.queue(
+      fakeChatReply({
+        prohibited: true,
+        prohibitedReason: 'An air gun is a weapon',
+        photos: [
+          { photo: 1, usable: true, reason: '' },
+          { photo: 2, usable: false, reason: 'It shows a phone number' },
+          { photo: 7, usable: false, reason: 'Blurry' },
+        ],
+      }),
+    )
+    await screen(review.id)
+    expect(await reviewRow(review.id)).toMatchObject({
+      aiFlags: [
+        { code: 'missing_description', detail: 'The description is empty' },
+        {
+          code: 'ai_prohibited',
+          detail:
+            'The AI check says this may not be sold: An air gun is a weapon',
+        },
+        {
+          code: 'ai_unusable_photo',
+          detail: 'Photo 2 may be unusable: It shows a phone number',
+        },
+      ],
+      aiRisk: 'high',
+      riskRank: 0,
+    })
+  })
+
+  test('asks the text model when the listing has no ready photo', async () => {
+    const { review } = await openReview(0)
+    fake.requests.length = 0
+    fake.queue(fakeChatReply(fine))
+    await screen(review.id)
+    expect(typeof userContent()).toBe('string')
+    expect(userContent()).toContain('Photos: 0')
+  })
+
+  test('only the fixed checks run when the day’s AI calls are used up', async () => {
+    const { review } = await openReview(1)
+    // A day three days ago, filled up to the limit, so today's count, which
+    // other test files depend on, is untouched.
+    const day = new Date(indianDayStart(new Date()).getTime() - 3 * DAY_MS)
+    const filler = 'screening-limit-test'
+    await owner.insert(aiRequests).values(
+      Array.from({ length: PLATFORM_LIMIT }, () => ({
+        feature: 'nl_search',
+        provider: 'local',
+        model: filler,
+        inputHash: randomUUID(),
+        status: 'succeeded',
+        createdAt: new Date(day.getTime() + 60_000),
+      })),
+    )
+    try {
+      fake.requests.length = 0
+      await screen(review.id, { now: new Date(day.getTime() + 3_600_000) })
+      expect(fake.requests).toHaveLength(0)
+      expect(await reviewRow(review.id)).toMatchObject({
+        aiFlags: [
+          { code: 'missing_description', detail: 'The description is empty' },
+          {
+            code: 'ai_not_checked',
+            detail: 'Today’s AI calls are used up; check by hand',
+          },
+        ],
+        aiRequestId: null,
+      })
+    } finally {
+      await owner.delete(aiRequests).where(eq(aiRequests.model, filler))
+    }
+  })
+
+  test('a model that answers badly twice leaves the listing for a person', async () => {
+    const { review } = await openReview(0)
+    fake.queue(fakeChatReply('not json'), fakeChatReply('{"prohibited": "no"}'))
+    await screen(review.id)
+    expect((await reviewRow(review.id)).aiFlags).toContainEqual({
+      code: 'ai_not_checked',
+      detail: 'The AI answer could not be used; check by hand',
+    })
+  })
+
+  test('a provider failure is retried by the queue, and flagged on the last attempt', async () => {
+    const { review } = await openReview(0)
+    const down = { status: 502, body: { error: { message: 'Upstream error' } } }
+    fake.queue(down)
+    await expect(screen(review.id, { lastAttempt: false })).rejects.toThrow(
+      'The AI provider answered 502: Upstream error',
+    )
+    expect((await reviewRow(review.id)).aiRisk).toBeNull()
+
+    fake.queue(down)
+    await screen(review.id, { lastAttempt: true })
+    expect((await reviewRow(review.id)).aiFlags).toContainEqual({
+      code: 'ai_not_checked',
+      detail: 'The AI service could not be reached; check by hand',
+    })
+  })
+
+  test('never overwrites a decision made while the model was answering', async () => {
+    const { review } = await openReview(0)
+    const admin = await createTestUser(owner, 'admin')
+    fake.requests.length = 0
+    fake.queue({ ...fakeChatReply(fine), delayMs: 500 })
+    const screening = screen(review.id)
+    // The model has the question, and has not answered yet.
+    await waitUntil(async () => fake.requests.length === 1)
+    await owner
+      .update(productModeration)
+      .set({ decision: 'approved', decidedBy: admin.id, decidedAt: new Date() })
+      .where(eq(productModeration.id, review.id))
+    await screening
+    expect(await reviewRow(review.id)).toMatchObject({
+      decision: 'approved',
+      aiFlags: [],
+      aiRisk: null,
+    })
   })
 })

@@ -140,6 +140,17 @@ export {
   setImageOrder,
   updateImage,
 } from './modules/catalogue/images.ts'
+export {
+  addVideo,
+  createVideoUpload,
+  PROCESS_VIDEO_QUEUE,
+  removeVideo,
+} from './modules/catalogue/videos.ts'
+export {
+  MAX_VIDEO_SECONDS,
+  MAX_VIDEO_UPLOAD_BYTES,
+  VIDEO_CONTENT_TYPES,
+} from './lib/videos.ts'
 export type {
   ImageUpload,
   ImageView,
@@ -149,6 +160,7 @@ export type {
   ProductSummary,
   ProductView,
   VariantView,
+  VideoView,
 } from './modules/catalogue/types.ts'
 export {
   approveProduct,
@@ -247,3 +259,29 @@ export {
   type AiUsageReport,
 } from './modules/ai/queries.ts'
 export type { AiFeature } from './modules/ai/types.ts'
+export {
+  addCartItem,
+  applyCoupon,
+  getCart,
+  removeCartItem,
+  removeCoupon,
+  setCartItemQuantity,
+  type Shopper,
+} from './modules/cart/service.ts'
+export {
+  createCoupon,
+  getCoupon,
+  listCoupons,
+  updateCoupon,
+} from './modules/cart/coupons.ts'
+export {
+  MAX_CART_LINES,
+  MAX_LINE_QUANTITY,
+  type CartCoupon,
+  type CartLine,
+  type CartView,
+  type CouponUpdate,
+  type CouponView,
+  type NewCoupon,
+} from './modules/cart/types.ts'
+export { formatRupees } from './lib/money.ts'

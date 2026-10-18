@@ -24,6 +24,7 @@ import { POST as submit } from '@/app/api/seller/products/[id]/submit/route'
 import { POST as createProduct } from '@/app/api/seller/products/route'
 import { closePool } from '@/lib/db'
 import { closeJobQueue } from '@/lib/queue'
+import { getStorage } from '@/lib/storage'
 import { apiRequest as request, withId } from '@/testing/requests'
 import { signInWithEmail } from '@/testing/sign-in'
 import { POST as approve } from '../products/[id]/approve/route'
@@ -179,10 +180,10 @@ async function reviewOf(id: string) {
   return reviewBody.parse(await response.json())
 }
 
-/** Runs the screening job of the product's open review, as the worker does. */
+/** Runs the screening job of the product's open review, as the worker does with AI off. */
 async function screen(id: string): Promise<void> {
   const [open] = (await reviewOf(id)).reviews
-  await screenListing({ db: worker }, open!.id)
+  await screenListing({ db: worker, storage: getStorage(), ai: null }, open!.id)
 }
 
 async function queuePage(query = '', cookie = adminCookie) {
@@ -215,6 +216,7 @@ describe('a listing through review', () => {
       risk: 'high',
       flags: [
         { code: 'prohibited_term', detail: '"gun" appears in the title' },
+        { code: 'ai_not_checked', detail: 'AI checks are switched off' },
       ],
     })
 

@@ -862,6 +862,60 @@ describe('variants', () => {
   })
 })
 
+describe('minimum buying quantity', () => {
+  test('is 1 unless the seller sets one from 1 to 1000', async () => {
+    expect((await create(toothbrush())).minOrderQuantity).toBe(1)
+    expect(
+      (await create(toothbrush({ minOrderQuantity: 5 }))).minOrderQuantity,
+    ).toBe(5)
+    for (const [value, issue] of [
+      [0, 'minOrderQuantity must be at least 1'],
+      [1001, 'minOrderQuantity must be at most 1000'],
+      [2.5, 'minOrderQuantity must be a whole number'],
+      ['5', 'minOrderQuantity must be a number'],
+    ] as const) {
+      expect(
+        await validationIssues(create(toothbrush({ minOrderQuantity: value }))),
+      ).toEqual([issue])
+    }
+  })
+
+  test('changes at any time, like a price, and shows in the seller’s list', async () => {
+    const product = await create(toothbrush())
+    await setStatus(product.id, 'approved')
+    expect(
+      (await update(product.id, { minOrderQuantity: 5 })).minOrderQuantity,
+    ).toBe(5)
+    // Listing details still wait for a draft, even next to it.
+    await expect(
+      update(product.id, { minOrderQuantity: 6, title: 'Bamboo straws' }),
+    ).rejects.toThrow(ConflictError)
+
+    const page = await as(seller, (tx) =>
+      listOwnProducts(tx, photos, seller, { status: 'approved', limit: 100 }),
+    )
+    expect(
+      page.items.find((item) => item.id === product.id)?.minOrderQuantity,
+    ).toBe(5)
+  })
+
+  test('the database keeps it between 1 and 1000', async () => {
+    const product = await create(toothbrush())
+    for (const value of [0, 1001]) {
+      await expect(
+        owner
+          .update(products)
+          .set({ minOrderQuantity: value })
+          .where(eq(products.id, product.id)),
+      ).rejects.toMatchObject({
+        cause: expect.objectContaining({
+          constraint: 'products_min_order_quantity_check',
+        }),
+      })
+    }
+  })
+})
+
 describe('deleteProduct', () => {
   test('deletes a draft, which then disappears', async () => {
     const product = await create(toothbrush())

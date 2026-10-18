@@ -155,9 +155,11 @@ describe('PUT /api/admin/settings/{key}', () => {
     )
     expect(response.status).toBe(403)
     const saved = await owner
-      .select()
+      .select({ value: schema.platformSettings.value })
       .from(schema.platformSettings)
       .where(eq(schema.platformSettings.key, 'commission_bps'))
-    expect(saved).toEqual([])
+    // Other test files save the commission they need (saveTestSettings), so
+    // only the buyer's own value must be missing.
+    expect(saved.map((row) => row.value)).not.toContain(0)
   })
 })

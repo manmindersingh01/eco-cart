@@ -1,9 +1,11 @@
 import {
   addImage,
+  addVideo,
   createAppAuth,
   createDatabase,
   createImageUpload,
   createObjectStorage,
+  createVideoUpload,
   createPool,
   createProduct,
   getOwnProduct,
@@ -18,10 +20,14 @@ import {
   updateSetting,
   withContext,
 } from '@ecokart/core'
+import { loadVideoTools } from '@ecokart/core/worker'
 import {
   createTestCategory,
   createTestPhoto,
   createTestSeller,
+  createTestVideo,
+  fakeChatReply,
+  startFakeAiServer,
   waitUntil,
 } from '@ecokart/core/testing'
 import { PgBoss } from 'pg-boss'
@@ -34,6 +40,7 @@ const options = () => ({
   databaseUrl: requireEnv('DATABASE_URL'),
   notifications: loadNotificationConfig(),
   storage: loadStorageConfig(),
+  videoTools: loadVideoTools(),
   ai: null,
 })
 
@@ -54,6 +61,17 @@ test('says how to fix a database without the job queue tables', async () => {
     startWorker({ ...options(), databaseUrl: url.href }),
   ).rejects.toThrow(
     'The job queue tables are missing or out of date. Run `pnpm db:migrate`',
+  )
+})
+
+test('refuses to start without ffmpeg, which converts product videos', async () => {
+  await expect(
+    startWorker({
+      ...options(),
+      videoTools: { ...loadVideoTools(), ffmpegPath: '/nowhere/ffmpeg' },
+    }),
+  ).rejects.toThrow(
+    'ffmpeg cannot run from "/nowhere/ffmpeg". Install ffmpeg, or set FFMPEG_PATH to where ffmpeg is.',
   )
 })
 
@@ -262,8 +280,92 @@ test('a photo travels from the browser upload through the worker to its public s
   // The worker picks jobs up every two seconds, so allow for a slow runner.
 }, 30_000)
 
-test('a submitted listing is screened by the worker against the prohibited terms', async () => {
+test('a video travels from the browser upload through the worker to its public file', async () => {
   const worker = await startWorker(options())
+  const webUrl = requireEnv('WEB_DATABASE_URL')
+  const webPool = createPool(webUrl, 'worker-e2e-video-web')
+  const ownerPool = createPool(
+    requireEnv('MIGRATION_DATABASE_URL'),
+    'worker-e2e-video-owner',
+  )
+  const queue = await startJobQueue(webUrl, 'worker-e2e-video-queue')
+  const web = createDatabase(webPool)
+  const owner = createDatabase(ownerPool)
+  const storage = createObjectStorage(loadStorageConfig())
+  try {
+    const { owner: user, seller: business } = await createTestSeller(owner)
+    const seller = {
+      role: 'seller' as const,
+      userId: user.id,
+      sellerId: business.id,
+    }
+    const category = await createTestCategory(owner)
+    const product = await withContext(web, seller, (tx) =>
+      createProduct(tx, storage, seller, {
+        categoryId: category.id,
+        title: 'Handloom Cotton Towel',
+        variants: [
+          { sku: 'HCT-1', pricePaise: 39_900, mrpPaise: 44_900, stock: 30 },
+        ],
+      }),
+    )
+
+    // The browser asks for a form and posts the video straight to storage.
+    const form = await createVideoUpload(
+      { db: web, storage },
+      seller,
+      product.id,
+      { contentType: 'video/quicktime', size: 500_000 },
+    )
+    const body = new FormData()
+    for (const [name, value] of Object.entries(form.fields)) {
+      body.append(name, value)
+    }
+    body.append(
+      'file',
+      new Blob([
+        await createTestVideo({
+          width: 1280,
+          height: 960,
+          format: 'mov',
+          sound: true,
+        }),
+      ]),
+    )
+    expect((await fetch(form.url, { method: 'POST', body })).status).toBe(204)
+
+    await withContext(web, seller, (tx) =>
+      addVideo(tx, storage, queue, seller, product.id, { uploadKey: form.key }),
+    )
+    const current = () =>
+      withContext(web, seller, (tx) =>
+        getOwnProduct(tx, storage, seller, product.id),
+      )
+    await waitUntil(
+      async () => (await current()).video?.status === 'ready',
+      45_000,
+    )
+
+    const video = (await current()).video!
+    // 4:3 fits inside 1280 by 720.
+    expect([video.width, video.height]).toEqual([960, 720])
+    const file = await fetch(video.urls!.video)
+    expect([file.status, file.headers.get('content-type')]).toEqual([
+      200,
+      'video/mp4',
+    ])
+  } finally {
+    await queue.stop()
+    await Promise.all([webPool.end(), ownerPool.end()])
+    await worker.stop()
+  }
+  // The worker picks jobs up every two seconds, and ffmpeg is slow on a
+  // small runner.
+}, 60_000)
+
+test('a submitted listing is screened by the worker against the prohibited terms and by the AI checks', async () => {
+  const fake = await startFakeAiServer()
+  const worker = await startWorker({ ...options(), ai: fake.settings() })
   const webUrl = requireEnv('WEB_DATABASE_URL')
   const webPool = createPool(webUrl, 'worker-e2e-screening-web')
   const ownerPool = createPool(
@@ -296,6 +398,13 @@ test('a submitted listing is screened by the worker against the prohibited terms
       }),
     )
     await createTestPhoto(owner, product.id)
+    fake.queue(
+      fakeChatReply({
+        prohibited: true,
+        prohibitedReason: 'Ivory comes from protected wildlife',
+        photos: [{ photo: 1, usable: true, reason: '' }],
+      }),
+    )
     await withContext(web, seller, (tx) =>
       submitProduct(tx, storage, queue, seller, product.id),
     )
@@ -311,13 +420,22 @@ test('a submitted listing is screened by the worker against the prohibited terms
       risk: 'high',
       flags: [
         { code: 'prohibited_term', detail: '"ivory" appears in the title' },
+        {
+          code: 'ai_prohibited',
+          detail:
+            'The AI check says this may not be sold: Ivory comes from protected wildlife',
+        },
       ],
       decision: null,
     })
+    expect(fake.requests.map((request) => request.path)).toEqual([
+      '/chat/completions',
+    ])
   } finally {
     await queue.stop()
     await Promise.all([webPool.end(), ownerPool.end()])
     await worker.stop()
+    await fake.close()
   }
   // The worker picks jobs up every two seconds, so allow for a slow runner.
 }, 30_000)

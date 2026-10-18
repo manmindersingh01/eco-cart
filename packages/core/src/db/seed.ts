@@ -349,12 +349,14 @@ export interface ExampleProduct {
   highlights: string[]
   attributes: Record<string, string>
   optionNames?: string[]
+  /** Left out: 1. */
+  minOrderQuantity?: number
   variants: NewVariant[]
   /** The example photo: a circle of the second colour on the first. */
   colours: [string, string]
 }
 
-/** Two listings for each example seller; prices are examples only. */
+/** Two or three listings for each example seller; prices are examples only. */
 export const DEVELOPMENT_PRODUCTS: ExampleProduct[] = [
   {
     sellerEmail: 'seller1@ecokart.test',
@@ -437,6 +439,21 @@ export const DEVELOPMENT_PRODUCTS: ExampleProduct[] = [
       { sku: 'BSP-SET3', pricePaise: 29_900, mrpPaise: 39_900, stock: 50 },
     ],
     colours: ['#f1e4cc', '#a8773f'],
+  },
+  {
+    sellerEmail: 'seller2@ecokart.test',
+    category: 'Bamboo Kitchenware',
+    brand: 'Bamboo Home',
+    title: 'Bamboo Drinking Straw',
+    description:
+      'A reusable straw cut from a single bamboo stem, sold singly with a minimum of five.',
+    highlights: ['Washable and reusable', 'Cleaning brush sold separately'],
+    attributes: { material: 'bamboo', length: '20 cm' },
+    minOrderQuantity: 5,
+    variants: [
+      { sku: 'BDS-1', pricePaise: 5_000, mrpPaise: 6_000, stock: 500 },
+    ],
+    colours: ['#f4edd8', '#b7924f'],
   },
   {
     sellerEmail: 'seller3@ecokart.test',
@@ -623,8 +640,10 @@ async function seedProduct(
         const { imageId } = processImageJob.parse(data)
         await processUploadedImage({ db: worker, storage }, imageId)
       } else if (name === SCREEN_LISTING_QUEUE) {
+        // The seed never calls an AI provider: the example listings get the
+        // fixed checks and an "AI not checked" flag.
         await screenListing(
-          { db: worker },
+          { db: worker, storage, ai: null },
           screenListingJob.parse(data).reviewId,
         )
       } else {
@@ -668,6 +687,9 @@ async function seedProduct(
       highlights: example.highlights,
       attributes: example.attributes,
       ...(example.optionNames ? { optionNames: example.optionNames } : {}),
+      ...(example.minOrderQuantity
+        ? { minOrderQuantity: example.minOrderQuantity }
+        : {}),
       variants: example.variants,
     }),
   )

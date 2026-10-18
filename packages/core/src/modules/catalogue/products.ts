@@ -7,6 +7,7 @@ import {
   categories,
   productImages,
   productVariants,
+  productVideos,
   products,
 } from '../../db/schema/index.ts'
 import {
@@ -28,6 +29,7 @@ import { foreignKeyViolation, uniqueViolation } from '../../lib/postgres.ts'
 import { slugify } from '../../lib/slug.ts'
 import type { ObjectStorage } from '../../lib/storage.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
+import { videoFileKey, videoPosterKey } from '../../lib/videos.ts'
 import { loadCategoryTree } from './categories.ts'
 import { refreshProducts } from './summary.ts'
 import {
@@ -44,6 +46,7 @@ import {
   type ProductSummary,
   type ProductView,
   type VariantView,
+  type VideoView,
 } from './types.ts'
 
 /*
@@ -58,12 +61,13 @@ import {
  */
 
 export type SellerContext = Extract<RequestContext, { role: 'seller' }>
-/** Showing photos needs only their public addresses. */
+/** Showing photos and videos needs only their public addresses. */
 export type PhotoAddresses = Pick<ObjectStorage, 'publicUrl'>
 
 type ProductRow = typeof products.$inferSelect
 type VariantRow = typeof productVariants.$inferSelect
 type ImageRow = typeof productImages.$inferSelect
+type VideoRow = typeof productVideos.$inferSelect
 
 const INVALID = 'Those product details are not valid'
 const INVALID_VARIANT = 'Those variant details are not valid'
@@ -249,7 +253,31 @@ function toImageView(row: ImageRow, photos: PhotoAddresses): ImageView {
   }
 }
 
-/** One product with its variants and photos, for the seller who owns it. */
+function toVideoView(row: VideoRow, photos: PhotoAddresses): VideoView {
+  if (!isImageStatus(row.status)) {
+    throw new Error(`Video ${row.id} has an unknown status ${row.status}`)
+  }
+  return {
+    id: row.id,
+    status: row.status,
+    failureReason: row.failureReason,
+    durationMs: row.durationMs,
+    width: row.width,
+    height: row.height,
+    urls:
+      row.status === 'ready'
+        ? {
+            video: photos.publicUrl(videoFileKey(row.storageKey)),
+            poster: photos.publicUrl(videoPosterKey(row.storageKey)),
+          }
+        : null,
+  }
+}
+
+/**
+ * One product with its variants, photos, and video, for the seller who owns
+ * it.
+ */
 export async function readProductView(
   tx: Transaction,
   photos: PhotoAddresses,
@@ -283,6 +311,10 @@ export async function readProductView(
       asc(productImages.createdAt),
       asc(productImages.id),
     )
+  const [video] = await tx
+    .select()
+    .from(productVideos)
+    .where(eq(productVideos.productId, productId))
   const tree = await loadCategoryTree(tx)
   const category = tree.byId(product.categoryId)
   if (!category) throw new Error(`Product ${product.id} has no category`)
@@ -296,6 +328,7 @@ export async function readProductView(
     highlights: product.highlights,
     attributes: product.attributes,
     optionNames: product.optionNames,
+    minOrderQuantity: product.minOrderQuantity,
     hsnCode: product.hsnCode,
     gstRateBps: product.gstRateBps,
     category: {
@@ -319,6 +352,7 @@ export async function readProductView(
     updatedAt: product.updatedAt,
     variants: variants.map(toVariantView),
     images: images.map((image) => toImageView(image, photos)),
+    video: video ? toVideoView(video, photos) : null,
   }
 }
 
@@ -366,6 +400,7 @@ export async function createProduct(
       highlights: details.highlights ?? [],
       attributes: details.attributes ?? {},
       optionNames,
+      minOrderQuantity: details.minOrderQuantity ?? 1,
       hsnCode: details.hsnCode ?? null,
       status: 'draft',
     })
@@ -449,6 +484,7 @@ export async function listOwnProducts(
       minPricePaise: products.minPricePaise,
       maxPricePaise: products.maxPricePaise,
       totalStock: products.totalStock,
+      minOrderQuantity: products.minOrderQuantity,
       thumbnailKey: productImages.storageKey,
       createdAt: products.createdAt,
       updatedAt: products.updatedAt,
@@ -494,7 +530,8 @@ const lockVariants = (tx: Transaction, productId: string) =>
 
 /**
  * Changes listing details of a draft or rejected product. New option names
- * rename the old ones in order, in every variant too.
+ * rename the old ones in order, in every variant too. The minimum buying
+ * quantity alone may change at any time, like a price.
  */
 export async function updateProduct(
   tx: Transaction,
@@ -509,7 +546,9 @@ export async function updateProduct(
     throw new ValidationError('There is nothing to change')
   }
   const current = await lockOwnProduct(tx, context, productId)
-  assertEditable(current)
+  if (Object.keys(changes).some((field) => field !== 'minOrderQuantity')) {
+    assertEditable(current)
+  }
   const renamed = changes.optionNames
   throwIfAny(INVALID, [
     changes.categoryId !== undefined &&

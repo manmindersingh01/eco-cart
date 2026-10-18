@@ -132,6 +132,9 @@ export const products = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     hsnCode: text('hsn_code'),
+    // The fewest units of one variant a buyer may order at once, for example
+    // 5 bamboo straws; the seller changes it at any time, like a price.
+    minOrderQuantity: integer('min_order_quantity').notNull().default(1),
     // Copied from the category at approval and frozen on each order line.
     gstRateBps: integer('gst_rate_bps'),
     status: text('status').notNull().default('draft'),
@@ -203,6 +206,10 @@ export const products = pgTable(
     ),
     check('products_gst_rate_bps_check', sql`gst_rate_bps between 0 and 10000`),
     check('products_total_stock_check', sql`total_stock >= 0`),
+    check(
+      'products_min_order_quantity_check',
+      sql`min_order_quantity between 1 and 1000`,
+    ),
     check(
       'products_price_range_check',
       sql`min_price_paise > 0 and max_price_paise >= min_price_paise and min_mrp_paise >= min_price_paise`,
@@ -309,6 +316,56 @@ export const productImages = pgTable(
     webInsert(productEditable('product_images.product_id')),
     webUpdate(productEditable('product_images.product_id')),
     webDelete(productEditable('product_images.product_id')),
+    workerPolicy(),
+  ],
+).enableRLS()
+
+/** A product's one optional video, checked and converted by the worker. */
+export const productVideos = pgTable(
+  'product_videos',
+  {
+    id: uuidPrimaryKey(),
+    // Unique: a product has at most one video.
+    productId: uuid('product_id')
+      .notNull()
+      .unique()
+      .references(() => products.id),
+    // videos/{id}: the public files are videos/{id}/video.mp4 and poster.jpg.
+    storageKey: text('storage_key').notNull().unique(),
+    // processing until the worker has converted it, like a photo.
+    status: text('status').notNull().default('processing'),
+    // The browser's upload; unique, so one upload becomes one video.
+    uploadKey: text('upload_key').unique(),
+    // Shown to the seller when the video cannot be used.
+    failureReason: text('failure_reason'),
+    // The converted file's, filled in by the worker.
+    durationMs: integer('duration_ms'),
+    width: integer('width'),
+    height: integer('height'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  () => [
+    check(
+      'product_videos_status_check',
+      sql`status in ('processing', 'ready', 'failed')`,
+    ),
+    check(
+      'product_videos_ready_check',
+      sql`status <> 'ready' or (duration_ms is not null and width is not null and height is not null)`,
+    ),
+    check(
+      'product_videos_failed_check',
+      sql`(status = 'failed') = (failure_reason is not null)`,
+    ),
+    check(
+      'product_videos_size_check',
+      sql`duration_ms > 0 and width > 0 and height > 0`,
+    ),
+    webSelect(productVisible('product_videos.product_id')),
+    webInsert(productEditable('product_videos.product_id')),
+    webUpdate(productEditable('product_videos.product_id')),
+    webDelete(productEditable('product_videos.product_id')),
     workerPolicy(),
   ],
 ).enableRLS()

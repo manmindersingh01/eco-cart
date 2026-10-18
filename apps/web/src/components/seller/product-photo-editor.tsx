@@ -14,6 +14,7 @@ import { Field, Input, Select } from '@/components/ui/form-controls'
 import { ApiError, apiRequest } from '@/lib/api-client'
 import {
   canEditListing,
+  MAX_PRODUCT_PHOTOS,
   movedImageIds,
   nextPollDelay,
   shouldPollImages,
@@ -230,7 +231,9 @@ export function ProductPhotoEditor({
             never displayed.
           </p>
         </div>
-        <StatusBadge>{product.images.length} of 10 photos</StatusBadge>
+        <StatusBadge>
+          {product.images.length} of {MAX_PRODUCT_PHOTOS} photos
+        </StatusBadge>
       </div>
 
       {editable ? (
@@ -253,7 +256,7 @@ export function ProductPhotoEditor({
             onClick={() => inputRef.current?.click()}
             disabled={
               product.images.filter((image) => image.status !== 'failed')
-                .length >= 10
+                .length >= MAX_PRODUCT_PHOTOS
             }
           >
             Choose photos

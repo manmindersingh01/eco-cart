@@ -56,7 +56,8 @@ export const catalogueQueues: QueueDefinition[] = [
 
 export const processImageJob = z.object({ imageId: z.uuid() })
 
-export const MAX_IMAGES_PER_PRODUCT = 10
+/** One main photo and up to three more. */
+export const MAX_IMAGES_PER_PRODUCT = 4
 const UPLOAD_FORM_SECONDS = 10 * 60
 const UPLOAD_KEY =
   /^uploads\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/

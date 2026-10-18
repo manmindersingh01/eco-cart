@@ -5,6 +5,10 @@ import {
   type ImageSize,
 } from '../../lib/images.ts'
 import {
+  MAX_VIDEO_UPLOAD_BYTES,
+  VIDEO_CONTENT_TYPES,
+} from '../../lib/videos.ts'
+import {
   gstRateBps,
   hsnCode,
   idOf,
@@ -127,6 +131,8 @@ export type ProductStatus = (typeof PRODUCT_STATUSES)[number]
 export const MAX_PRICE_PAISE = 100_000_000
 export const MAX_STOCK = 1_000_000
 export const MAX_VARIANTS = 100
+/** The highest minimum buying quantity a seller may set. */
+export const MAX_MIN_ORDER_QUANTITY = 1000
 export const MAX_OPTION_NAMES = 3
 export const MAX_HIGHLIGHTS = 8
 export const MAX_ATTRIBUTES = 30
@@ -140,6 +146,8 @@ const sku = z
   )
 const price = wholeNumber(1, MAX_PRICE_PAISE)
 const stock = wholeNumber(0, MAX_STOCK)
+/** The fewest units of one variant a buyer may order at once. */
+const minOrderQuantity = wholeNumber(1, MAX_MIN_ORDER_QUANTITY)
 const title = z
   .string()
   .trim()
@@ -184,6 +192,8 @@ export const newProduct = strictObject({
   /** Left out: the category's default HSN code applies. */
   hsnCode: hsnCode.nullable().optional(),
   optionNames: optionNames.optional(),
+  /** Left out: 1. */
+  minOrderQuantity: minOrderQuantity.optional(),
   variants: z
     .array(newVariant)
     .min(1, 'must have at least one variant')
@@ -191,7 +201,11 @@ export const newProduct = strictObject({
 })
 export type NewProduct = z.input<typeof newProduct>
 
-/** Listing details; option names may be renamed, not added or removed. */
+/**
+ * Listing details; option names may be renamed, not added or removed. The
+ * minimum buying quantity may change at any time, the rest only while the
+ * listing can change.
+ */
 export const productUpdate = strictObject({
   categoryId: idOf('a category').optional(),
   brandId: idOf('a brand').nullable().optional(),
@@ -201,6 +215,7 @@ export const productUpdate = strictObject({
   attributes: attributes.optional(),
   hsnCode: hsnCode.nullable().optional(),
   optionNames: optionNames.optional(),
+  minOrderQuantity: minOrderQuantity.optional(),
 })
 
 export const variantUpdate = strictObject({
@@ -238,6 +253,20 @@ export interface ImageView {
   urls: Record<ImageSize, string> | null
 }
 
+/** A product's video; its status works like a photo's. */
+export interface VideoView {
+  id: string
+  status: ImageStatus
+  /** Why the video cannot be used, when it failed. */
+  failureReason: string | null
+  /** Of the converted video, once it is ready. */
+  durationMs: number | null
+  width: number | null
+  height: number | null
+  /** Public addresses of the MP4 file and its poster image, once ready. */
+  urls: { video: string; poster: string } | null
+}
+
 export interface ProductView {
   id: string
   slug: string
@@ -247,6 +276,8 @@ export interface ProductView {
   highlights: string[]
   attributes: Record<string, string>
   optionNames: string[]
+  /** The fewest units of one variant a buyer may order at once. */
+  minOrderQuantity: number
   /** The seller's own HSN code; null means the category's default applies. */
   hsnCode: string | null
   /** Set at approval (step 7); until then the category's rate applies. */
@@ -270,6 +301,8 @@ export interface ProductView {
   updatedAt: Date
   variants: VariantView[]
   images: ImageView[]
+  /** Null when the product has no video. */
+  video: VideoView | null
 }
 
 /** A product in the seller's list. */
@@ -282,6 +315,7 @@ export interface ProductSummary {
   minPricePaise: number | null
   maxPricePaise: number | null
   totalStock: number
+  minOrderQuantity: number
   /** The main photo's thumbnail, once one is ready. */
   thumbnailUrl: string | null
   createdAt: Date
@@ -326,7 +360,28 @@ export const imageOrder = strictObject({
   imageIds: z.array(idOf('a photo')),
 })
 
-/** A signed form for one photo upload, straight to object storage. */
+/* The product video (one at most). */
+
+export const videoUploadRequest = strictObject({
+  contentType: z.enum(VIDEO_CONTENT_TYPES, {
+    error: (issue) =>
+      issue.input === undefined
+        ? undefined
+        : 'must be video/mp4, video/quicktime, or video/webm',
+  }),
+  /** In bytes. */
+  size: z
+    .number()
+    .int('must be a whole number')
+    .min(1, 'must be at least 1 byte')
+    .max(MAX_VIDEO_UPLOAD_BYTES, 'must be at most 50 MB'),
+})
+
+export const newVideo = strictObject({ uploadKey: z.string() })
+
+/**
+ * A signed form for one photo or video upload, straight to object storage.
+ */
 export interface ImageUpload {
   /** Pass back as `uploadKey` once the file is uploaded. */
   key: string

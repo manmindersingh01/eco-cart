@@ -8,21 +8,22 @@ import {
   type StorageConfig,
 } from '@ecokart/core'
 import {
+  checkVideoTools,
   registerCatalogueJobs,
   registerInvoiceJobs,
   registerSellerJobs,
+  type VideoTools,
 } from '@ecokart/core/worker'
-import type { AiSettings } from '@ecokart/core'
+import { createAiModels, type AiSettings } from '@ecokart/core'
 import { PgBoss } from 'pg-boss'
 
 export interface WorkerOptions {
   databaseUrl: string
   notifications: ReturnType<typeof loadNotificationConfig>
   storage: StorageConfig
-  /**
-   * Null when AI_ENABLED is false. The AI jobs from step 18 on build their
-   * models from it.
-   */
+  /** ffmpeg and ffprobe, which convert product videos. */
+  videoTools: VideoTools
+  /** Null when AI_ENABLED is false. The AI jobs build their models from it. */
   ai: AiSettings | null
 }
 
@@ -44,6 +45,9 @@ export interface RunningWorker {
 export async function startWorker(
   options: WorkerOptions,
 ): Promise<RunningWorker> {
+  // Before anything connects: a worker image without ffmpeg would otherwise
+  // fail every product video in the background.
+  await checkVideoTools(options.videoTools)
   const boss = new PgBoss({
     connectionString: options.databaseUrl,
     application_name: 'ecokart-worker',
@@ -72,6 +76,8 @@ export async function startWorker(
   await registerCatalogueJobs(boss, {
     db,
     storage: createObjectStorage(options.storage),
+    videoTools: options.videoTools,
+    ai: options.ai ? createAiModels(options.ai) : null,
   })
   await registerInvoiceJobs(boss, {
     db,
