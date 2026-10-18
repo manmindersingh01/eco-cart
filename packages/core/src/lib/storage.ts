@@ -20,6 +20,8 @@ import { parseEnv, secretString } from './config.ts'
  * - uploads/...   files as the browser sent them, read only by the worker
  * - originals/... private copies of accepted photos
  * - invoices/...  invoice PDFs, downloaded through short-lived signed links
+ * - seller-documents/...  checked verification documents, downloaded by
+ *                 administrators through short-lived signed links
  */
 
 export interface StorageConfig {

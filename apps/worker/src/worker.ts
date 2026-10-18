@@ -10,6 +10,7 @@ import {
 import {
   registerCatalogueJobs,
   registerInvoiceJobs,
+  registerSellerJobs,
 } from '@ecokart/core/worker'
 import type { AiSettings } from '@ecokart/core'
 import { PgBoss } from 'pg-boss'
@@ -73,6 +74,10 @@ export async function startWorker(
     storage: createObjectStorage(options.storage),
   })
   await registerInvoiceJobs(boss, {
+    db,
+    storage: createObjectStorage(options.storage),
+  })
+  await registerSellerJobs(boss, {
     db,
     storage: createObjectStorage(options.storage),
   })

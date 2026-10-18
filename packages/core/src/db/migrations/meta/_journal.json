@@ -134,6 +134,20 @@
       "when": 1791799486495,
       "tag": "0018_ai_requests_drop_old",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792343425624,
+      "tag": "0019_seller_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792343425983,
+      "tag": "0020_seller_document_grants",
+      "breakpoints": true
     }
   ]
 }

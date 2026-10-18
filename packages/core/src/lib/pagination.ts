@@ -71,6 +71,20 @@ export function afterCursor(
 export const newestFirstCursor = (row: { cursorTime: string; id: string }) =>
   encodeCursor(row.cursorTime, row.id)
 
+/**
+ * Rows that come after the cursor in oldest-first order, for queues such as
+ * the seller documents waiting for review. The cursor has the same shape as
+ * a newest-first one; build it with `newestFirstCursor`.
+ */
+export function afterOldestFirstCursor(
+  cursor: string,
+  createdAt: AnyPgColumn,
+  id: AnyPgColumn,
+): SQL {
+  const [time, lastId] = decodeCursor(cursor, cursorShape)
+  return sql`(${createdAt}, ${id}) > (${time}::timestamptz, ${lastId}::uuid)`
+}
+
 const textCursorShape = z.tuple([z.literal('az'), z.string().max(1000)])
 
 export function encodeTextCursor(key: string): string {

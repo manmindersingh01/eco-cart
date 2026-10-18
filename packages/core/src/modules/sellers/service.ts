@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
-import { sellers } from '../../db/schema/index.ts'
+import { sellerDocumentRequests, sellers } from '../../db/schema/index.ts'
 import {
   ConflictError,
   ForbiddenError,
@@ -24,7 +24,10 @@ import type { Account, AccountDirectory } from '../auth/accounts.ts'
 import {
   businessUpdate,
   contactsUpdate,
+  DOCUMENT_TYPES,
+  documentTypeName,
   newSeller,
+  OPEN_DOCUMENT_STATUSES,
   suspension,
   taxIdIssues,
   type SellerStatus,
@@ -49,7 +52,10 @@ export interface SellerServices {
 }
 
 type SellerRow = typeof sellers.$inferSelect
-type Administrator = Extract<RequestContext, { role: 'admin' | 'system' }>
+export type Administrator = Extract<
+  RequestContext,
+  { role: 'admin' | 'system' }
+>
 
 const STATUSES: readonly SellerStatus[] = ['pending', 'approved', 'suspended']
 const isStatus = (value: string): value is SellerStatus =>
@@ -89,7 +95,7 @@ function auditable(view: SellerView) {
   return details
 }
 
-function assertAdministrator(
+export function assertAdministrator(
   context: RequestContext,
 ): asserts context is Administrator {
   if (context.role !== 'admin' && context.role !== 'system') {
@@ -97,7 +103,7 @@ function assertAdministrator(
   }
 }
 
-const administratorActor = (
+export const administratorActor = (
   context: Administrator,
 ): Pick<AuditEntry, 'actorUserId' | 'actorRole'> => ({
   actorUserId: context.userId ?? null,
@@ -234,7 +240,51 @@ export async function createSeller(
   }
 }
 
-/** pending to approved. Needs a GSTIN and a PAN for the seller's invoices. */
+const OPEN_DOCUMENT_STATES: Record<string, string> = {
+  requested: 'waiting for the seller to upload it',
+  processing: 'being checked',
+  received: 'waiting for review',
+}
+
+/**
+ * The seller's document requests that are neither accepted nor cancelled,
+ * in words, for example "PAN card (waiting for review)". Ordered by type,
+ * then oldest first, so the same requests always read the same way.
+ */
+async function outstandingDocuments(
+  tx: Transaction,
+  sellerId: string,
+): Promise<string[]> {
+  const rows = await tx
+    .select({
+      type: sellerDocumentRequests.documentType,
+      status: sellerDocumentRequests.status,
+    })
+    .from(sellerDocumentRequests)
+    .where(
+      and(
+        eq(sellerDocumentRequests.sellerId, sellerId),
+        inArray(sellerDocumentRequests.status, OPEN_DOCUMENT_STATUSES),
+      ),
+    )
+    .orderBy(
+      sql`array_position(array[${sql.join(
+        DOCUMENT_TYPES.map((type) => sql`${type}`),
+        sql`, `,
+      )}]::text[], ${sellerDocumentRequests.documentType})`,
+      sellerDocumentRequests.createdAt,
+      sellerDocumentRequests.id,
+    )
+  return rows.map(
+    ({ type, status }) =>
+      `${documentTypeName(type)} (${OPEN_DOCUMENT_STATES[status] ?? status})`,
+  )
+}
+
+/**
+ * pending to approved. Needs a GSTIN and a PAN for the seller's invoices,
+ * and every document an administrator asked for accepted or cancelled.
+ */
 export async function approveSeller(
   db: Database,
   context: RequestContext,
@@ -253,6 +303,14 @@ export async function approveSeller(
     ]
     if (missing.length > 0) {
       throw new ValidationError('This seller cannot be approved yet', missing)
+    }
+    // Asking for a document locks the seller row too, so a request made at
+    // the same moment is either seen here or made after the approval.
+    const outstanding = await outstandingDocuments(tx, sellerId)
+    if (outstanding.length > 0) {
+      throw new ConflictError(
+        `This seller cannot be approved until every requested document is accepted or cancelled. Still open: ${outstanding.join(', ')}`,
+      )
     }
     const [row] = await tx
       .update(sellers)
@@ -411,7 +469,7 @@ export async function updateSeller(
   }
 }
 
-function assertSeller(
+export function assertSeller(
   context: RequestContext,
 ): asserts context is Extract<RequestContext, { role: 'seller' }> {
   if (context.role !== 'seller') {

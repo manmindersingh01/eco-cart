@@ -61,6 +61,34 @@ export {
   type SellerSummary,
 } from './modules/sellers/service.ts'
 export type { SellerStatus, SellerView } from './modules/sellers/types.ts'
+export {
+  acceptSellerDocument,
+  addDocumentFile,
+  cancelSellerDocument,
+  CHECK_DOCUMENT_QUEUE,
+  createDocumentUpload,
+  getDocumentDownload,
+  getDocumentRequest,
+  listDocumentsToReview,
+  listOwnDocumentRequests,
+  listSellerDocumentRequests,
+  rejectSellerDocument,
+  requestSellerDocuments,
+} from './modules/sellers/documents.ts'
+export {
+  DOCUMENT_CONTENT_TYPES,
+  DOCUMENT_TYPES,
+  MAX_DOCUMENT_BYTES,
+  type DocumentContentType,
+  type DocumentDownload,
+  type DocumentFileStatus,
+  type DocumentFileView,
+  type DocumentRequestStatus,
+  type DocumentRequestView,
+  type DocumentToReview,
+  type DocumentType,
+  type DocumentUpload,
+} from './modules/sellers/types.ts'
 export type { Page } from './lib/pagination.ts'
 export {
   createCategory,
