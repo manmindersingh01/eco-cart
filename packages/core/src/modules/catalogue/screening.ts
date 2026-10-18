@@ -1,9 +1,8 @@
-import { and, asc, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 import type { Database } from '../../db/client.ts'
 import {
   categories,
-  productImages,
   productModeration,
   productVariants,
   products,
@@ -11,13 +10,17 @@ import {
 import { TooManyRequestsError } from '../../errors.ts'
 import type { JsonPrompt } from '../../lib/ai/chat.ts'
 import { AiProviderError, AiReplyError } from '../../lib/ai/client.ts'
-import { imageAddressForAi } from '../../lib/ai/images.ts'
 import type { AiModels } from '../../lib/ai/index.ts'
-import { imageSizeKey } from '../../lib/images.ts'
 import type { QueueDefinition } from '../../lib/queue.ts'
 import type { ObjectStorage } from '../../lib/storage.ts'
 import { callAi } from '../ai/service.ts'
 import { getSetting } from '../settings/service.ts'
+import {
+  photosToSend,
+  readyPhotosForAi,
+  type PhotoToSend,
+  type ProductPhotoForAi,
+} from './ai-photos.ts'
 import type { RiskLevel, ScreeningFlag } from './types.ts'
 
 /*
@@ -241,8 +244,7 @@ interface ListingForAi {
   sellerId: string
   categoryName: string
   listing: ListingText
-  /** Card-size photos in the seller's order. */
-  photos: { url: string; storageKey: string }[]
+  photos: ProductPhotoForAi[]
 }
 
 const listingDescription = ({ categoryName, listing }: ListingForAi) =>
@@ -263,41 +265,6 @@ const notChecked = (detail: string): ScreeningFlag => ({
   code: 'ai_not_checked',
   detail,
 })
-
-/** A photo shown to the vision model, and its number in the seller's order. */
-interface PhotoToSend {
-  url: string
-  address: string
-  number: number
-}
-
-/**
- * The photos the vision model can be shown. One whose card size cannot be
- * read is left out and the others keep their numbers, so a flag always
- * names the photo the seller sees.
- */
-async function photosToSend(
-  deps: ScreeningDependencies,
-  photos: ListingForAi['photos'],
-  provider: string,
-): Promise<PhotoToSend[]> {
-  const addresses = await Promise.all(
-    photos.map((photo) =>
-      imageAddressForAi(
-        {
-          url: photo.url,
-          read: () => deps.storage.read(imageSizeKey(photo.storageKey, 'card')),
-          contentType: 'image/webp',
-        },
-        provider,
-      ),
-    ),
-  )
-  return photos.flatMap((photo, index) => {
-    const address = addresses[index]
-    return address ? [{ url: photo.url, address, number: index + 1 }] : []
-  })
-}
 
 function verdictFlags(
   verdict: ScreeningVerdict,
@@ -343,7 +310,11 @@ async function aiScreeningFlags(
       requestId: null,
     }
   }
-  const sent = await photosToSend(deps, forAi.photos, ai.vision.provider)
+  const sent = await photosToSend(
+    deps.storage,
+    forAi.photos,
+    ai.vision.provider,
+  )
   const prompt: JsonPrompt = {
     system: SCREENING_INSTRUCTIONS,
     user: `${listingDescription(forAi)}\nPhotos: ${sent.length}`,
@@ -475,17 +446,6 @@ export async function screenListing(
       })
       .from(productVariants)
       .where(eq(productVariants.productId, product.product.id))
-    const photos = await tx
-      .select({ storageKey: productImages.storageKey })
-      .from(productImages)
-      .where(
-        and(
-          eq(productImages.productId, product.product.id),
-          eq(productImages.status, 'ready'),
-        ),
-      )
-      .orderBy(asc(productImages.sortOrder), asc(productImages.createdAt))
-
     const listing: ListingText = {
       title: product.product.title,
       description: product.product.description,
@@ -507,10 +467,7 @@ export async function screenListing(
         sellerId: product.product.sellerId,
         categoryName: product.categoryName,
         listing,
-        photos: photos.map(({ storageKey }) => ({
-          storageKey,
-          url: deps.storage.publicUrl(imageSizeKey(storageKey, 'card')),
-        })),
+        photos: await readyPhotosForAi(tx, deps.storage, product.product.id),
       },
     }
   })

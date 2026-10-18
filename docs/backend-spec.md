@@ -39,7 +39,7 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | 6 | Products, variants, stock, and image upload | 5.5, 6.2 | Done |
 | 7 | Listing moderation: submit, deterministic screening, approve, reject | 6.2 | Done |
 | 8 | Catalogue import from CSV and Excel with a row-level error report | 5.11, 6.7 | Planned |
-| 9 | Storefront reads: home, category, product, keyword search, filters, sorting, keyset pagination | 6.8 | Planned |
+| 9 | Storefront reads: home, category, product, keyword search, filters, sorting, keyset pagination | 6.8 | Done |
 | 10 | Buyer addresses | 5.3 | Done |
 | 11 | Cart (guest and logged in) and coupons | 5.6 | Planned |
 | 12 | Checkout, Razorpay, webhook, payment confirmation, cash on delivery, order expiry | 6.3 | Planned |
@@ -884,6 +884,195 @@ Had the title said "toy gun" while "gun" is a prohibited term, the review would 
 - **A category's new GST rate reaching its approved products** was decided on 12 October 2026 as recommended; the client may still confirm it.
 - The 70% large-discount threshold is a starting point for administrators to confirm.
 
+## Step 9: Storefront reads, keyword search, and page caching
+
+Status: Done (12 October 2026).
+The user confirmed the recommended answer to every open question on 12 October 2026: no React pages, Cache Components switched on, the `cache_invalidations` table, CloudFront without page HTML, and the home page and out-of-stock defaults below.
+
+### Goal
+
+Anyone, signed in or not, can open the home page, browse a category with everything below it, open a product, and search by keyword, with filters, sorting, and pages that cost the same at page 200 as at page 1.
+The public reads are cached by Next.js and refreshed the moment a price, stock level, status, or category changes, in every web container, including when the change comes from the worker.
+
+For example, Asha opens Bamboo Kitchenware and sees the newest in-stock products first, filters to Bamboo Home under â‚¹500, and sorts by price.
+She searches for "bambo spatula", which has a typo, and still finds the spatula through the similar-words fallback.
+When Green Basket changes the spatula's price, the product page and the category pages that list it show the new price on the next visit, without anyone waiting for a cache to time out.
+
+### What gets built
+
+1. **Public catalogue reads** in `packages/core/src/modules/catalogue/storefront.ts`, always run as the `anonymous` context, so a cached answer never depends on who asked:
+   - **A product page by its slug:** title, description, highlights, attributes, option names, the category with its breadcrumbs (from `loadCategoryTree`), the brand, the seller's display name and slug, prices, whether it is in stock, rating, the active variants (options, price, MRP, in stock or not), and the ready photos in the seller's order with all three sizes.
+     SKUs, exact stock counts, HSN codes, and GST rates are not shown; buyers do not need them.
+   - **A product list** that every storefront page shares: the products in a set of categories, with optional filters, one sort order, and keyset pages.
+     Each item is a product card: title, slug, brand, lowest and highest price, lowest MRP, in stock or not, rating, and the main photo.
+   - **A category page:** the category with its breadcrumbs and direct subcategories, and the product list for it and everything below it (`subtreeIds`, no recursive SQL).
+   - **The home page:** new arrivals (the 12 newest in-stock products), then one row for each top-level category in display order with its 8 newest in-stock products (see the open questions).
+2. **What the public sees.**
+   Every read checks, in its own SQL and not only through row-level security: the product is `approved`, published, and not deleted, its seller is `approved`, and its category and every category above it are active.
+   Variants must be active, and photos must be `ready`.
+   A product whose page cannot be shown (archived, rejected, deleted, a suspended seller, a hidden category, or an unknown slug) answers 404.
+   An approved product whose variants are all inactive still has its page, with no variants and no price, so a link to it keeps working, but it is left out of every list, because a list sorts and filters by price.
+3. **Filters and sorting**, the same for category pages and search:
+
+   | Query parameter | Meaning |
+   | --- | --- |
+   | `brand` | One or more brand slugs, separated by commas, at most 10 |
+   | `minPricePaise`, `maxPricePaise` | Whole paise; compared with the price the card shows (the lowest active variant price) |
+   | `includeOutOfStock` | `true` also lists products that are out of stock; by default lists show only products in stock |
+   | `category` | Search only: a category slug; covers that category and everything below it |
+   | `sort` | `newest` (default for category pages), `price_asc`, `price_desc`, or `relevance` (search only, and its default) |
+   | `cursor`, `limit` | Keyset pages: 24 items by default (it fills grids of 2, 3, 4, or 6 columns), at most 100 |
+
+   Unknown values answer 400 with a plain reason, for example "sort must be one of newest, price_asc, price_desc".
+   An unknown brand or category slug in a filter answers 400, so a stale link says what is wrong instead of showing an empty page.
+   "Newest" means the time the product was first approved (`published_at`), and a product counts as on sale only once it has one.
+4. **Keyword search** in a new `packages/core/src/modules/search/` module (design doc section 4), which owns `search_queries`:
+   - The words are matched with `search_vector @@ websearch_to_tsquery('english', q)` and ranked by `ts_rank`, using the same `english` configuration as the stored vector (step 1).
+     `websearch_to_tsquery` understands quotes, `or`, and `-word`, and never fails on stray punctuation.
+   - **Typo fallback:** when the full-text match finds nothing and the query has at least 3 characters, the search runs again by word similarity on `search_text` (`pg_trgm`'s `word_similarity`, which the existing trigram index serves), most similar first.
+     The answer says which kind of match it is (`match: "exact"` or `"similar"`), so the page can say "Showing results for similar words".
+   - Relevance pages use a cursor of the rank (rounded to six decimals, so it compares exactly) and the product id; the similar-words fallback has its own cursor kind, so the second page continues the same kind of match.
+   - Every new search (a request without a cursor) writes a `search_queries` row with kind `keyword`, the query text, the number of products on the first page, and the time taken.
+     Further pages of the same search are not logged again, so the gap report counts searches, not pages.
+   - **A limit per IP address:** 120 search requests a minute, counted in `rate_limits` with the address hashed (step 2's pattern); the 121st answers 429 with a `Retry-After` header.
+     The limit is generous because many Indian mobile users share one address through their carrier.
+   - The match itself runs in two database functions, `app.public_products_with_words` and `app.public_products_with_similar_words`, which return the ids and ranks of matching products on sale (see the smaller decisions); the product list joins them and applies every other check.
+   - The search module calls the catalogue's product list and its exported helpers; it never queries catalogue tables itself.
+     Step 18 builds natural-language and image search on the same filter parsing and the same product list, adding a vector ordering.
+5. **The catalogue gap report** (design doc 6.8): administrators list the zero-result searches of the last 1 to 90 days (default 30), grouped by the query text ignoring capital letters, with how often each was searched and when last, most frequent first, at most 100 rows.
+   It is a fixed-size report, not a list that scrolls, so it has a limit instead of pages; the existing index on zero-result rows serves it.
+6. **Cache tags and the helper other steps call.**
+   Every cached storefront answer carries the tag `catalogue` and the tags of what it shows:
+
+   | Tag | On | Invalidated when |
+   | --- | --- | --- |
+   | `product:{id}` | The product page | The product changes: details, price, stock, status, photos, rating |
+   | `product-slug:{slug}` | The product page at that address, also when nothing is on sale there, so a cached "not found" ends when the product is approved | The product at that address changes |
+   | `category:{id}` | Every list page of that category | A product in it or anywhere below it changes |
+   | `seller:{id}` | The pages of that seller's products | The seller's display name changes |
+   | `home` | The home page | Any published product changes |
+   | `catalogue` | Everything | Categories or brands change, or a seller is approved, suspended, or reinstated |
+   | `content:{slug}` | A content page (step 16) | The page is edited or published |
+
+   `invalidateStorefront(tx, change)` in `packages/core/src/modules/catalogue/storefront-cache.ts` records the tags for a change inside the caller's transaction, so the cache is refreshed only if the change commits, and it works the same in the web app and the worker:
+   - `{ productIds }`: each product's tag and address tag, the tags of its category and every category above it, and `home`.
+   - `{ sellerId }`: the seller's tag.
+   - `{ contentSlug }`: the content page's tag (step 16).
+   - `'everything'`: the `catalogue` tag.
+
+   `refreshProducts` (step 6) calls it for every product it rebuilds that has ever been published, so price, stock, photo, and approval changes are covered without each caller remembering.
+   Step 7's archiving, moving back to draft, and take-downs call it themselves, because they change a product on sale without rebuilding its summary.
+
+   A page that is not found, or a query that is not valid, is cached as an answer and thrown again outside the cache, because Next.js passes an error thrown inside `'use cache'` on without its class (and in production without its message), which made every 404 and 400 a 500.
+   Changes that do not go through `refreshProducts` call it themselves: category and brand changes (step 5) and seller approval, suspension, reinstatement, and display-name changes (step 4) do so in this step; step 7 must do so when it archives or hides a product without rebuilding its summary, and step 16 when a rating changes or a content page is published (with `{ contentSlug }`).
+   Because the helper runs inside the services' transactions, routes need no revalidation calls of their own, and a step that merges later only calls it in its own services.
+7. **How a recorded tag reaches every web container:** a new append-only table, `cache_invalidations` (tag and time), and a custom Next.js cache handler (`apps/web/src/cache-handler.ts`, set as `cacheHandlers.default`).
+   The handler keeps Next.js's own in-memory cache for the entries, and at most once a second, before a request that reads the cache, it reads the invalidations recorded since it last looked and expires those tags locally.
+   A `revalidateTag` call inside the web app is also written to the table, so every container hears about it.
+   This is how the worker refreshes pages it cannot reach, for example when order expiry (step 12) gives stock back, and how two web tasks stay in step, without Redis.
+   The handler also remembers exactly when it expired each tag and refuses an entry whose rendering started before then, because Next.js keeps that time rounded to the millisecond (see the smaller decisions).
+   A nightly worker job (`catalogue.clear-cache-invalidations`, 03:15 India time) deletes invalidations older than a day; every cached entry expires within a day anyway.
+   A change to more than 100 products at once, such as renaming a large category, records `catalogue` instead of a tag per product, so the log stays short.
+8. **Next.js caching switched on** (`cacheComponents: true`) with cached reader functions in `apps/web/src/lib/storefront.ts` (`'use cache'`, `cacheTag`, and a `storefront` `cacheLife` profile: refreshed at least every hour, never served after a day, and kept by the browser for 30 seconds).
+   The public API routes and the frontend's server-rendered pages call the same functions, so they share one cache.
+   Search results are never cached, because each search is logged and limited.
+   CloudFront caches only static files and photos and passes page HTML through, because it cannot see the tag invalidations (design doc sections 3.1, 7, and 11).
+9. **Product photos for `next/image`:** a `productPhotoLoader` in `apps/web/src/lib/` that picks the stored size (thumb, card, or gallery) closest above the width the browser asks for.
+   Photos stay pre-sized on the CDN as design doc section 7 says; Next.js never resizes them.
+10. **The visitor's address** is read from `X-Forwarded-For` by counting the trusted proxies from the right (`TRUSTED_PROXY_COUNT`, default 1 for the load balancer alone, 2 with CloudFront in front of it), because the leftmost value is whatever the visitor sent.
+    One helper in `packages/core/src/lib/client-address.ts` serves the search limit, audit entries, and the sign-in audit hook, which each had their own copy that trusted the leftmost value.
+11. **API:**
+
+    | Method and path | Who | What |
+    | --- | --- | --- |
+    | `GET /api/home` | Anyone | New arrivals and a row per top-level category |
+    | `GET /api/products/{slug}` | Anyone | One product page (the route folder is `api/products/[slug]`, so step 16's reviews go under `api/products/[slug]/reviews`, because Next.js refuses two different names at one level) |
+    | `GET /api/categories/{slug}/products?brand=&minPricePaise=&maxPricePaise=&includeOutOfStock=&sort=&cursor=&limit=` | Anyone | The category with its breadcrumbs and subcategories, and a page of its products |
+    | `GET /api/search?q=&category=&brand=&minPricePaise=&maxPricePaise=&includeOutOfStock=&sort=&cursor=&limit=` | Anyone | A page of keyword results, with the kind of match |
+    | `GET /api/admin/search/gaps?days=` | Administrator | The catalogue gap report |
+
+    Lists answer `{ items, nextCursor }` like every other list, with `category` added on category pages and `match` on search.
+    `q` is required, 1 to 100 characters after trimming.
+12. **Database changes:**
+    partial indexes for the storefront lists, all `WHERE status = 'approved' AND deleted_at IS NULL`, on `(category_id, published_at DESC, id DESC)`, `(category_id, min_price_paise, id)`, `(published_at DESC, id DESC)` for the home page, and `(brand_id)`, which had no index;
+    the two search functions above, in their own hand-written migration, runnable only by the web app and the worker;
+    and the `cache_invalidations` table with its index on the time, without row-level security because it holds no buyer or seller data, readable and writable by the web app and also deletable by the worker.
+13. **A 429 answer:** `TooManyRequestsError` (with an optional `resetAt`) in `packages/core/src/errors.ts`, turned into 429 with a `Retry-After` header by `handleErrors`.
+    Step 17 owns this error for the AI limits; this step carries an exact copy of step 17's version, so the merge keeps one.
+
+### Smaller decisions made in this step
+
+- **Storefront reads live in new files: `catalogue/storefront.ts` and `catalogue/storefront-types.ts`, and search in its own module.**
+  The listing steps (6, 7, 8) own `products.ts`, `types.ts`, and `images.ts`, so this step adds nothing to them.
+  The catalogue owns `products`, so the one product list query lives there; the search module turns a request into filters, logs it, limits it, and chooses the fallback.
+  If search ever moves to a dedicated engine (design doc section 9), only the search module changes.
+- **Out-of-stock products are hidden from lists by default** and shown with `includeOutOfStock=true`; their own pages always work and say they are out of stock.
+- **The price filter and the price sort use the price the card shows** (the lowest active variant price), so what a buyer filters by is what they see.
+- **A seller's name and approval are read through the sellers module** (a public-seller lookup and an "approved seller" condition it exports), because the sellers module owns its table.
+- **A hidden category hides its products everywhere:** product pages, lists, and search leave out products whose category or any category above it is inactive.
+- **No 60-second cache of the category tree** (design doc section 7 had one).
+  The tree is one small query, cached storefront answers keep their result, and an uncached read is never a minute behind an administrator's change.
+  Design doc section 7 is updated to say so.
+- **An approved product always has a `published_at`:** step 7's `products_approved_check` makes it a database rule, and lists and product pages also require one.
+  `createTestProduct` takes an optional `publishedAt`.
+- **Search logs are anonymous:** `user_id` and `session_id` stay empty.
+  The gap report needs only the words and the count, and an anonymous log is not personal data.
+- **Not-found answers are not cached,** so a product approved a moment ago is found at once.
+- **Page caching invalidates by "expire now" rather than "serve stale while refreshing",** because a stale price or stock level is worse than a slightly slower first visit.
+- **The tag sync re-reads the last minute of invalidations each time,** and applies each one once, so a change whose transaction commits a little after it recorded its tags is never missed.
+- **Search matches through two `SECURITY DEFINER` database functions.**
+  PostgreSQL never uses an index for an operator that is not marked "leakproof" on a table with row-level security, and the full-text (`@@`) and trigram (`<%`) operators are not, so as the web app's database user every search read every product on sale (measured: no index use even when forced).
+  The functions run the match as the table owner, like the existing `app.is_order_seller`, and return only the ids and ranks of products that visitors may see anyway: approved, not deleted, from an approved seller.
+  The storefront query joins them and still applies its own checks and row-level security.
+  On 20,000 products, a search for "bamboo spatula" takes 4 ms through the full-text index.
+- **The storefront queries were checked against 20,000 products from 200 sellers:** every category, home, and price-sorted page reads its index in order and takes under a millisecond.
+  The approved-seller check stays an `EXISTS`, which the planner handles best, and each sort names where nulls go so that PostgreSQL can read the index in order (forwards for newest and price low to high, backwards for price high to low).
+- **An empty result of the full-text match falls back to similar words only when nothing matched,** rather than blending the two, so exact matches are never pushed down by near misses.
+  The answer says `similar` only when that fallback found something, so an empty answer never claims to show similar words.
+- **The cache handler checks expiry times itself.**
+  Next.js's in-memory cache keeps the time a tag expired rounded to the millisecond, so a page read in the same millisecond, which is exactly what happens when the handler reads the log at the start of a request, sometimes came back with the old price (found in the end-to-end check, 1 time in 2).
+  The handler keeps the exact times and refuses any entry whose rendering started before its tag expired; a test repeats the race 30 times against Next.js's real cache.
+- **Next.js loads the cache handler on its own, outside the app's bundle,** so the handler uses only type-level TypeScript and a small entry point, `@ecokart/core/cache`, rather than the whole of `@ecokart/core`.
+  It keeps its own pool of 2 database connections.
+- **GET routes that read nothing from the request call `connection()`** (`/api/home`, `/api/categories`, and `/api/health`), and `/api/search` reads the request before opening the database.
+  With Cache Components, `next build` prerenders any GET route that reads no request data; CI builds without a database, so the build failed on `/api/categories`, and the health check would have been frozen as a permanent 503 (found by building without `.env`, as CI does).
+- **Route tests run outside Next.js,** where `cacheTag`, `cacheLife`, and `connection` refuse to run, so `apps/web/vitest.setup.ts` replaces them; caching itself is proven on a production build.
+
+### What changed for the frontend developer
+
+- `cacheComponents` is on for the whole app.
+  The admin settings page lost its `export const dynamic = 'force-dynamic'` line, which Cache Components refuses; nothing else in the existing pages changed.
+- GET route handlers that read nothing from the request are prerendered by `next build` under Cache Components; a new one that reads the database must call `await connection()` from `next/server` first, as `/api/categories` and `/api/health` now do.
+- Admin and seller pages are now partial prerenders: the static shell is sent at once and the signed-in part streams in.
+  A signed-out visit to `/admin` or `/seller` now answers 200 and redirects from inside the page (with a one-second refresh for browsers without JavaScript) instead of an HTTP 307; checked in the browser, it lands on `/sign-in?returnTo=...` as before.
+- New pages that read cookies, headers, or the session outside `<Suspense>` will fail `next build` with a "blocking route" message; wrap that part in `<Suspense>`, as the Next.js guide in `node_modules/next/dist/docs/01-app/01-getting-started/08-caching.md` explains.
+- Storefront pages should call `readProductPage`, `readCategoryPage`, and `readHomePage` from `apps/web/src/lib/storefront.ts`, which are cached and tagged, and show photos with `productPhotoLoader` and `photoSource` from `apps/web/src/lib/product-photos.ts`.
+
+### Not in this step
+
+- React pages for the storefront: the frontend developer builds them on these routes and the cached functions in `apps/web/src/lib/storefront.ts`.
+- Sorting by rating, and a rating filter (step 16, once reviews exist).
+- Filters on product attributes (for example material), because attributes are free-form seller text with no shared list of names and values.
+- Counts next to filters ("Bamboo Home (12)"), a total result count, and search suggestions as the buyer types.
+- Brand pages and seller storefront pages.
+- Banners and hand-picked products on the home page, which would need new tables.
+- Similar products on the product page (step 18 adds them to the product page answer).
+- Natural-language and image search (step 18).
+
+### Done when
+
+- On `pnpm dev`, through the real API: a visitor reads the home page, a category page with its subcategories' products, filters it by brand and price, sorts it by price, pages through it, opens a product, searches with a typo and gets similar results, and is refused with 429 after the per-address limit.
+- On a production build (`next build` and `next start`), with the cache on: a product page is served from the cache, a seller's price change shows on the next visit, a change made by the worker shows too, and an administrator sees the gap report.
+- Tests prove: what the public sees and does not see (each hidden case above, as an anonymous visitor and as a signed-in seller whose own drafts must not appear); each filter, sort, and their pages without repeats or gaps, including ties in price and time; both kinds of search match and their pages; the search log and the per-address limit; the gap report; the tags each change records, from the services of steps 4, 5, and 6 and from `refreshProducts`; the cache handler's tag sync across two handler instances; the photo loader; the address helper; and every API answer.
+- `pnpm check` passes.
+
+### Open points found in this step
+
+- **What the home page shows** is not defined by the design doc or the quotation; new arrivals plus a row per top-level category is built as a starting point the client may still change.
+- **Whether out-of-stock products are hidden from lists by default** is the client's choice; hiding them is built and is a one-line default to change.
+- **The CloudFront rule for page HTML** (pass it through, cache static files and photos) belongs in the infrastructure code when it is written.
+- **`TRUSTED_PROXY_COUNT` must match the hosting** (1 behind the load balancer alone, 2 with CloudFront in front); Better Auth's own rate limiter still needs the same setting when the hosting is set up (step 2's open point).
+
 ## Step 10: Buyer addresses
 
 Status: Done (11 October 2026).
@@ -1405,3 +1594,12 @@ Green Basket's 101st call of the day is refused with 429, "You have used todayâ€
   Its migrations were generated again on top of step 14's as `0016_ai_request_policies_and_cost`, `0017_ai_daily_usage` (the same SQL), and `0018_ai_requests_drop_old`.
   The new column and policies are added in the first and the old ones dropped in the last, because drizzle-kit can only make a rename by asking at a terminal, and a hand-written migration would leave its snapshot behind for the next `pnpm db:generate`.
   No environment holds AI rows yet, so adding and dropping instead of renaming loses nothing.
+- 11 October 2026: Step 9 written: storefront reads in the catalogue module, keyword search in a new search module, cache tags with a helper other steps call, and tag invalidations shared through a `cache_invalidations` table read by a custom Next.js cache handler.
+  While building it: search matches through two database functions, because row-level security stopped the search indexes being used; storefront types moved to their own file, and the planned `published_at` database rule became a check in the queries, so other steps' files and fixtures stay as they are; the 429 error is an exact copy of step 17's.
+- 12 October 2026: Step 9 built, after the user confirmed every recommended answer.
+  While building it: the cache handler checks expiry times itself, because Next.js rounds them to the millisecond and the end-to-end check caught a stale product page; a change to more than 100 products records one `catalogue` tag; a nightly job clears the log; GET routes that read no request data call `connection()`, so a build without a database (CI) never prerenders them.
+  The design doc was updated in the same change (sections 3.1, 4, 5.2, 5.5, 5.13, 6.8, 7, 8, and 11).
+- 18 October 2026: Step 9 merged with main after steps 7, 10, 11, 14, and 17.
+  Its migrations were generated again on top of the product media migrations as `0023_storefront_lists_and_cache` and `0024_storefront_search_functions_and_grants`, with the same SQL.
+  Step 7's archiving, moving back to draft, and take-downs now refresh the storefront, and step 7's `products_approved_check` replaces the `published_at` rule this step had left open.
+  The end-to-end check after the merge found that every 404 and 400 from the cached readers answered 500; they are now cached as answers, with a product address tag so a cached "not found" ends when the product is approved.

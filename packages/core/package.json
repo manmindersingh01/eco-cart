@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./worker": "./src/worker.ts",
+    "./cache": "./src/cache.ts",
     "./testing": "./src/testing/index.ts",
     "./states": "./src/lib/states.ts"
   },
@@ -32,6 +33,7 @@
     "pg-boss": "catalog:",
     "read-excel-file": "catalog:",
     "sharp": "catalog:",
+    "unpdf": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
@@ -42,7 +44,6 @@
     "drizzle-kit": "catalog:",
     "prettier": "catalog:",
     "typescript": "catalog:",
-    "unpdf": "catalog:",
     "vitest": "catalog:"
   }
 }

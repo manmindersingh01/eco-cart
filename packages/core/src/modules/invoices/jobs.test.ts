@@ -97,6 +97,13 @@ async function pdfText(key: string): Promise<{ text: string; pages: number }> {
   return { text: text.replace(/\s+/g, ' '), pages: totalPages }
 }
 
+/**
+ * Text extraction sometimes reads a gap inside a word as a space, for
+ * example the fixture's random order number EK-TEST-e924ce661f came back as
+ * "EK-TEST-e924ce661 f". Values with random parts are compared without spaces.
+ */
+const withoutSpaces = (text: string) => text.replace(/\s/g, '')
+
 describe('the invoice PDF job', () => {
   test('makes the PDF, stores it privately, and records where', async () => {
     const { invoice, seller, order } = await issuedInvoice([
@@ -114,12 +121,17 @@ describe('the invoice PDF job', () => {
     expect(key).toBe(`invoices/${seller.id}/${invoice.id}.pdf`)
     const { text, pages } = await pdfText(key!)
     expect(pages).toBe(1)
+    for (const random of [
+      `Order number ${order.orderNumber}`,
+      seller.legalName,
+      `For ${seller.legalName}`,
+    ]) {
+      expect(withoutSpaces(text)).toContain(withoutSpaces(random))
+    }
     for (const printed of [
       'Tax Invoice',
       `Invoice number ${invoice.invoiceNumber}`,
-      `Order number ${order.orderNumber}`,
       'Payment Paid online',
-      seller.legalName,
       'GSTIN 27AAACE1234F1Z5',
       '+91 98000 00000',
       'Maharashtra (27)',
@@ -135,7 +147,6 @@ describe('the invoice PDF job', () => {
       'Unit prices include GST. The taxable value is after the discount.',
       'Total ₹900.00',
       'Rupees Nine Hundred Only',
-      `For ${seller.legalName}`,
       'Authorised signatory',
       'Page 1 of 1',
     ]) {

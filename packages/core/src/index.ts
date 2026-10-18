@@ -61,6 +61,34 @@ export {
   type SellerSummary,
 } from './modules/sellers/service.ts'
 export type { SellerStatus, SellerView } from './modules/sellers/types.ts'
+export {
+  acceptSellerDocument,
+  addDocumentFile,
+  cancelSellerDocument,
+  CHECK_DOCUMENT_QUEUE,
+  createDocumentUpload,
+  getDocumentDownload,
+  getDocumentRequest,
+  listDocumentsToReview,
+  listOwnDocumentRequests,
+  listSellerDocumentRequests,
+  rejectSellerDocument,
+  requestSellerDocuments,
+} from './modules/sellers/documents.ts'
+export {
+  DOCUMENT_CONTENT_TYPES,
+  DOCUMENT_TYPES,
+  MAX_DOCUMENT_BYTES,
+  type DocumentContentType,
+  type DocumentDownload,
+  type DocumentFileStatus,
+  type DocumentFileView,
+  type DocumentRequestStatus,
+  type DocumentRequestView,
+  type DocumentToReview,
+  type DocumentType,
+  type DocumentUpload,
+} from './modules/sellers/types.ts'
 export type { Page } from './lib/pagination.ts'
 export {
   createCategory,
@@ -204,6 +232,48 @@ export {
   type UploadForm,
 } from './lib/storage.ts'
 export {
+  activeBrandIds,
+  getCategoryPage,
+  getHomePage,
+  getPublicProduct,
+  listingFilters,
+  listPublicProducts,
+  queryObject,
+  type ListSort,
+  type ProductListQuery,
+  type WordMatch,
+} from './modules/catalogue/storefront.ts'
+export type {
+  CategoryLink,
+  CategoryPage,
+  HomeSection,
+  ProductCard,
+  ProductFilters,
+  PublicImage,
+  PublicProduct,
+  PublicVariant,
+  StorefrontSort,
+} from './modules/catalogue/storefront-types.ts'
+export {
+  getPublicSellers,
+  type PublicSeller,
+} from './modules/sellers/service.ts'
+export {
+  consumeSearchAllowance,
+  listSearchGaps,
+  searchProducts,
+} from './modules/search/service.ts'
+export type { SearchGap, SearchResult } from './modules/search/types.ts'
+export { clientAddress, trustedProxyCount } from './lib/client-address.ts'
+export { IMAGE_SIZES, type ImageSize } from './lib/images.ts'
+export {
+  CLEAR_CACHE_INVALIDATIONS_QUEUE,
+  invalidateStorefront,
+  registerStorefrontCacheJobs,
+  storefrontTags,
+  type StorefrontChange,
+} from './modules/catalogue/storefront-cache.ts'
+export {
   addAddress,
   deleteAddress,
   getAddress,
@@ -249,13 +319,30 @@ export {
   type AiSettings,
 } from './lib/ai/index.ts'
 export { loadAiConfig } from './lib/ai/config.ts'
-export { callAi, type AiAnswer, type AiCall } from './modules/ai/service.ts'
+export {
+  callAi,
+  queueAiCall,
+  runQueuedAiCall,
+  type AiAnswer,
+  type AiCall,
+  type AiQueuedCall,
+  type QueuedAiCall,
+} from './modules/ai/service.ts'
 export {
   getAiUsage,
   type AiUsageLine,
   type AiUsageReport,
 } from './modules/ai/queries.ts'
-export type { AiFeature } from './modules/ai/types.ts'
+export type { AiFeature, AiRequestStatus } from './modules/ai/types.ts'
+// The listing builder (backend spec step 19).
+export {
+  DRAFT_LISTING_QUEUE,
+  getListingDraft,
+  requestListingDraft,
+  writeListingDraft,
+  type ListingDraftView,
+} from './modules/catalogue/drafts.ts'
+export type { ListingSuggestion } from './modules/catalogue/types.ts'
 export {
   addCartItem,
   applyCoupon,

@@ -28,3 +28,9 @@ export {
   renderInvoice,
   type InvoiceJobDependencies,
 } from './modules/invoices/jobs.ts'
+// Loads the image library and the PDF reader.
+export {
+  checkUploadedDocument,
+  registerSellerJobs,
+  type SellerJobDependencies,
+} from './modules/sellers/jobs.ts'

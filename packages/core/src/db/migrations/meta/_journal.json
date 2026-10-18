@@ -162,6 +162,34 @@
       "when": 1792344233626,
       "tag": "0022_product_video_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792344901765,
+      "tag": "0023_storefront_lists_and_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792344908908,
+      "tag": "0024_storefront_search_functions_and_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792345068889,
+      "tag": "0025_seller_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792345069227,
+      "tag": "0026_seller_document_grants",
+      "breakpoints": true
     }
   ]
 }
