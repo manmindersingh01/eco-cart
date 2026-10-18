@@ -980,6 +980,10 @@ Login is handled by Better Auth, mounted in the web app at `/api/auth/*`.
 5. The browser receives the `ecokart.session_token` cookie: HttpOnly, SameSite Lax, and Secure on https.
 6. On every request the app reads the session through Better Auth, looks up the seller id for a seller account, and runs the request's queries through `withContext`, which sets the user id, role, and seller id with `SET LOCAL` for row-level security.
 
+A signed-in buyer can add the way of signing in they do not have yet, each confirmed with a code: a phone number to an email account (Better Auth's phone verification with `updatePhoneNumber`), or an email to a phone account (its email-change endpoints, with the code sent to the new address).
+Changing an email or number that is already there is not offered yet.
+A buyer can never remove the phone number that is their only way to sign in, and sellers and administrators cannot use these endpoints.
+
 The first administrator is created with `pnpm admin:create`.
 Administrators manage accounts through Better Auth's admin endpoints: create accounts, set roles, ban and unban, and revoke sessions, each written to `audit_logs`.
 They cannot impersonate users, delete them, or set passwords or emails.
