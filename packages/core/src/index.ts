@@ -9,6 +9,7 @@ export {
   NotConfiguredError,
   NotFoundError,
   NotSignedInError,
+  TooManyRequestsError,
   ValidationError,
 } from './errors.ts'
 export { QUEUES } from './jobs.ts'
@@ -128,3 +129,45 @@ export {
   type StorageConfig,
   type UploadForm,
 } from './lib/storage.ts'
+export {
+  activeBrandIds,
+  getCategoryPage,
+  getHomePage,
+  getPublicProduct,
+  listingFilters,
+  listPublicProducts,
+  queryObject,
+  type ListSort,
+  type ProductListQuery,
+  type WordMatch,
+} from './modules/catalogue/storefront.ts'
+export type {
+  CategoryLink,
+  CategoryPage,
+  HomeSection,
+  ProductCard,
+  ProductFilters,
+  PublicImage,
+  PublicProduct,
+  PublicVariant,
+  StorefrontSort,
+} from './modules/catalogue/storefront-types.ts'
+export {
+  getPublicSellers,
+  type PublicSeller,
+} from './modules/sellers/service.ts'
+export {
+  consumeSearchAllowance,
+  listSearchGaps,
+  searchProducts,
+} from './modules/search/service.ts'
+export type { SearchGap, SearchResult } from './modules/search/types.ts'
+export { clientAddress, trustedProxyCount } from './lib/client-address.ts'
+export { IMAGE_SIZES, type ImageSize } from './lib/images.ts'
+export {
+  CLEAR_CACHE_INVALIDATIONS_QUEUE,
+  invalidateStorefront,
+  registerStorefrontCacheJobs,
+  storefrontTags,
+  type StorefrontChange,
+} from './modules/catalogue/storefront-cache.ts'

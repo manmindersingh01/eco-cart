@@ -1,5 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm'
 import type { Transaction } from '../../db/client.ts'
+import { invalidateStorefront } from './storefront-cache.ts'
 
 /**
  * Rebuilds the summary fields of the products matching `which` (a condition
@@ -12,13 +13,15 @@ import type { Transaction } from '../../db/client.ts'
  *
  * Call it in the transaction of every change that affects them. The rows are
  * locked in id order first, so two rebuilds of overlapping products wait for
- * each other instead of deadlocking.
+ * each other instead of deadlocking. Products that have ever been published
+ * also get their storefront pages refreshed (step 9), so no caller has to
+ * remember it.
  */
 export async function refreshProducts(
   tx: Transaction,
   which: SQL,
 ): Promise<void> {
-  await tx.execute(sql`
+  const rebuilt = await tx.execute<{ id: string; published: boolean }>(sql`
     update products p set
       (min_price_paise, max_price_paise, min_mrp_paise, total_stock) = (
         select min(v.price_paise), max(v.price_paise), min(v.mrp_paise),
@@ -46,5 +49,12 @@ export async function refreshProducts(
     where p.id in (
       select id from products where ${which} order by id for update
     )
+    returning p.id, p.published_at is not null as published
   `)
+  const published = rebuilt.rows.filter((row) => row.published)
+  if (published.length > 0) {
+    await invalidateStorefront(tx, {
+      productIds: published.map((row) => row.id),
+    })
+  }
 }

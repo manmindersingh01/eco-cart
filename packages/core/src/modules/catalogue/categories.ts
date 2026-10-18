@@ -12,6 +12,7 @@ import { foreignKeyViolation, uniqueViolation } from '../../lib/postgres.ts'
 import { firstFreeSlug, slugify } from '../../lib/slug.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
 import { recordAuditEntry, type AuditEntry } from '../audit/service.ts'
+import { invalidateStorefront } from './storefront-cache.ts'
 import { refreshProducts } from './summary.ts'
 import {
   buildCategoryTree,
@@ -254,6 +255,8 @@ export async function createCategory(
       .values({ ...details, parentId, depth, slug })
       .returning()
     const view = toView(row!)
+    // Cached storefront pages show the tree: menus, breadcrumbs, and lists.
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'category.create',
@@ -360,6 +363,8 @@ export async function updateCategory(
         Object.entries(auditable(view)).filter(([key]) => touched.has(key)),
       )
     const view = toView(row!)
+    // Cached storefront pages show the tree: menus, breadcrumbs, and lists.
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'category.update',
@@ -415,6 +420,7 @@ export async function deleteCategory(
     if (foreignKeyViolation(error)) throw new ConflictError(IN_USE)
     throw error
   }
+  await invalidateStorefront(tx, 'everything')
   await recordAuditEntry(tx, {
     ...administratorActor(context),
     action: 'category.delete',

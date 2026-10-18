@@ -71,6 +71,34 @@
       "when": 1791235801139,
       "tag": "0009_variant_order",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791711153121,
+      "tag": "0010_storefront_lists",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791711153426,
+      "tag": "0011_storefront_search_functions",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791797039810,
+      "tag": "0012_cache_invalidations",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791797040120,
+      "tag": "0013_cache_invalidation_grants",
+      "breakpoints": true
     }
   ]
 }

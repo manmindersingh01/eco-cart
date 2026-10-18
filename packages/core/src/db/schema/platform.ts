@@ -146,3 +146,24 @@ export const rateLimits = pgTable(
     check('rate_limits_count_check', sql`count >= 0`),
   ],
 )
+
+/**
+ * Cache tags that changed, for example `product:{id}`, so every web container
+ * expires its cached storefront pages, including after changes the worker
+ * makes (backend spec step 9). Append only; a daily job removes rows older
+ * than a day. No row-level security: it holds no buyer or seller data, only
+ * tags naming public pages.
+ */
+export const cacheInvalidations = pgTable(
+  'cache_invalidations',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    tag: text('tag').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // Web containers read the latest rows every second.
+    index('cache_invalidations_created_at_idx').on(t.createdAt),
+    check('cache_invalidations_tag_check', sql`length(tag) between 1 and 256`),
+  ],
+)

@@ -18,6 +18,7 @@ export default defineConfig({
     testTimeout: 20_000,
     // Rebuilds ecokart_test_web from the real migrations before every run.
     globalSetup: ['./vitest.global-setup.ts'],
+    setupFiles: ['./vitest.setup.ts'],
     env: {
       DATABASE_URL: database.webUrl,
       // For test fixtures and reading queued codes back.

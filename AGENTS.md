@@ -80,6 +80,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   Files never pass through the web app, and the worker checks and re-encodes every photo before it is shown, so nothing a browser sent is ever served as it arrived.
 - Public pages (home, category, product, content) use tag-based caching and must revalidate their tag when the product or category changes.
   Personal pages (cart, orders, seller portal, admin) are never cached.
+  Services do it with `invalidateStorefront(tx, change)` in the transaction of the change, never with Next.js's `revalidateTag`, so it also works in the worker; `refreshProducts` already does it for every published product it rebuilds.
 
 ## Money, tax, and orders
 

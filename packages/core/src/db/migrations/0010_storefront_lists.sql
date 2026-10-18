@@ -1,0 +1,4 @@
+CREATE INDEX "products_public_category_published_idx" ON "products" USING btree ("category_id","published_at" DESC NULLS LAST,"id" DESC NULLS LAST) WHERE status = 'approved' and deleted_at is null;--> statement-breakpoint
+CREATE INDEX "products_public_category_price_idx" ON "products" USING btree ("category_id","min_price_paise","id") WHERE status = 'approved' and deleted_at is null;--> statement-breakpoint
+CREATE INDEX "products_public_published_idx" ON "products" USING btree ("published_at" DESC NULLS LAST,"id" DESC NULLS LAST) WHERE status = 'approved' and deleted_at is null;--> statement-breakpoint
+CREATE INDEX "products_public_brand_idx" ON "products" USING btree ("brand_id") WHERE status = 'approved' and deleted_at is null;

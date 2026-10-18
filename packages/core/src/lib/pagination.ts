@@ -104,3 +104,60 @@ export function toPage<Row, T>(
     nextCursor: rows.length > limit && last ? cursorOf(last) : null,
   }
 }
+
+/*
+ * Orders by one key and then id, ascending or descending, for the storefront
+ * (backend spec step 9): newest by publication time, by price, and by search
+ * rank. The cursor carries the name of its order, so a cursor from another
+ * order is refused instead of returning a wrong page.
+ */
+
+/** How the key travels in the cursor and is cast back in SQL. */
+export type CursorKeyType = 'timestamptz' | 'bigint' | 'numeric'
+
+const keyShapes: Record<CursorKeyType, z.ZodString> = {
+  // Microseconds, as exactTime selects it.
+  timestamptz: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/),
+  bigint: z.string().regex(/^-?\d{1,19}$/),
+  // Search ranks are rounded in SQL, so the text compares exactly.
+  numeric: z.string().regex(/^-?\d{1,20}(\.\d{1,20})?$/),
+}
+
+const orderName = z.string().regex(/^[a-z_-]{1,40}$/)
+
+/** `key` is the row's sort key as text, for example a price in paise. */
+export function encodeKeyCursor(
+  order: string,
+  key: string,
+  id: string,
+): string {
+  return Buffer.from(JSON.stringify([order, key, id])).toString('base64url')
+}
+
+/** The order a cursor was made for, so a caller can choose how to continue. */
+export function cursorOrder(cursor: string): string {
+  const [order] = decodeCursor(
+    cursor,
+    z.tuple([orderName, z.string(), z.string()]),
+  )
+  return order
+}
+
+/** Rows after the cursor in `order`, sorted by (`key`, `id`) in `direction`. */
+export function afterKeyCursor(
+  cursor: string,
+  order: string,
+  key: AnyPgColumn | SQL,
+  id: AnyPgColumn,
+  direction: 'asc' | 'desc',
+  type: CursorKeyType,
+): SQL {
+  const [, last, lastId] = decodeCursor(
+    cursor,
+    z.tuple([z.literal(order), keyShapes[type], z.uuid()]),
+  )
+  const after = direction === 'asc' ? sql`>` : sql`<`
+  return sql`(${key}, ${id}) ${after} (${last}::${sql.raw(type)}, ${lastId}::uuid)`
+}

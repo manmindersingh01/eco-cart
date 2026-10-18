@@ -1,9 +1,11 @@
 import {
+  clientAddress,
   ConflictError,
   ForbiddenError,
   NotConfiguredError,
   NotFoundError,
   NotSignedInError,
+  TooManyRequestsError,
   ValidationError,
 } from '@ecokart/core'
 
@@ -14,6 +16,17 @@ import {
 
 const answer = (status: number, message: string) =>
   Response.json({ error: message }, { status })
+
+function tooManyRequests(error: TooManyRequestsError): Response {
+  const response = answer(429, error.message)
+  if (error.resetAt) {
+    // Whole seconds, never 0: a client told to retry at once would only be
+    // refused again within the same second.
+    const seconds = Math.ceil((error.resetAt.getTime() - Date.now()) / 1000)
+    response.headers.set('retry-after', String(Math.max(1, seconds)))
+  }
+  return response
+}
 
 function errorResponse(error: unknown): Response {
   if (error instanceof ValidationError) {
@@ -27,6 +40,7 @@ function errorResponse(error: unknown): Response {
   if (error instanceof NotFoundError) return answer(404, error.message)
   if (error instanceof ConflictError) return answer(409, error.message)
   if (error instanceof NotConfiguredError) return answer(503, error.message)
+  if (error instanceof TooManyRequestsError) return tooManyRequests(error)
   // Anything else is a bug: Next.js logs it and answers 500 without details.
   throw error
 }
@@ -53,13 +67,9 @@ export async function readJsonBody(request: Request): Promise<unknown> {
   }
 }
 
-/** The visitor's address as the load balancer reports it, for audit logs. */
+/** The visitor's address, for audit logs and per-address limits. */
 export function clientIp(request: Request): string | null {
-  const forwarded = request.headers
-    .get('x-forwarded-for')
-    ?.split(',')[0]
-    ?.trim()
-  return forwarded || request.headers.get('x-real-ip') || null
+  return clientAddress(request.headers)
 }
 
 /** `?cursor=...&limit=20` from a list request, as list services take them. */

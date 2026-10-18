@@ -1,4 +1,9 @@
-import { loadAuthConfig, loadStorageConfig, requireEnv } from '@ecokart/core'
+import {
+  loadAuthConfig,
+  loadStorageConfig,
+  requireEnv,
+  trustedProxyCount,
+} from '@ecokart/core'
 
 /**
  * Reads every setting the web app needs and stops with one clear error if
@@ -10,4 +15,5 @@ export function checkWebSettings(env: NodeJS.ProcessEnv = process.env): void {
   requireEnv('DATABASE_URL', env)
   loadAuthConfig(env)
   loadStorageConfig(env)
+  trustedProxyCount(env)
 }
