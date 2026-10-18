@@ -218,6 +218,20 @@ export const productUpdate = strictObject({
   minOrderQuantity: minOrderQuantity.optional(),
 })
 
+/**
+ * A listing draft from the photos (backend spec step 19): the details the
+ * seller may copy into the product with the normal edit, held to the same
+ * rules, so whatever the model writes can be saved as it is. Unknown fields
+ * in the model's answer are dropped.
+ */
+export const listingSuggestion = z.object({
+  title,
+  description,
+  highlights,
+  attributes,
+})
+export type ListingSuggestion = z.output<typeof listingSuggestion>
+
 export const variantUpdate = strictObject({
   sku: sku.optional(),
   options: optionValues.optional(),

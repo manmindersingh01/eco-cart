@@ -294,13 +294,30 @@ export {
   type AiSettings,
 } from './lib/ai/index.ts'
 export { loadAiConfig } from './lib/ai/config.ts'
-export { callAi, type AiAnswer, type AiCall } from './modules/ai/service.ts'
+export {
+  callAi,
+  queueAiCall,
+  runQueuedAiCall,
+  type AiAnswer,
+  type AiCall,
+  type AiQueuedCall,
+  type QueuedAiCall,
+} from './modules/ai/service.ts'
 export {
   getAiUsage,
   type AiUsageLine,
   type AiUsageReport,
 } from './modules/ai/queries.ts'
-export type { AiFeature } from './modules/ai/types.ts'
+export type { AiFeature, AiRequestStatus } from './modules/ai/types.ts'
+// The listing builder (backend spec step 19).
+export {
+  DRAFT_LISTING_QUEUE,
+  getListingDraft,
+  requestListingDraft,
+  writeListingDraft,
+  type ListingDraftView,
+} from './modules/catalogue/drafts.ts'
+export type { ListingSuggestion } from './modules/catalogue/types.ts'
 export {
   addCartItem,
   applyCoupon,

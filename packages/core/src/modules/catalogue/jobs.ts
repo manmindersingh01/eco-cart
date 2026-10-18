@@ -29,6 +29,11 @@ import {
   videoFileKey,
   videoPosterKey,
 } from '../../lib/videos.ts'
+import {
+  DRAFT_LISTING_QUEUE,
+  draftListingJob,
+  writeListingDraft,
+} from './drafts.ts'
 import { PROCESS_IMAGE_QUEUE, processImageJob } from './images.ts'
 import {
   SCREEN_LISTING_QUEUE,
@@ -39,9 +44,9 @@ import { refreshProducts } from './summary.ts'
 import { PROCESS_VIDEO_QUEUE, processVideoJob } from './videos.ts'
 
 /*
- * The worker's catalogue jobs (backend spec steps 6 and 7, and product
- * videos). Only the worker loads this file, because it loads the image
- * library and runs ffmpeg.
+ * The worker's catalogue jobs (backend spec steps 6, 7, 19, and 20, and
+ * product videos). Only the worker loads this file, because it loads the
+ * image library and runs ffmpeg.
  */
 
 export interface CatalogueJobDependencies {
@@ -304,7 +309,10 @@ export async function processUploadedVideo(
 export async function registerCatalogueJobs(
   boss: PgBoss,
   deps: CatalogueJobDependencies & {
-    /** For the AI screening checks (step 20); null when AI_ENABLED is false. */
+    /**
+     * For the listing builder (step 19) and the AI screening checks (step
+     * 20); null when AI_ENABLED is false.
+     */
     ai: AiModels | null
   },
 ): Promise<void> {
@@ -337,6 +345,16 @@ export async function registerCatalogueJobs(
       if (!job) return
       const { reviewId } = screenListingJob.parse(job.data)
       await screenListing(deps, reviewId, {
+        lastAttempt: job.retryCount >= job.retryLimit,
+      })
+    },
+  )
+  await boss.work(
+    DRAFT_LISTING_QUEUE,
+    { includeMetadata: true },
+    async ([job]) => {
+      if (!job) return
+      await writeListingDraft(deps, draftListingJob.parse(job.data), {
         lastAttempt: job.retryCount >= job.retryLimit,
       })
     },

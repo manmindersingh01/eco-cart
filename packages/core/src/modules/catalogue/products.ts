@@ -116,7 +116,7 @@ export async function lockOwnProduct(
 }
 
 /** Listing details change only on a draft or a rejected product. */
-export function assertEditable(product: ProductRow): void {
+export function assertEditable(product: Pick<ProductRow, 'status'>): void {
   if (!EDITABLE.some((status) => status === product.status)) {
     throw new ConflictError(
       'Listing details can change only while the product is a draft or after it was rejected',
