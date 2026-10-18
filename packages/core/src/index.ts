@@ -19,7 +19,7 @@ export {
   type JobQueue,
   type QueueDefinition,
 } from './lib/queue.ts'
-export { type Auth } from './modules/auth/auth.ts'
+export { isPlaceholderEmail, type Auth } from './modules/auth/auth.ts'
 export { loadAuthConfig, type AuthConfig } from './modules/auth/config.ts'
 export {
   createAppAuth,
@@ -163,6 +163,31 @@ export type {
   VariantView,
   VideoView,
 } from './modules/catalogue/types.ts'
+export {
+  createImport,
+  createImportUpload,
+  getImport,
+  getImportErrorReport,
+  listImports,
+  READ_IMPORT_QUEUE,
+  RUN_IMPORT_QUEUE,
+  setImportMapping,
+} from './modules/imports/service.ts'
+export {
+  IMPORT_FIELD_INFO,
+  IMPORT_FIELDS,
+  MAX_IMPORT_BYTES,
+  MAX_IMPORT_COLUMNS,
+  MAX_IMPORT_ROWS,
+  type ImportErrorReport,
+  type ImportField,
+  type ImportFieldInfo,
+  type ImportFileType,
+  type ImportStatus,
+  type ImportSummary,
+  type ImportUpload,
+  type ImportView,
+} from './modules/imports/types.ts'
 export {
   approveProduct,
   archiveProduct,
@@ -370,6 +395,44 @@ export {
   type Razorpay,
   type RazorpayConfig,
 } from './lib/razorpay.ts'
+// Reviews, content pages, and the storefront footer (backend spec step 16).
+export {
+  getOwnReview,
+  listProductReviews,
+  listReviews,
+  setReviewStatus,
+  updateOwnReview,
+  writeReview,
+} from './modules/reviews/service.ts'
+export type {
+  AdminReview,
+  AdminReviewOptions,
+  OwnReview,
+  PublicReview,
+  ReviewStatus,
+} from './modules/reviews/types.ts'
+export {
+  getContentPage,
+  getPublishedContentPage,
+  listContentPages,
+  saveContentPage,
+} from './modules/content/service.ts'
+export {
+  CONTENT_PAGES,
+  CONTENT_SLUGS,
+  type ContentPageView,
+  type ContentSlug,
+  type PublicContentPage,
+} from './modules/content/types.ts'
+export {
+  getPublicCompanyDetails,
+  type PublicCompanyDetails,
+} from './modules/settings/service.ts'
+export {
+  findProductOnSale,
+  getProductLabels,
+  type ProductLabel,
+} from './modules/catalogue/storefront.ts'
 // Orders after checkout (backend spec step 13).
 export {
   cancelOrderAsAdmin,

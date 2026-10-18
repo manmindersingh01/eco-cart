@@ -12,7 +12,12 @@ import {
 } from '@ecokart/core/testing'
 import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { closePool } from './db'
-import { readCategoryPage, readProductPage } from './storefront'
+import {
+  readCategoryPage,
+  readContentPage,
+  readProductPage,
+  readProductReviews,
+} from './storefront'
 
 /*
  * The tags each cached storefront answer carries (backend spec step 9).
@@ -108,5 +113,31 @@ describe('category pages', () => {
     expect(tags.toSorted()).toEqual(
       ['catalogue', `category:${category.id}`].toSorted(),
     )
+  })
+})
+
+describe('reviews and content pages (step 16)', () => {
+  test('a product’s reviews are tagged with its address', async () => {
+    const [{ seller }, category] = await Promise.all([
+      createTestSeller(owner),
+      createTestCategory(owner),
+    ])
+    const { product } = await createTestProduct(owner, {
+      sellerId: seller.id,
+      categoryId: category.id,
+    })
+    await readProductReviews(product.slug, {})
+    expect(tags.toSorted()).toEqual(
+      ['catalogue', `product-slug:${product.slug}`].toSorted(),
+    )
+  })
+
+  test('a content page not published yet is a 404 tagged with the page', async () => {
+    // Only the content route test publishes a page, and never this one.
+    await expect(readContentPage('refunds')).rejects.toThrow(NotFoundError)
+    expect(tags.toSorted()).toEqual(['catalogue', 'content:refunds'].toSorted())
+    tags.length = 0
+    await expect(readContentPage('about-us')).rejects.toThrow(NotFoundError)
+    expect(tags).toEqual(['catalogue'])
   })
 })

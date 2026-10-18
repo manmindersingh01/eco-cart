@@ -120,6 +120,19 @@ export async function listBrands(
   }
 }
 
+/**
+ * Every brand by its name in lower case, active or not, for matching the
+ * names a seller typed in an import file (backend step 8).
+ */
+export async function brandIdsByName(
+  tx: Transaction,
+): Promise<Map<string, string>> {
+  const rows = await tx
+    .select({ id: brands.id, name: brands.name })
+    .from(brands)
+  return new Map(rows.map((row) => [row.name.toLowerCase(), row.id]))
+}
+
 /** Every brand A to Z, active or not. Administrators only. */
 export async function listAllBrands(
   tx: Transaction,

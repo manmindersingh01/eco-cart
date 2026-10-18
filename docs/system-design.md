@@ -169,6 +169,12 @@ apps/
       api/categories/[slug]/products/   a category page with filters, sorting, and pages
       api/search/              keyword search, limited per visitor address
       api/admin/search/gaps/   the catalogue gap report: searches that found nothing
+      api/products/[slug]/reviews/   a product's published reviews for anyone; a buyer writes one,
+                               and reads or changes their own under reviews/mine
+      api/admin/reviews/       administrators list reviews and hide one or show it again
+      api/content/[slug]/      a published policy page in Markdown, for anyone
+      api/admin/content/       administrators write and publish the policy pages
+      api/company/             the company details and grievance officer for the storefront footer
       api/webhooks/razorpay/route.ts
     src/lib/                   api.ts (handleErrors, one HTTP answer per error), request-context.ts,
                                auth.ts, db.ts, queue.ts, storage.ts, sellers.ts, settings.ts,
@@ -187,7 +193,7 @@ packages/
       auth/  catalogue/  cart/  checkout/  orders/  payments/  ledger/
       invoices/  returns/  search/  ai/  imports/  notifications/
       settings/  audit/  sellers/  rate-limits/
-      addresses/
+      addresses/  reviews/  content/
         (each module has service.ts, plus jobs.ts, types.ts, or config.ts where needed; the
          catalogue splits its services by topic: categories.ts, brands.ts,
          tree.ts for the in-memory category tree, products.ts, images.ts,
@@ -224,6 +230,8 @@ packages/
       image-processing.ts  checks photos and makes the sizes; loaded only by the worker
       videos.ts      video formats and limits
       video-processing.ts  checks and converts videos with ffmpeg; loaded only by the worker
+      spreadsheets.ts  reads CSV and Excel catalogue files as text; loaded only by the worker
+      csv.ts         writes CSV files people download, with formulas made harmless
       queue.ts       sends pg-boss jobs inside the caller's transaction
       encryption.ts  seals short secrets, such as queued sign-in codes
       config.ts      validates environment variables at startup
@@ -793,14 +801,16 @@ reviews
   user_id        uuid FK users
   order_item_id  uuid FK order_items, nullable   set when it is a verified purchase
   rating         smallint CHECK (rating BETWEEN 1 AND 5)
+  author_name    text   the name the buyer chose to show, 1 to 50 characters, frozen with the review
   title, body    text
   status         text   published | hidden
   created_at, updated_at
   UNIQUE (product_id, user_id)
   INDEX (product_id, status, created_at DESC, id DESC)
+  INDEX (status, created_at DESC, id DESC)          administrators' list
 ```
 
-Writing a review updates `products.rating_avg` and `rating_count` in the same transaction.
+Writing a review updates `products.rating_avg` and `rating_count` in the same transaction, through the database function `app.refresh_product_rating`, which recalculates both from the published reviews (a buyer may change no product directly).
 
 ### 5.11 Imports
 
@@ -904,7 +914,7 @@ content_pages
   title         text
   body_markdown text
   status        text   draft | published
-  updated_by    uuid FK users
+  updated_by    uuid FK users, nullable   empty for the development seed's placeholder text
   published_at, created_at, updated_at
 
 email_outbox
@@ -970,6 +980,10 @@ Login is handled by Better Auth, mounted in the web app at `/api/auth/*`.
    Better Auth verifies it, allows three attempts, creates the user on first sign-in (with the `buyer` role by default; a phone-only account gets a placeholder email under the reserved `.invalid` domain), and writes a `sessions` row.
 5. The browser receives the `ecokart.session_token` cookie: HttpOnly, SameSite Lax, and Secure on https.
 6. On every request the app reads the session through Better Auth, looks up the seller id for a seller account, and runs the request's queries through `withContext`, which sets the user id, role, and seller id with `SET LOCAL` for row-level security.
+
+A signed-in buyer can add the way of signing in they do not have yet, each confirmed with a code: a phone number to an email account (Better Auth's phone verification with `updatePhoneNumber`), or an email to a phone account (its email-change endpoints, with the code sent to the new address).
+Changing an email or number that is already there is not offered yet.
+A buyer can never remove the phone number that is their only way to sign in, and sellers and administrators cannot use these endpoints.
 
 The first administrator is created with `pnpm admin:create`.
 Administrators manage accounts through Better Auth's admin endpoints: create accounts, set roles, ban and unban, and revoke sessions, each written to `audit_logs`.
@@ -1055,6 +1069,8 @@ GST credit notes for returns are deferred, as quotation 4.0 says.
 1. The seller uploads a CSV or XLSX file straight to object storage and a `catalogue_imports` row is created.
 2. A job reads the headers and the first few rows, asks the text model for a suggested mapping from the seller's column names to EcoKart fields, and stores it with a confidence per column.
 3. The seller reviews and confirms the mapping in the portal.
+   Until the AI suggestion arrives (step 19), the seller chooses every column by hand.
+   Each row becomes one draft with one variant, and a file has at most 5,000 rows and 10 MB.
 4. A job validates every row deterministically (required fields, price and MRP numeric and sane, stock non-negative, category resolvable), optionally asks the text model to propose missing descriptions or categories for rows that lack them, and creates draft products and variants for valid rows.
 5. Failed rows are written to an error report CSV with row numbers and reasons, and the seller submits the valid drafts for review.
 

@@ -59,7 +59,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 
 - Follow the layout in design doc section 4: routes in `apps/web/src/app/`, business logic in `packages/core/src/modules/<domain>/` (`service.ts`, `queries.ts`, `jobs.ts`, `types.ts`), schema in `packages/core/src/db/schema/`, SQL migrations in `packages/core/src/db/migrations/`, worker job registration in `apps/worker/src/worker.ts`, external clients in `packages/core/src/lib/`.
 - The worker runs `packages/core` and its own code as TypeScript directly on Node.js, so use only type-level TypeScript syntax (no `enum`, `namespace`, or constructor parameter properties) and import local files with their `.ts` extension.
-- Code that only the worker runs and that loads heavy libraries (the image library `sharp`, the PDF libraries `pdfmake` and `unpdf`) or runs programs (ffmpeg and ffprobe for product videos) is exported from `@ecokart/core/worker`, never from `@ecokart/core`, so the web app never loads it.
+- Code that only the worker runs and that loads heavy libraries (the image library `sharp`, the PDF libraries `pdfmake` and `unpdf`, the CSV and Excel parsers) or runs programs (ffmpeg and ffprobe for product videos) is exported from `@ecokart/core/worker`, never from `@ecokart/core`, so the web app never loads it.
 - The worker refuses to start while a queue in `packages/core/src/jobs.ts` is missing, so a deploy that skipped `pnpm db:migrate` fails loudly.
   It also refuses to start without ffmpeg and ffprobe (on the `PATH`, or at `FFMPEG_PATH` and `FFPROBE_PATH`), so the worker's Docker image must install them.
 - Pages, server actions, and API routes call module services.
@@ -97,7 +97,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Carts store no prices.
   Read price and stock fresh from `product_variants` every time the cart is shown or checked out.
 - Commercial values (commission, delivery charge, free-delivery threshold) and company details come from platform settings through `getSetting`, never from constants in code.
-- The catalogue service updates the summary fields on `products` (`min_price_paise`, `total_stock`, `rating_avg`, `search_text`, and the rest) on every write that affects them.
+- The catalogue service updates the summary fields on `products` (`min_price_paise`, `total_stock`, `search_text`, and the rest) on every write that affects them.
+  `rating_avg` and `rating_count` change only through `app.refresh_product_rating`, which the reviews service calls in the transaction of every review change.
 - The seller ledger (`seller_ledger_entries`) is append only.
   Fix a mistake with a new `adjustment` entry, never with UPDATE or DELETE.
 - If seller and buyer are in the same state, the invoice uses CGST plus SGST.

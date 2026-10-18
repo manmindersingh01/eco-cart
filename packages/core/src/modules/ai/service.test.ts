@@ -29,7 +29,11 @@ import {
 } from '../../testing/ai.ts'
 import { rejectionOf } from '../../testing/errors.ts'
 import { createTestSeller, createTestUser } from '../../testing/fixtures.ts'
-import { sessionsWaitingOn, waitUntil } from '../../testing/locks.ts'
+import {
+  holdAdvisoryLock,
+  sessionsWaitingOn,
+  waitUntil,
+} from '../../testing/locks.ts'
 import { settingDefinitions } from '../settings/definitions.ts'
 import {
   aiInputHash,
@@ -584,26 +588,33 @@ describe('daily limits', () => {
     const { context, sellerId } = await sellerContext()
     await insertCalls(SELLER_LIMIT - 1, { sellerId })
 
-    // Hold the limits lock so both calls are waiting for it at once.
-    const released = Promise.withResolvers<void>()
-    const held = Promise.withResolvers<number>()
-    const holder = owner.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(${DAILY_LIMITS_LOCK})`)
-      const { rows } = await tx.execute<{ pid: number }>(
-        sql`select pg_backend_pid() as pid`,
-      )
-      held.resolve(rows[0]!.pid)
-      await released.promise
-    })
-    const pid = await held.promise
+    // The two calls run on a pool of their own: other test files make AI
+    // calls at the same time and queue on the same lock, so only these two
+    // are counted.
+    const racer = `ai-race-${randomUUID()}`
+    const racingDb = connect(requireEnv('DATABASE_URL'), racer)
 
-    const racing = [
-      callAi(web, context, models, draftCall(sellerId)),
-      callAi(web, context, models, draftCall(sellerId)),
-    ]
-    await waitUntil(async () => (await sessionsWaitingOn(owner, pid)) === 2)
-    released.resolve()
-    await holder
+    // Hold the limits lock so both calls are waiting for it at once, and
+    // always let it go, or every AI call in the other files waits forever.
+    const hold = await holdAdvisoryLock(owner, DAILY_LIMITS_LOCK)
+    let racing: Promise<unknown>[] = []
+    try {
+      racing = [
+        callAi(racingDb, context, models, draftCall(sellerId)),
+        callAi(racingDb, context, models, draftCall(sellerId)),
+      ]
+      // Keep a refusal from being reported before it is looked at.
+      for (const call of racing) call.catch(() => {})
+      await waitUntil(
+        async () =>
+          (await sessionsWaitingOn(owner, hold.pid, {
+            applicationName: racer,
+          })) === 2,
+      )
+    } finally {
+      hold.release()
+      await hold.finished
+    }
 
     const results = await Promise.allSettled(racing)
     expect(

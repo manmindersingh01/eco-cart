@@ -1,5 +1,5 @@
 {
-  "id": "edc77466-9c9d-4aee-b4e8-2cd3d27ed732",
+  "id": "fd8edd97-8ee2-4f77-aee2-085476912c4e",
   "prevId": "d587352e-5622-49df-b5c0-7ae44bb3227c",
   "version": "7",
   "dialect": "postgresql",
@@ -4930,27 +4930,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "orders_created_at_idx": {
-          "name": "orders_created_at_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -6288,7 +6267,7 @@
           "name": "updated_by",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "published_at": {
           "name": "published_at",
@@ -6671,6 +6650,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "author_name": {
+          "name": "author_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "title": {
           "name": "title",
           "type": "text",
@@ -6715,6 +6700,33 @@
               "asc": true,
               "nulls": "last"
             },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reviews_status_created_at_idx": {
+          "name": "reviews_status_created_at_idx",
+          "columns": [
             {
               "expression": "status",
               "isExpression": false,
@@ -6845,6 +6857,10 @@
         "reviews_rating_check": {
           "name": "reviews_rating_check",
           "value": "rating between 1 and 5"
+        },
+        "reviews_author_name_check": {
+          "name": "reviews_author_name_check",
+          "value": "length(author_name) between 1 and 50"
         },
         "reviews_status_check": {
           "name": "reviews_status_check",

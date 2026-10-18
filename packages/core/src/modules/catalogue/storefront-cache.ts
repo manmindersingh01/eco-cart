@@ -39,6 +39,8 @@ export const storefrontTags = {
   seller: (id: string) => `seller:${id}`,
   /** A content page such as the returns policy (step 16). */
   content: (slug: string) => `content:${slug}`,
+  /** The company details in the storefront footer (step 16). */
+  company: 'company',
 }
 
 export type StorefrontChange =
@@ -49,6 +51,8 @@ export type StorefrontChange =
   | { contentSlug: string }
   /** Categories or brands changed, or a seller was approved or suspended. */
   | 'everything'
+  /** The company details setting changed. */
+  | 'company'
 
 /**
  * A change to more products than this at once, such as renaming a large
@@ -73,6 +77,7 @@ async function tagsOf(
   change: StorefrontChange,
 ): Promise<string[]> {
   if (change === 'everything') return [storefrontTags.catalogue]
+  if (change === 'company') return [storefrontTags.company]
   if ('sellerId' in change) return [storefrontTags.seller(change.sellerId)]
   if ('contentSlug' in change) {
     return [storefrontTags.content(change.contentSlug)]

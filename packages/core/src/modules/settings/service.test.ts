@@ -5,6 +5,7 @@ import { withContext, type RequestContext } from '../../db/context.ts'
 import { createPool, type DatabasePool } from '../../db/pool.ts'
 import {
   auditLogs,
+  cacheInvalidations,
   platformSettings,
   productModeration,
   products,
@@ -29,7 +30,12 @@ import {
 } from '../../errors.ts'
 import { createObjectStorage, loadStorageConfig } from '../../lib/storage.ts'
 import { createTestUser } from '../../testing/fixtures.ts'
-import { getSetting, listSettings, updateSetting } from './service.ts'
+import {
+  getPublicCompanyDetails,
+  getSetting,
+  listSettings,
+  updateSetting,
+} from './service.ts'
 
 /*
  * Settings are platform-wide, so this file owns platform_settings: it is the
@@ -294,6 +300,31 @@ describe('updateSetting', () => {
       'tiger SKIN',
     ])
     expect(await read('prohibited_terms')).toEqual(['ivory', 'tiger skin'])
+  })
+})
+
+const footer = () =>
+  withContext(web, { role: 'anonymous' }, (tx) => getPublicCompanyDetails(tx))
+
+describe('getPublicCompanyDetails', () => {
+  test('shows the storefront footer everything but the PAN, once saved', async () => {
+    await expect(footer()).rejects.toThrow(NotConfiguredError)
+
+    const [mark] = await owner
+      .select({ id: sql<number>`coalesce(max(id), 0)::int` })
+      .from(cacheInvalidations)
+    await save(admin, 'company_details', company)
+    const { pan: _pan, ...shown } = company
+    expect(await footer()).toEqual({
+      ...shown,
+      address: { ...company.address, stateName: 'Karnataka' },
+    })
+    // Saving them refreshes the cached footer.
+    const tags = await owner
+      .select({ tag: cacheInvalidations.tag })
+      .from(cacheInvalidations)
+      .where(gt(cacheInvalidations.id, mark!.id))
+    expect(tags.map((row) => row.tag)).toContain('company')
   })
 })
 

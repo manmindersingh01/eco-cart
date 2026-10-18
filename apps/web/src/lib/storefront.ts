@@ -1,14 +1,23 @@
 import {
+  CONTENT_SLUGS,
   getCategoryPage,
   getHomePage,
+  getPublicCompanyDetails,
   getPublicProduct,
+  getPublishedContentPage,
+  listProductReviews,
+  NotConfiguredError,
   NotFoundError,
   storefrontTags,
   ValidationError,
   withContext,
   type CategoryPage,
   type HomeSection,
+  type Page,
+  type PublicCompanyDetails,
+  type PublicContentPage,
   type PublicProduct,
+  type PublicReview,
 } from '@ecokart/core'
 import { cacheLife, cacheTag } from 'next/cache'
 import { getDatabase } from './db'
@@ -22,8 +31,8 @@ import { getStorage } from './storage'
  * tags (invalidateStorefront in @ecokart/core), and src/cache-handler.ts
  * expires them in every web container.
  *
- * A page that is not found, or a query that is not valid, is cached as an
- * answer too, never thrown: Next.js passes an error thrown inside 'use cache'
+ * A page that is not found, a query that is not valid, or a setting not
+ * configured yet is cached as an answer too, never thrown: Next.js passes an error thrown inside 'use cache'
  * on without its class, and in production without its message, so the route
  * could not tell a 404 from a crash. The exported functions throw it again,
  * outside the cache, as the error handleErrors expects.
@@ -33,6 +42,7 @@ type Answer<T> =
   | { kind: 'found'; value: T }
   | { kind: 'not_found'; message: string }
   | { kind: 'invalid'; message: string; issues: string[] }
+  | { kind: 'not_configured'; message: string }
 
 async function answer<T>(read: () => Promise<T>): Promise<Answer<T>> {
   try {
@@ -44,6 +54,9 @@ async function answer<T>(read: () => Promise<T>): Promise<Answer<T>> {
     if (error instanceof ValidationError) {
       return { kind: 'invalid', message: error.message, issues: error.issues }
     }
+    if (error instanceof NotConfiguredError) {
+      return { kind: 'not_configured', message: error.message }
+    }
     throw error
   }
 }
@@ -51,6 +64,7 @@ async function answer<T>(read: () => Promise<T>): Promise<Answer<T>> {
 function found<T>(page: Answer<T>): T {
   if (page.kind === 'found') return page.value
   if (page.kind === 'not_found') throw new NotFoundError(page.message)
+  if (page.kind === 'not_configured') throw new NotConfiguredError(page.message)
   throw new ValidationError(page.message, page.issues)
 }
 
@@ -115,4 +129,66 @@ export async function readHomePage(): Promise<HomeSection[]> {
   return withContext(getDatabase(), { role: 'anonymous' }, (tx) =>
     getHomePage(tx, getStorage()),
   )
+}
+
+async function cachedProductReviews(
+  slug: string,
+  query: Record<string, string>,
+): Promise<Answer<Page<PublicReview>>> {
+  'use cache'
+  cacheLife('storefront')
+  cacheTag(storefrontTags.catalogue)
+  // Every review change records the product's tags, its address among them.
+  if (slug.length <= 100) cacheTag(storefrontTags.productSlug(slug))
+  return answer(() =>
+    withContext(getDatabase(), { role: 'anonymous' }, (tx) =>
+      listProductReviews(tx, slug, query),
+    ),
+  )
+}
+
+/** `query` is the request's query string: `cursor` and `limit`. */
+export async function readProductReviews(
+  slug: string,
+  query: Record<string, string>,
+): Promise<Page<PublicReview>> {
+  return found(await cachedProductReviews(slug, query))
+}
+
+async function cachedContentPage(
+  slug: string,
+): Promise<Answer<PublicContentPage>> {
+  'use cache'
+  cacheLife('storefront')
+  cacheTag(storefrontTags.catalogue)
+  if (CONTENT_SLUGS.some((page) => page === slug)) {
+    cacheTag(storefrontTags.content(slug))
+  }
+  return answer(() =>
+    withContext(getDatabase(), { role: 'anonymous' }, (tx) =>
+      getPublishedContentPage(tx, slug),
+    ),
+  )
+}
+
+export async function readContentPage(
+  slug: string,
+): Promise<PublicContentPage> {
+  return found(await cachedContentPage(slug))
+}
+
+async function cachedCompanyDetails(): Promise<Answer<PublicCompanyDetails>> {
+  'use cache'
+  cacheLife('storefront')
+  cacheTag(storefrontTags.catalogue, storefrontTags.company)
+  return answer(() =>
+    withContext(getDatabase(), { role: 'anonymous' }, (tx) =>
+      getPublicCompanyDetails(tx),
+    ),
+  )
+}
+
+/** The storefront footer's company details; 503 until they are saved. */
+export async function readCompanyDetails(): Promise<PublicCompanyDetails> {
+  return found(await cachedCompanyDetails())
 }
