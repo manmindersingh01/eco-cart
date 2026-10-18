@@ -350,3 +350,45 @@ describe('refusals', () => {
     expect(response.status).toBe(409)
   })
 })
+
+describe('the minimum buying quantity', () => {
+  const minimum = z.object({
+    product: z.object({ minOrderQuantity: z.number() }).loose(),
+  })
+
+  test('is set at creation and changes at any time, even under review', async () => {
+    const response = await createVia(sellerCookie, {
+      ...toothbrush(),
+      minOrderQuantity: 5,
+    })
+    expect(response.status).toBe(201)
+    const body: unknown = await response.json()
+    expect(minimum.parse(body).product.minOrderQuantity).toBe(5)
+    const { id } = productResponse.parse(body).product
+    await owner
+      .update(schema.products)
+      .set({ status: 'pending_review' })
+      .where(eq(schema.products.id, id))
+
+    const patch = (value: unknown) =>
+      patchProduct(
+        request(`/seller/products/${id}`, {
+          method: 'PATCH',
+          cookie: sellerCookie,
+          body: { minOrderQuantity: value },
+        }),
+        params({ id }),
+      )
+    const changed = await patch(10)
+    expect(changed.status).toBe(200)
+    expect(minimum.parse(await changed.json()).product.minOrderQuantity).toBe(
+      10,
+    )
+    const refused = await patch(0)
+    expect(refused.status).toBe(400)
+    expect(await refused.json()).toEqual({
+      error: 'Those product details are not valid',
+      issues: ['minOrderQuantity must be at least 1'],
+    })
+  })
+})

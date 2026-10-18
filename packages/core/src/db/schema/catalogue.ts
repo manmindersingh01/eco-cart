@@ -136,6 +136,9 @@ export const products = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     hsnCode: text('hsn_code'),
+    // The fewest units of one variant a buyer may order at once, for example
+    // 5 bamboo straws; the seller changes it at any time, like a price.
+    minOrderQuantity: integer('min_order_quantity').notNull().default(1),
     // Copied from the category at approval and frozen on each order line.
     gstRateBps: integer('gst_rate_bps'),
     status: text('status').notNull().default('draft'),
@@ -219,6 +222,10 @@ export const products = pgTable(
     ),
     check('products_gst_rate_bps_check', sql`gst_rate_bps between 0 and 10000`),
     check('products_total_stock_check', sql`total_stock >= 0`),
+    check(
+      'products_min_order_quantity_check',
+      sql`min_order_quantity between 1 and 1000`,
+    ),
     check(
       'products_price_range_check',
       sql`min_price_paise > 0 and max_price_paise >= min_price_paise and min_mrp_paise >= min_price_paise`,

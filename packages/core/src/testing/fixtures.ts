@@ -5,8 +5,10 @@ import {
   addresses,
   brands,
   categories,
+  coupons,
   orderItems,
   orders,
+  platformSettings,
   productImages,
   productVariants,
   products,
@@ -449,4 +451,48 @@ export function orderToInvoiceFor(
     },
     lines: items.filter((item) => item.status !== 'cancelled'),
   }
+}
+
+// Cart and checkout (backend spec steps 11 and 12).
+
+/**
+ * The commercial settings carts and checkout read: ₹49 delivery, free from
+ * ₹499, and 10% commission. The settings tests empty this table, so they
+ * run against a database of their own (vitest.config.ts).
+ */
+export const TEST_SETTINGS = {
+  delivery_charge_paise: 4_900,
+  free_delivery_threshold_paise: 49_900,
+  commission_bps: 1_000,
+} as const
+
+export async function saveTestSettings(db: Database) {
+  for (const [key, value] of Object.entries(TEST_SETTINGS)) {
+    await db
+      .insert(platformSettings)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettings.key, set: { value } })
+  }
+}
+
+/** A coupon with a unique code: 10% off, at most ₹100, on ₹500 or more. */
+export async function createTestCoupon(
+  db: Database,
+  createdBy: string,
+  overrides: Partial<typeof coupons.$inferInsert> = {},
+) {
+  const [coupon] = await db
+    .insert(coupons)
+    .values({
+      code: `TEST${uniqueSuffix().toUpperCase()}`,
+      description: '10% off',
+      discountType: 'percent',
+      discountValue: 1_000,
+      minOrderPaise: 50_000,
+      maxDiscountPaise: 10_000,
+      createdBy,
+      ...overrides,
+    })
+    .returning()
+  return coupon!
 }

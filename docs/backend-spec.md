@@ -1599,7 +1599,7 @@ Green Basket's 101st call of the day is refused with 429, "You have used todayâ€
 - 12 October 2026: Step 9 built, after the user confirmed every recommended answer.
   While building it: the cache handler checks expiry times itself, because Next.js rounds them to the millisecond and the end-to-end check caught a stale product page; a change to more than 100 products records one `catalogue` tag; a nightly job clears the log; GET routes that read no request data call `connection()`, so a build without a database (CI) never prerenders them.
   The design doc was updated in the same change (sections 3.1, 4, 5.2, 5.5, 5.13, 6.8, 7, 8, and 11).
-- 18 October 2026: Step 9 merged with main after steps 7, 10, 14, and 17.
-  Its migrations were generated again on top of step 17's as `0019_storefront_lists_and_cache` and `0020_storefront_search_functions_and_grants`, with the same SQL.
+- 18 October 2026: Step 9 merged with main after steps 7, 10, 11, 14, and 17.
+  Its migrations were generated again on top of step 11's as `0021_storefront_lists_and_cache` and `0022_storefront_search_functions_and_grants`, with the same SQL.
   Step 7's archiving, moving back to draft, and take-downs now refresh the storefront, and step 7's `products_approved_check` replaces the `published_at` rule this step had left open.
   The end-to-end check after the merge found that every 404 and 400 from the cached readers answered 500; they are now cached as answers, with a product address tag so a cached "not found" ends when the product is approved.

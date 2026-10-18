@@ -49,6 +49,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Add a dependency: `pnpm --filter @ecokart/web add <name>`.
   The version goes into the `catalog` in `pnpm-workspace.yaml` and `package.json` gets `catalog:`.
 - Tests rebuild their own databases (`ecokart_test_core`, `ecokart_test_web`, `ecokart_test_worker`) from the migrations and empty their own buckets (`ecokart-test-*`) on every run, and never touch the development database or bucket.
+  The settings tests empty `platform_settings`, so they run against a database of their own (`ecokart_test_core_settings`); every other core test may rely on the commercial settings that `saveTestSettings` saves.
   In a linked git worktree the names end with the worktree's folder name (for example `ecokart_test_core_step_7`), so several checkouts can run their tests at the same time.
 - Example data for local development (platform settings, three approved sellers, a category tree, and brands): `pnpm db:seed`; it only fills what is missing and refuses production.
 - Not set up yet: e2e tests.

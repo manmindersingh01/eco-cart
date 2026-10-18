@@ -12,17 +12,14 @@ import {
   registerCatalogueJobs,
   registerInvoiceJobs,
 } from '@ecokart/core/worker'
-import type { AiSettings } from '@ecokart/core'
+import { createAiModels, type AiSettings } from '@ecokart/core'
 import { PgBoss } from 'pg-boss'
 
 export interface WorkerOptions {
   databaseUrl: string
   notifications: ReturnType<typeof loadNotificationConfig>
   storage: StorageConfig
-  /**
-   * Null when AI_ENABLED is false. The AI jobs from step 18 on build their
-   * models from it.
-   */
+  /** Null when AI_ENABLED is false. The AI jobs build their models from it. */
   ai: AiSettings | null
 }
 
@@ -72,6 +69,7 @@ export async function startWorker(
   await registerCatalogueJobs(boss, {
     db,
     storage: createObjectStorage(options.storage),
+    ai: options.ai ? createAiModels(options.ai) : null,
   })
   await registerInvoiceJobs(boss, {
     db,

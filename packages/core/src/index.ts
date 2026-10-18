@@ -261,3 +261,29 @@ export {
   type AiUsageReport,
 } from './modules/ai/queries.ts'
 export type { AiFeature } from './modules/ai/types.ts'
+export {
+  addCartItem,
+  applyCoupon,
+  getCart,
+  removeCartItem,
+  removeCoupon,
+  setCartItemQuantity,
+  type Shopper,
+} from './modules/cart/service.ts'
+export {
+  createCoupon,
+  getCoupon,
+  listCoupons,
+  updateCoupon,
+} from './modules/cart/coupons.ts'
+export {
+  MAX_CART_LINES,
+  MAX_LINE_QUANTITY,
+  type CartCoupon,
+  type CartLine,
+  type CartView,
+  type CouponUpdate,
+  type CouponView,
+  type NewCoupon,
+} from './modules/cart/types.ts'
+export { formatRupees } from './lib/money.ts'
