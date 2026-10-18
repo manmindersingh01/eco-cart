@@ -6,6 +6,13 @@ export {
   registerCatalogueJobs,
   type CatalogueJobDependencies,
 } from './modules/catalogue/jobs.ts'
+// Loads the CSV and Excel parsers.
+export {
+  readImportFile,
+  registerImportJobs,
+  runImport,
+  type ImportJobDependencies,
+} from './modules/imports/jobs.ts'
 // Runs ffmpeg and ffprobe.
 export {
   checkVideoTools,

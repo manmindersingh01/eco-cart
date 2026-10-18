@@ -10,6 +10,7 @@ import {
 import {
   checkVideoTools,
   registerCatalogueJobs,
+  registerImportJobs,
   registerInvoiceJobs,
   type VideoTools,
 } from '@ecokart/core/worker'
@@ -79,6 +80,10 @@ export async function startWorker(
     ai: options.ai ? createAiModels(options.ai) : null,
   })
   await registerInvoiceJobs(boss, {
+    db,
+    storage: createObjectStorage(options.storage),
+  })
+  await registerImportJobs(boss, {
     db,
     storage: createObjectStorage(options.storage),
   })

@@ -24,10 +24,13 @@
     "@aws-sdk/s3-request-presigner": "catalog:",
     "@better-auth/drizzle-adapter": "catalog:",
     "better-auth": "catalog:",
+    "csv-parse": "catalog:",
     "drizzle-orm": "catalog:",
+    "fflate": "catalog:",
     "pdfmake": "catalog:",
     "pg": "catalog:",
     "pg-boss": "catalog:",
+    "read-excel-file": "catalog:",
     "sharp": "catalog:",
     "zod": "catalog:"
   },
