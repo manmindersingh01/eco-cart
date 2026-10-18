@@ -66,11 +66,12 @@ beforeAll(async () => {
     .set({ gstin: '27AAACE1234F1Z5', pan: 'AAACE1234F' })
     .where(eq(schema.sellers.id, sellerId))
   ;[sellerCookie, otherSellerCookie, buyerCookie, adminCookie] =
-    await Promise.all(
-      [seller.owner, otherSeller.owner, buyer, admin].map((user) =>
-        signInWithEmail(owner, user.email),
-      ),
-    )
+    await Promise.all([
+      signInWithEmail(owner, seller.owner.email),
+      signInWithEmail(owner, otherSeller.owner.email),
+      signInWithEmail(owner, buyer.email),
+      signInWithEmail(owner, admin.email),
+    ])
 })
 
 afterAll(async () => {
