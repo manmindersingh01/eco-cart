@@ -240,6 +240,8 @@ export const ALLOWED_IMAGE_TYPES = [
   'image/avif',
 ] as const
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+/** One main photo and up to three more, as the backend allows. */
+export const MAX_PRODUCT_PHOTOS = 4
 
 export function validateImageFile(
   file: Pick<File, 'type' | 'size'>,

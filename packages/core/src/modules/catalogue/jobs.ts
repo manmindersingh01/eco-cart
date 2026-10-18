@@ -1,7 +1,11 @@
 import { and, eq } from 'drizzle-orm'
 import type { PgBoss } from 'pg-boss'
 import type { Database } from '../../db/client.ts'
-import { productImages, products } from '../../db/schema/index.ts'
+import {
+  productImages,
+  productVideos,
+  products,
+} from '../../db/schema/index.ts'
 import {
   ImageRejectedError,
   prepareProductImage,
@@ -14,6 +18,22 @@ import {
 } from '../../lib/images.ts'
 import type { ObjectStorage } from '../../lib/storage.ts'
 import type { AiModels } from '../../lib/ai/index.ts'
+import {
+  prepareProductVideo,
+  VideoRejectedError,
+  type PreparedVideo,
+  type VideoTools,
+} from '../../lib/video-processing.ts'
+import {
+  MAX_VIDEO_UPLOAD_BYTES,
+  videoFileKey,
+  videoPosterKey,
+} from '../../lib/videos.ts'
+import {
+  DRAFT_LISTING_QUEUE,
+  draftListingJob,
+  writeListingDraft,
+} from './drafts.ts'
 import { PROCESS_IMAGE_QUEUE, processImageJob } from './images.ts'
 import {
   SCREEN_LISTING_QUEUE,
@@ -21,17 +41,21 @@ import {
   screenListingJob,
 } from './screening.ts'
 import { refreshProducts } from './summary.ts'
+import { PROCESS_VIDEO_QUEUE, processVideoJob } from './videos.ts'
 
 /*
- * The worker's catalogue jobs (backend spec steps 6 and 7). Only the worker
- * loads this file, because it loads the image library.
+ * The worker's catalogue jobs (backend spec steps 6, 7, 19, and 20, and
+ * product videos). Only the worker loads this file, because it loads the
+ * image library and runs ffmpeg.
  */
 
 export interface CatalogueJobDependencies {
   /** Connected as ecokart_worker. */
   db: Database
   storage: ObjectStorage
+  videoTools: VideoTools
 }
+type StorageJobDependencies = Pick<CatalogueJobDependencies, 'db' | 'storage'>
 
 /** Sizes never change once written, so browsers and CloudFront keep them. */
 const IMMUTABLE = 'public, max-age=31536000, immutable'
@@ -52,7 +76,7 @@ async function removeUpload(
 }
 
 async function markFailed(
-  deps: CatalogueJobDependencies,
+  deps: StorageJobDependencies,
   image: ImageRow,
   reason: string,
 ): Promise<void> {
@@ -99,7 +123,7 @@ async function storeSizes(
  * photo is marked failed instead.
  */
 export async function processUploadedImage(
-  deps: CatalogueJobDependencies,
+  deps: StorageJobDependencies,
   imageId: string,
   { lastAttempt = true }: { lastAttempt?: boolean } = {},
 ): Promise<void> {
@@ -167,10 +191,128 @@ export async function processUploadedImage(
   await removeUpload(deps.storage, image.uploadKey)
 }
 
+const VIDEO_GIVE_UP = 'The video could not be processed; add it again'
+
+type VideoRow = typeof productVideos.$inferSelect
+
+async function markVideoFailed(
+  deps: StorageJobDependencies,
+  video: VideoRow,
+  reason: string,
+): Promise<void> {
+  await deps.db
+    .update(productVideos)
+    .set({ status: 'failed', failureReason: reason })
+    .where(
+      and(
+        eq(productVideos.id, video.id),
+        eq(productVideos.status, 'processing'),
+      ),
+    )
+  if (video.uploadKey) await removeUpload(deps.storage, video.uploadKey)
+}
+
+async function storeVideo(
+  storage: ObjectStorage,
+  video: VideoRow,
+  original: Buffer,
+  prepared: PreparedVideo,
+): Promise<void> {
+  // The original stays private, so the video can be converted again later.
+  await storage.write(`originals/${video.id}`, original, {
+    contentType: 'application/octet-stream',
+  })
+  await storage.write(videoFileKey(video.storageKey), prepared.video, {
+    contentType: 'video/mp4',
+    cacheControl: IMMUTABLE,
+  })
+  await storage.write(videoPosterKey(video.storageKey), prepared.poster, {
+    contentType: 'image/jpeg',
+    cacheControl: IMMUTABLE,
+  })
+}
+
+/**
+ * Checks an uploaded video, converts it, and stores the public files, then
+ * marks it ready, or failed with a reason the seller sees. Running twice
+ * does nothing more, and a video removed in the meantime is left alone.
+ *
+ * Storage and ffmpeg start-up errors are thrown, so pg-boss retries; on the
+ * `lastAttempt` the video is marked failed instead.
+ */
+export async function processUploadedVideo(
+  deps: CatalogueJobDependencies,
+  videoId: string,
+  { lastAttempt = true }: { lastAttempt?: boolean } = {},
+): Promise<void> {
+  const [video] = await deps.db
+    .select()
+    .from(productVideos)
+    .where(eq(productVideos.id, videoId))
+  if (!video || video.status !== 'processing' || !video.uploadKey) return
+
+  let prepared: PreparedVideo
+  try {
+    const original = await deps.storage.read(video.uploadKey)
+    if (!original) {
+      await markVideoFailed(
+        deps,
+        video,
+        'The upload did not arrive; add the video again',
+      )
+      return
+    }
+    if (original.length > MAX_VIDEO_UPLOAD_BYTES) {
+      await markVideoFailed(deps, video, 'The file is larger than 50 MB')
+      return
+    }
+    prepared = await prepareProductVideo(deps.videoTools, original)
+    await storeVideo(deps.storage, video, original, prepared)
+  } catch (error) {
+    if (error instanceof VideoRejectedError) {
+      await markVideoFailed(deps, video, error.message)
+      return
+    }
+    if (lastAttempt) {
+      console.error(`Giving up on video ${video.id}`, error)
+      await markVideoFailed(deps, video, VIDEO_GIVE_UP)
+      return
+    }
+    throw error
+  }
+
+  await deps.db.transaction(async (tx) => {
+    // The product first, like every other change to it.
+    await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, video.productId))
+      .for('update')
+    await tx
+      .update(productVideos)
+      .set({
+        status: 'ready',
+        durationMs: prepared.durationMs,
+        width: prepared.width,
+        height: prepared.height,
+      })
+      .where(
+        and(
+          eq(productVideos.id, video.id),
+          eq(productVideos.status, 'processing'),
+        ),
+      )
+  })
+  await removeUpload(deps.storage, video.uploadKey)
+}
+
 export async function registerCatalogueJobs(
   boss: PgBoss,
   deps: CatalogueJobDependencies & {
-    /** For the AI screening checks (step 20); null when AI_ENABLED is false. */
+    /**
+     * For the listing builder (step 19) and the AI screening checks (step
+     * 20); null when AI_ENABLED is false.
+     */
     ai: AiModels | null
   },
 ): Promise<void> {
@@ -186,12 +328,33 @@ export async function registerCatalogueJobs(
     },
   )
   await boss.work(
+    PROCESS_VIDEO_QUEUE,
+    { includeMetadata: true },
+    async ([job]) => {
+      if (!job) return
+      const { videoId } = processVideoJob.parse(job.data)
+      await processUploadedVideo(deps, videoId, {
+        lastAttempt: job.retryCount >= job.retryLimit,
+      })
+    },
+  )
+  await boss.work(
     SCREEN_LISTING_QUEUE,
     { includeMetadata: true },
     async ([job]) => {
       if (!job) return
       const { reviewId } = screenListingJob.parse(job.data)
       await screenListing(deps, reviewId, {
+        lastAttempt: job.retryCount >= job.retryLimit,
+      })
+    },
+  )
+  await boss.work(
+    DRAFT_LISTING_QUEUE,
+    { includeMetadata: true },
+    async ([job]) => {
+      if (!job) return
+      await writeListingDraft(deps, draftListingJob.parse(job.data), {
         lastAttempt: job.retryCount >= job.retryLimit,
       })
     },

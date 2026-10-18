@@ -119,8 +119,8 @@ async function productAt(
 
 /**
  * Recalculates the product's rating from its published reviews, through the
- * database function that may change a product for a buyer (migration
- * 0024), and refreshes the product's storefront pages.
+ * database function that may change a product for a buyer (the migration
+ * product_rating_function), and refreshes the product's storefront pages.
  */
 async function refreshRating(
   tx: Transaction,

@@ -7,6 +7,7 @@ import {
   productImages,
   productModeration,
   productVariants,
+  productVideos,
   products,
 } from '../../db/schema/index.ts'
 import {
@@ -135,10 +136,20 @@ async function readinessIssues(
   tx: Transaction,
   product: ProductRow,
 ): Promise<string[]> {
+  // In the seller's order: the first is the main photo.
   const photos = await tx
     .select({ status: productImages.status })
     .from(productImages)
     .where(eq(productImages.productId, product.id))
+    .orderBy(
+      asc(productImages.sortOrder),
+      asc(productImages.createdAt),
+      asc(productImages.id),
+    )
+  const [video] = await tx
+    .select({ status: productVideos.status })
+    .from(productVideos)
+    .where(eq(productVideos.productId, product.id))
   const [activeVariant] = await tx
     .select({ id: productVariants.id })
     .from(productVariants)
@@ -150,12 +161,19 @@ async function readinessIssues(
     )
     .limit(1)
   const category = (await loadCategoryTree(tx)).byId(product.categoryId)
+  const anyReady = photos.some((photo) => photo.status === 'ready')
   const issues = [
-    photos.some((photo) => photo.status === 'ready')
+    anyReady
       ? null
       : 'Add at least one photo; the storefront needs a main image',
+    anyReady && photos[0]?.status === 'failed'
+      ? 'The main photo could not be used; remove it or put another photo first'
+      : null,
     photos.some((photo) => photo.status === 'processing')
       ? 'Wait until every photo has been processed, which takes a few seconds'
+      : null,
+    video?.status === 'processing'
+      ? 'Wait until the video has been processed, which takes up to a few minutes'
       : null,
     activeVariant
       ? null

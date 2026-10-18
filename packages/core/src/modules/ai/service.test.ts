@@ -16,7 +16,11 @@ import {
   NotConfiguredError,
   TooManyRequestsError,
 } from '../../errors.ts'
-import { AiReplyError, type ModelReply } from '../../lib/ai/client.ts'
+import {
+  AiProviderError,
+  AiReplyError,
+  type ModelReply,
+} from '../../lib/ai/client.ts'
 import { createAiModels, type AiModels } from '../../lib/ai/index.ts'
 import {
   fakeChatReply,
@@ -31,7 +35,10 @@ import {
   aiInputHash,
   callAi,
   DAILY_LIMITS_LOCK,
+  failQueuedAiCall,
   LIMIT_RULES,
+  queueAiCall,
+  runQueuedAiCall,
   type AiCall,
 } from './service.ts'
 import { DAY_MS, indianDayStart } from './days.ts'
@@ -744,5 +751,253 @@ describe('row-level security on ai_requests', () => {
       },
     )
     expect(counts).toEqual({ visible: 0, counted: 2 })
+  })
+})
+
+/** Queues `call` for the seller, as a request does. */
+const queueFor = (
+  seller: Awaited<ReturnType<typeof sellerContext>>,
+  call: AiCall<'vision', Query>,
+) =>
+  asWeb(seller.context, (tx) => queueAiCall(tx, seller.context, models, call))
+
+describe('queued calls', () => {
+  test('a queued call counts against the limits until it is made', async () => {
+    const seller = await sellerContext()
+    await insertCalls(SELLER_LIMIT - 1, { sellerId: seller.sellerId })
+    const call = draftCall(seller.sellerId, { cacheSeconds: 60 })
+    const queued = await queueFor(seller, call)
+    expect(queued.kind).toBe('queued')
+    expect(await rowOf(queued.requestId)).toMatchObject({
+      feature: 'listing_draft',
+      sellerId: seller.sellerId,
+      status: 'queued',
+      inputHash: aiInputHash(
+        'listing_draft',
+        'deepseek/deepseek-v4.1-flash',
+        call.input,
+      ),
+      completedAt: null,
+    })
+    // The seller's last call of the day is taken while the job waits.
+    const refused = await rejectionOf(
+      queueFor(seller, draftCall(seller.sellerId)),
+      TooManyRequestsError,
+    )
+    expect(refused.message).toBe(
+      `You have used today’s ${SELLER_LIMIT} AI calls; more are available after midnight India time`,
+    )
+  })
+
+  test('the job makes the call once and records it like any other', async () => {
+    const seller = await sellerContext()
+    const call = draftCall(seller.sellerId, { cacheSeconds: 60 })
+    const queued = await queueFor(seller, call)
+    if (queued.kind !== 'queued') throw new Error('Expected a queued call')
+
+    const answer = await runQueuedAiCall(
+      worker,
+      system,
+      models,
+      queued.requestId,
+      call,
+    )
+    expect(answer).toEqual({
+      requestId: queued.requestId,
+      value: { category: 'bamboo', maxPricePaise: 19_900 },
+      cached: false,
+    })
+    expect(await rowOf(queued.requestId)).toMatchObject({
+      status: 'succeeded',
+      result: { category: 'bamboo', maxPricePaise: 19_900 },
+      inputTokens: 90,
+      outputTokens: 12,
+      costMicroUsd: 20,
+    })
+    // A job run twice changes nothing.
+    let asked = 0
+    const again = await runQueuedAiCall(
+      worker,
+      system,
+      models,
+      queued.requestId,
+      {
+        ...call,
+        run: async () => {
+          asked++
+          return reply({ category: 'other', maxPricePaise: 1 })
+        },
+      },
+    )
+    expect([again, asked]).toEqual([null, 0])
+
+    // The same input asked for again comes from the cache, with no new row.
+    const before = await rowsForSeller(seller.sellerId)
+    expect(await queueFor(seller, call)).toEqual({
+      kind: 'cached',
+      requestId: queued.requestId,
+      value: { category: 'bamboo', maxPricePaise: 19_900 },
+    })
+    expect(await rowsForSeller(seller.sellerId)).toBe(before)
+  })
+
+  test('a provider failure waits for the next attempt, which adds what it used', async () => {
+    const seller = await sellerContext()
+    const call = draftCall(seller.sellerId)
+    const queued = await queueFor(seller, call)
+    if (queued.kind !== 'queued') throw new Error('Expected a queued call')
+    const down = new AiProviderError(
+      'The AI provider answered 502: Upstream error',
+      {
+        status: 502,
+      },
+    )
+
+    await expect(
+      runQueuedAiCall(
+        worker,
+        system,
+        models,
+        queued.requestId,
+        {
+          ...call,
+          run: () => Promise.reject(down),
+        },
+        { lastAttempt: false },
+      ),
+    ).rejects.toBe(down)
+    expect(await rowOf(queued.requestId)).toMatchObject({
+      status: 'queued',
+      error: 'The AI provider answered 502: Upstream error',
+      inputTokens: 0,
+      completedAt: null,
+    })
+
+    await runQueuedAiCall(worker, system, models, queued.requestId, call)
+    expect(await rowOf(queued.requestId)).toMatchObject({
+      status: 'succeeded',
+      error: null,
+      inputTokens: 90,
+      costMicroUsd: 20,
+    })
+  })
+
+  test('the last attempt, or an unusable answer, marks the call failed', async () => {
+    const seller = await sellerContext()
+    const call = draftCall(seller.sellerId)
+    const last = await queueFor(seller, call)
+    const bad = await queueFor(seller, draftCall(seller.sellerId))
+    if (last.kind !== 'queued' || bad.kind !== 'queued') {
+      throw new Error('Expected queued calls')
+    }
+    const down = new AiProviderError(
+      'The AI provider answered 502: Upstream error',
+    )
+    await expect(
+      runQueuedAiCall(
+        worker,
+        system,
+        models,
+        last.requestId,
+        {
+          ...call,
+          run: () => Promise.reject(down),
+        },
+        { lastAttempt: true },
+      ),
+    ).rejects.toBe(down)
+    expect((await rowOf(last.requestId)).status).toBe('failed')
+
+    const unusable = new AiReplyError(
+      'The AI answer did not fit',
+      { inputTokens: 300, outputTokens: 80, costUsd: null },
+      ['category: expected string'],
+    )
+    await expect(
+      runQueuedAiCall(
+        worker,
+        system,
+        models,
+        bad.requestId,
+        {
+          ...call,
+          run: () => Promise.reject(unusable),
+        },
+        { lastAttempt: false },
+      ),
+    ).rejects.toBe(unusable)
+    expect(await rowOf(bad.requestId)).toMatchObject({
+      status: 'failed',
+      inputTokens: 300,
+      outputTokens: 80,
+      costMicroUsd: null,
+    })
+  })
+
+  test('only the call that was queued is made', async () => {
+    const seller = await sellerContext()
+    const other = await sellerContext()
+    const call = draftCall(seller.sellerId)
+    const queued = await queueFor(seller, call)
+    if (queued.kind !== 'queued') throw new Error('Expected a queued call')
+    expect(
+      await runQueuedAiCall(worker, system, models, queued.requestId, {
+        ...call,
+        sellerId: other.sellerId,
+      }),
+    ).toBeNull()
+    expect(
+      await runQueuedAiCall(worker, system, models, queued.requestId, {
+        ...call,
+        feature: 'similar',
+      }),
+    ).toBeNull()
+    expect((await rowOf(queued.requestId)).status).toBe('queued')
+  })
+
+  test('a call queued before AI was switched off, or given up, is marked failed', async () => {
+    const seller = await sellerContext()
+    const call = draftCall(seller.sellerId)
+    const off = await queueFor(seller, call)
+    const gone = await queueFor(seller, draftCall(seller.sellerId))
+    if (off.kind !== 'queued' || gone.kind !== 'queued') {
+      throw new Error('Expected queued calls')
+    }
+    await expect(
+      runQueuedAiCall(worker, system, null, off.requestId, call),
+    ).rejects.toThrow(NotConfiguredError)
+    expect(await rowOf(off.requestId)).toMatchObject({
+      status: 'failed',
+      error: 'AI features are switched off',
+    })
+
+    await failQueuedAiCall(
+      worker,
+      system,
+      gone.requestId,
+      'The product is gone',
+    )
+    const row = await rowOf(gone.requestId)
+    expect(row).toMatchObject({
+      status: 'failed',
+      error: 'The product is gone',
+    })
+    expect(row.completedAt).toBeInstanceOf(Date)
+  })
+
+  test('queueing checks who may call, and that AI is on', async () => {
+    const seller = await sellerContext()
+    const other = await sellerContext()
+    await expect(
+      asWeb(seller.context, (tx) =>
+        queueAiCall(tx, seller.context, models, draftCall(other.sellerId)),
+      ),
+    ).rejects.toThrow(ForbiddenError)
+    await expect(
+      asWeb(seller.context, (tx) =>
+        queueAiCall(tx, seller.context, null, draftCall(seller.sellerId)),
+      ),
+    ).rejects.toThrow(NotConfiguredError)
+    expect(await rowsForSeller(seller.sellerId)).toBe(0)
   })
 })

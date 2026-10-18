@@ -5,6 +5,10 @@ import {
   type ImageSize,
 } from '../../lib/images.ts'
 import {
+  MAX_VIDEO_UPLOAD_BYTES,
+  VIDEO_CONTENT_TYPES,
+} from '../../lib/videos.ts'
+import {
   gstRateBps,
   hsnCode,
   idOf,
@@ -214,6 +218,20 @@ export const productUpdate = strictObject({
   minOrderQuantity: minOrderQuantity.optional(),
 })
 
+/**
+ * A listing draft from the photos (backend spec step 19): the details the
+ * seller may copy into the product with the normal edit, held to the same
+ * rules, so whatever the model writes can be saved as it is. Unknown fields
+ * in the model's answer are dropped.
+ */
+export const listingSuggestion = z.object({
+  title,
+  description,
+  highlights,
+  attributes,
+})
+export type ListingSuggestion = z.output<typeof listingSuggestion>
+
 export const variantUpdate = strictObject({
   sku: sku.optional(),
   options: optionValues.optional(),
@@ -247,6 +265,20 @@ export interface ImageView {
   failureReason: string | null
   /** Public addresses of each size, once the photo is ready. */
   urls: Record<ImageSize, string> | null
+}
+
+/** A product's video; its status works like a photo's. */
+export interface VideoView {
+  id: string
+  status: ImageStatus
+  /** Why the video cannot be used, when it failed. */
+  failureReason: string | null
+  /** Of the converted video, once it is ready. */
+  durationMs: number | null
+  width: number | null
+  height: number | null
+  /** Public addresses of the MP4 file and its poster image, once ready. */
+  urls: { video: string; poster: string } | null
 }
 
 export interface ProductView {
@@ -283,6 +315,8 @@ export interface ProductView {
   updatedAt: Date
   variants: VariantView[]
   images: ImageView[]
+  /** Null when the product has no video. */
+  video: VideoView | null
 }
 
 /** A product in the seller's list. */
@@ -340,7 +374,28 @@ export const imageOrder = strictObject({
   imageIds: z.array(idOf('a photo')),
 })
 
-/** A signed form for one photo upload, straight to object storage. */
+/* The product video (one at most). */
+
+export const videoUploadRequest = strictObject({
+  contentType: z.enum(VIDEO_CONTENT_TYPES, {
+    error: (issue) =>
+      issue.input === undefined
+        ? undefined
+        : 'must be video/mp4, video/quicktime, or video/webm',
+  }),
+  /** In bytes. */
+  size: z
+    .number()
+    .int('must be a whole number')
+    .min(1, 'must be at least 1 byte')
+    .max(MAX_VIDEO_UPLOAD_BYTES, 'must be at most 50 MB'),
+})
+
+export const newVideo = strictObject({ uploadKey: z.string() })
+
+/**
+ * A signed form for one photo or video upload, straight to object storage.
+ */
 export interface ImageUpload {
   /** Pass back as `uploadKey` once the file is uploaded. */
   key: string

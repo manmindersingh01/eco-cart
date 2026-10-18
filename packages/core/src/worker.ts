@@ -2,12 +2,28 @@
 // needs. Application code in the web app imports from '@ecokart/core'.
 export {
   processUploadedImage,
+  processUploadedVideo,
   registerCatalogueJobs,
   type CatalogueJobDependencies,
 } from './modules/catalogue/jobs.ts'
+// Runs ffmpeg and ffprobe.
+export {
+  checkVideoTools,
+  loadVideoTools,
+  prepareProductVideo,
+  VideoRejectedError,
+  type PreparedVideo,
+  type VideoTools,
+} from './lib/video-processing.ts'
 // Loads the PDF library.
 export {
   registerInvoiceJobs,
   renderInvoice,
   type InvoiceJobDependencies,
 } from './modules/invoices/jobs.ts'
+// Loads the image library and the PDF reader.
+export {
+  checkUploadedDocument,
+  registerSellerJobs,
+  type SellerJobDependencies,
+} from './modules/sellers/jobs.ts'

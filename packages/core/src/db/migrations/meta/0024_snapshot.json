@@ -1,6 +1,6 @@
 {
-  "id": "4a1c4a2c-d78c-458b-ac2a-765fa7c229b1",
-  "prevId": "d26ee4cf-efb9-4d12-bcff-993912225960",
+  "id": "dcc154cf-91a6-4ee8-8755-8779807c7137",
+  "prevId": "7657fed7-41a4-409d-b02a-4de813aef65e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2341,6 +2341,190 @@
         "product_variants_stock_check": {
           "name": "product_variants_stock_check",
           "value": "stock >= 0"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.product_videos": {
+      "name": "product_videos",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'processing'"
+        },
+        "upload_key": {
+          "name": "upload_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_reason": {
+          "name": "failure_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "duration_ms": {
+          "name": "duration_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "width": {
+          "name": "width",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "height": {
+          "name": "height",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "product_videos_product_id_products_id_fk": {
+          "name": "product_videos_product_id_products_id_fk",
+          "tableFrom": "product_videos",
+          "columnsFrom": [
+            "product_id"
+          ],
+          "tableTo": "products",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "product_videos_product_id_unique": {
+          "name": "product_videos_product_id_unique",
+          "columns": [
+            "product_id"
+          ],
+          "nullsNotDistinct": false
+        },
+        "product_videos_storage_key_unique": {
+          "name": "product_videos_storage_key_unique",
+          "columns": [
+            "storage_key"
+          ],
+          "nullsNotDistinct": false
+        },
+        "product_videos_upload_key_unique": {
+          "name": "product_videos_upload_key_unique",
+          "columns": [
+            "upload_key"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {
+        "web_select": {
+          "name": "web_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ecokart_web"
+          ],
+          "using": "exists (select 1 from products p where p.id = product_videos.product_id)"
+        },
+        "web_insert": {
+          "name": "web_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "ecokart_web"
+          ],
+          "withCheck": "exists (select 1 from products p where p.id = product_videos.product_id and (p.seller_id = app.seller_id() or app.has_full_access()))"
+        },
+        "web_update": {
+          "name": "web_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "ecokart_web"
+          ],
+          "using": "exists (select 1 from products p where p.id = product_videos.product_id and (p.seller_id = app.seller_id() or app.has_full_access()))",
+          "withCheck": "exists (select 1 from products p where p.id = product_videos.product_id and (p.seller_id = app.seller_id() or app.has_full_access()))"
+        },
+        "web_delete": {
+          "name": "web_delete",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "ecokart_web"
+          ],
+          "using": "exists (select 1 from products p where p.id = product_videos.product_id and (p.seller_id = app.seller_id() or app.has_full_access()))"
+        },
+        "worker_all": {
+          "name": "worker_all",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "ecokart_worker"
+          ],
+          "using": "true",
+          "withCheck": "true"
+        }
+      },
+      "checkConstraints": {
+        "product_videos_status_check": {
+          "name": "product_videos_status_check",
+          "value": "status in ('processing', 'ready', 'failed')"
+        },
+        "product_videos_ready_check": {
+          "name": "product_videos_ready_check",
+          "value": "status <> 'ready' or (duration_ms is not null and width is not null and height is not null)"
+        },
+        "product_videos_failed_check": {
+          "name": "product_videos_failed_check",
+          "value": "(status = 'failed') = (failure_reason is not null)"
+        },
+        "product_videos_size_check": {
+          "name": "product_videos_size_check",
+          "value": "duration_ms > 0 and width > 0 and height > 0"
         }
       },
       "isRLSEnabled": true
@@ -6072,7 +6256,7 @@
           "name": "updated_by",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "published_at": {
           "name": "published_at",
@@ -6455,12 +6639,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "author_name": {
-          "name": "author_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "title": {
           "name": "title",
           "type": "text",
@@ -6505,33 +6683,6 @@
               "asc": true,
               "nulls": "last"
             },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "reviews_status_created_at_idx": {
-          "name": "reviews_status_created_at_idx",
-          "columns": [
             {
               "expression": "status",
               "isExpression": false,
@@ -6662,10 +6813,6 @@
         "reviews_rating_check": {
           "name": "reviews_rating_check",
           "value": "rating between 1 and 5"
-        },
-        "reviews_author_name_check": {
-          "name": "reviews_author_name_check",
-          "value": "length(author_name) between 1 and 50"
         },
         "reviews_status_check": {
           "name": "reviews_status_check",
