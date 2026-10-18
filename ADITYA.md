@@ -39,7 +39,7 @@ Before implementing a feature, read:
 - [x] Applied all 10 migrations with `pnpm db:migrate`; database users, pg-boss, and job queues are ready.
 - [x] Seeded example settings, sellers, categories, and brands with `pnpm db:seed`.
 - [x] Verified that `pnpm dev` starts the web app and worker successfully.
-- [x] Confirmed that `http://localhost:3000/api/health` returns HTTP 200 with the database healthy.
+- [x] Confirmed that `http://localhost:3210/api/health` returns HTTP 200 with the database healthy.
 - [x] Ran `pnpm check`: formatting, lint, type checking, 342 tests, and the production build pass.
 
 Mailpit is at `http://localhost:8025` and captures local sign-in codes.

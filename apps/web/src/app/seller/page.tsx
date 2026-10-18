@@ -1,11 +1,10 @@
 import { getOwnSeller } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
 import { LinkButton } from '@/components/ui/button'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
 import { getDatabase } from '@/lib/db'
-import { requireSeller } from '@/lib/request-context'
+import { requireSellerPageContext } from '@/lib/page-auth'
 import { sellerStatusPresentation } from '@/lib/seller-profile'
 
 export const metadata: Metadata = {
@@ -13,8 +12,7 @@ export const metadata: Metadata = {
 }
 
 export default async function SellerPage() {
-  const requestHeaders = await headers()
-  const { context } = await requireSeller(requestHeaders)
+  const context = await requireSellerPageContext('/seller')
   const seller = await getOwnSeller(getDatabase(), context)
   const status = sellerStatusPresentation(seller.status)
 

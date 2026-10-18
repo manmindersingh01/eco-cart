@@ -1,11 +1,10 @@
 import { getOwnProduct, NotFoundError, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { ProductEditor } from '@/components/seller/product-editor'
 import { getDatabase } from '@/lib/db'
+import { requireSellerPageContext } from '@/lib/page-auth'
 import type { SellerProduct } from '@/lib/product-editor'
-import { requireSeller } from '@/lib/request-context'
 import { getStorage } from '@/lib/storage'
 
 export const metadata: Metadata = {
@@ -16,8 +15,7 @@ export default async function SellerProductPage({
   params,
 }: PageProps<'/seller/products/[id]'>) {
   const { id } = await params
-  const requestHeaders = await headers()
-  const { context } = await requireSeller(requestHeaders)
+  const context = await requireSellerPageContext('/seller/products')
   let product
   try {
     product = await withContext(getDatabase(), context, (tx) =>

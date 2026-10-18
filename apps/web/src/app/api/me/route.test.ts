@@ -19,7 +19,7 @@ afterAll(async () => {
 
 const me = (cookie?: string) =>
   GET(
-    new Request('http://localhost:3000/api/me', {
+    new Request('http://localhost:3210/api/me', {
       headers: cookie ? { cookie } : {},
     }),
   )

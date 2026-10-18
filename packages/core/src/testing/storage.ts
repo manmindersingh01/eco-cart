@@ -12,7 +12,7 @@ export async function recreateTestBucket(
   const config = loadStorageConfig({ NODE_ENV: 'test', ...env })
   const client = createS3Client(config)
   try {
-    await prepareLocalBucket(config, ['http://localhost:3000'], client)
+    await prepareLocalBucket(config, ['http://localhost:3210'], client)
     let token: string | undefined
     do {
       const page = await client.send(

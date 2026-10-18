@@ -46,11 +46,11 @@ It never overwrites what already exists.
 Read them at http://localhost:8025, for example the code when you sign in.
 It also starts SeaweedFS, an S3-compatible object store that stands in for the S3 bucket and CloudFront, and creates the `ecokart` bucket.
 Product photos load from http://localhost:8333/ecokart/images/....
-Browsers may upload photos to it only from the addresses in `STORAGE_CORS_ORIGINS` in `packages/core/.env`, so add yours there and run `pnpm db:up` again if the web app runs somewhere other than http://localhost:3000.
+Browsers may upload photos to it only from the addresses in `STORAGE_CORS_ORIGINS` in `packages/core/.env`, so add yours there and run `pnpm db:up` again if the web app runs somewhere other than http://localhost:3210.
 To make yourself an administrator, run `pnpm admin:create --email you@example.com --name "Your Name"` and sign in with that email.
 
-Then open http://localhost:3000.
-The health check at http://localhost:3000/api/health shows whether the web app can reach the database.
+Then open http://localhost:3210.
+The health check at http://localhost:3210/api/health shows whether the web app can reach the database.
 
 The local database listens on port 15434, so it avoids Windows excluded port ranges and does not clash with a PostgreSQL server already running on 5432.
 To use another port, set `POSTGRES_PORT` before `pnpm db:up`, change the database URLs in all three `.env` files to match, and set `TEST_DATABASE_SERVER_URL` (for example `postgres://ecokart:ecokart@localhost:5435/postgres`) when running tests.

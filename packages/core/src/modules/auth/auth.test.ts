@@ -36,7 +36,7 @@ const connect = (url: string) => {
 const web = connect(requireEnv('DATABASE_URL'))
 const owner = connect(requireEnv('MIGRATION_DATABASE_URL'))
 
-const baseURL = 'http://localhost:3000'
+const baseURL = 'http://localhost:3210'
 const config: AuthConfig = {
   baseURL,
   secret: 'test-secret-for-sessions-0123456789abcdef',

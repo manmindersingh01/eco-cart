@@ -1,10 +1,9 @@
 import { getSeller, NotFoundError } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { SellerDetailManager } from '@/components/admin/seller-detail-manager'
 import type { SellerDetail } from '@/lib/admin-sellers'
-import { requireAdmin } from '@/lib/request-context'
+import { requireAdminPageContext } from '@/lib/page-auth'
 import { getSellerServices } from '@/lib/sellers'
 
 export const metadata: Metadata = {
@@ -15,8 +14,7 @@ export default async function SellerDetailPage({
   params,
 }: PageProps<'/admin/sellers/[id]'>) {
   const { id } = await params
-  const requestHeaders = await headers()
-  const { context } = await requireAdmin(requestHeaders)
+  const context = await requireAdminPageContext('/admin/sellers')
   let seller
   try {
     seller = await getSeller(getSellerServices(), context, id)

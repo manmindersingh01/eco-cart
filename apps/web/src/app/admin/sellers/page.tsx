@@ -1,7 +1,6 @@
 import { listSellers, ValidationError } from '@ecokart/core'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { headers } from 'next/headers'
 import { SellerPagination } from '@/components/admin/seller-pagination'
 import { LinkButton } from '@/components/ui/button'
 import {
@@ -20,7 +19,7 @@ import {
 } from '@/lib/admin-sellers'
 import { getDatabase } from '@/lib/db'
 import { formatIndianDate } from '@/lib/format'
-import { requireAdmin } from '@/lib/request-context'
+import { requireAdminPageContext } from '@/lib/page-auth'
 
 export const metadata: Metadata = {
   title: 'Sellers | EcoKart',
@@ -45,6 +44,7 @@ export default async function AdminSellersPage({
   searchParams,
 }: PageProps<'/admin/sellers'>) {
   const query = await searchParams
+  const context = await requireAdminPageContext('/admin/sellers')
   const rawStatus = typeof query.status === 'string' ? query.status : undefined
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined
   const status = isSellerStatus(rawStatus) ? rawStatus : undefined
@@ -55,8 +55,6 @@ export default async function AdminSellersPage({
   if (rawStatus && !status) {
     error = 'The seller status filter must be pending, approved, or suspended.'
   } else {
-    const requestHeaders = await headers()
-    const { context } = await requireAdmin(requestHeaders)
     try {
       const page = await listSellers(getDatabase(), context, {
         ...(status ? { status } : {}),

@@ -128,7 +128,7 @@ Manual evidence: Pending for browser layout, interaction, focus, and visual chec
 ### Manual verification steps
 
 1. Run `pnpm dev` and sign in as `auth-check-admin@ecokart.test` using the newest code in Mailpit at `http://localhost:8025`.
-2. Open `http://localhost:3000/admin` in the latest Chrome at a desktop width of at least 1280 pixels.
+2. Open `http://localhost:3210/admin` in the latest Chrome at a desktop width of at least 1280 pixels.
 3. Confirm the shell shows the signed-in administrator, Overview and Platform settings navigation, sign-out, and one delivered Platform settings tool card.
 4. Open `/admin/settings` and confirm all nine setting cards appear under Commerce, Payments, AI limits, Moderation, and Company details.
 5. Confirm every card shows a source badge, description, current editor, separate Save this setting button, and last-saved time.

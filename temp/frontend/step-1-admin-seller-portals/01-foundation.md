@@ -107,7 +107,7 @@ Manual evidence, 8 October 2026:
 
 ### Manual verification steps
 
-1. Run `pnpm dev` and wait until Next.js reports `http://localhost:3000` as ready.
+1. Run `pnpm dev` and wait until Next.js reports `http://localhost:3210` as ready.
 2. In Chrome, open `/`, `/admin`, and `/seller` at a 390 by 844 pixel phone viewport.
 3. Repeat the three routes at a 1280 pixel or wider desktop viewport.
 4. Confirm there is no horizontal page overflow, clipped text, overlapping content, or control smaller than 44 pixels high.

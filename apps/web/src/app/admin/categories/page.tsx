@@ -1,11 +1,10 @@
 import { getFullCategoryTree, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
 import { CategoryManager } from '@/components/admin/category-manager'
 import { PageHeader } from '@/components/ui/page-header'
 import type { CategoryNode } from '@/lib/admin-catalogue'
 import { getDatabase } from '@/lib/db'
-import { requireAdmin } from '@/lib/request-context'
+import { requireAdminPageContext } from '@/lib/page-auth'
 
 export const metadata: Metadata = {
   title: 'Categories | EcoKart',
@@ -23,8 +22,7 @@ function serialiseCategory(
 }
 
 export default async function AdminCategoriesPage() {
-  const requestHeaders = await headers()
-  const { context } = await requireAdmin(requestHeaders)
+  const context = await requireAdminPageContext('/admin/categories')
   const categories = await withContext(getDatabase(), context, (tx) =>
     getFullCategoryTree(tx, context),
   )

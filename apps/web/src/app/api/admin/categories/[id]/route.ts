@@ -1,6 +1,8 @@
 import { deleteCategory, updateCategory, withContext } from '@ecokart/core'
+import { revalidateTag } from 'next/cache'
 import { clientIp, handleErrors, readJsonBody } from '@/lib/api'
 import { getDatabase } from '@/lib/db'
+import { PUBLIC_CATEGORY_TAG } from '@/lib/public-catalogue'
 import { requireAdmin } from '@/lib/request-context'
 
 /** Changes a category; a new `parentId` moves it with its subcategories. */
@@ -15,6 +17,7 @@ export const PATCH = handleErrors(
     const category = await withContext(getDatabase(), context, (tx) =>
       updateCategory(tx, context, id, input, clientIp(request)),
     )
+    revalidateTag(PUBLIC_CATEGORY_TAG, 'max')
     return Response.json({ category })
   },
 )
@@ -30,6 +33,7 @@ export const DELETE = handleErrors(
     await withContext(getDatabase(), context, (tx) =>
       deleteCategory(tx, context, id, clientIp(request)),
     )
+    revalidateTag(PUBLIC_CATEGORY_TAG, 'max')
     return new Response(null, { status: 204 })
   },
 )

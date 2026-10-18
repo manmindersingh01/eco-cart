@@ -1,6 +1,8 @@
 import { deleteBrand, updateBrand, withContext } from '@ecokart/core'
+import { revalidateTag } from 'next/cache'
 import { clientIp, handleErrors, readJsonBody } from '@/lib/api'
 import { getDatabase } from '@/lib/db'
+import { PUBLIC_BRAND_TAG } from '@/lib/public-catalogue'
 import { requireAdmin } from '@/lib/request-context'
 
 /** Changes a brand's name, slug, or whether it is active. */
@@ -12,6 +14,7 @@ export const PATCH = handleErrors(
     const brand = await withContext(getDatabase(), context, (tx) =>
       updateBrand(tx, context, id, input, clientIp(request)),
     )
+    revalidateTag(PUBLIC_BRAND_TAG, 'max')
     return Response.json({ brand })
   },
 )
@@ -24,6 +27,7 @@ export const DELETE = handleErrors(
     await withContext(getDatabase(), context, (tx) =>
       deleteBrand(tx, context, id, clientIp(request)),
     )
+    revalidateTag(PUBLIC_BRAND_TAG, 'max')
     return new Response(null, { status: 204 })
   },
 )

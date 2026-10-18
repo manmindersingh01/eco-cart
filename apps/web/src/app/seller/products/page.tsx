@@ -1,7 +1,6 @@
 import { listOwnProducts, ValidationError, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { headers } from 'next/headers'
 import { ProductPagination } from '@/components/seller/product-pagination'
 import { LinkButton } from '@/components/ui/button'
 import {
@@ -13,7 +12,7 @@ import { EmptyState, Notice, StatusBadge } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
 import { getDatabase } from '@/lib/db'
 import { formatIndianDate, formatInr, formatStatusLabel } from '@/lib/format'
-import { requireSeller } from '@/lib/request-context'
+import { requireSellerPageContext } from '@/lib/page-auth'
 import {
   isProductStatus,
   productListHref,
@@ -73,6 +72,7 @@ export default async function SellerProductsPage({
   searchParams,
 }: PageProps<'/seller/products'>) {
   const query = await searchParams
+  const context = await requireSellerPageContext('/seller/products')
   const rawStatus = typeof query.status === 'string' ? query.status : undefined
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined
   const created = typeof query.created === 'string' ? query.created : undefined
@@ -87,8 +87,6 @@ export default async function SellerProductsPage({
       .flatMap((filter) => (filter.status ? [filter.status] : []))
       .join(', ')}.`
   } else {
-    const requestHeaders = await headers()
-    const { context } = await requireSeller(requestHeaders)
     try {
       const page = await withContext(getDatabase(), context, (tx) =>
         listOwnProducts(tx, getStorage(), context, {

@@ -179,7 +179,7 @@ describe('refusals', () => {
 
   test('400 for a body that is not JSON', async () => {
     const response = await create(
-      new Request('http://localhost:3000/api/admin/categories', {
+      new Request('http://localhost:3210/api/admin/categories', {
         method: 'POST',
         headers: { cookie: adminCookie },
         body: 'name=Home',

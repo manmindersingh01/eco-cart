@@ -1,12 +1,11 @@
 import { listSettings, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
 import { SettingsEditor } from '@/components/admin/settings-editor'
 import { Notice } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
 import type { AdminSetting } from '@/lib/admin-settings'
 import { getDatabase } from '@/lib/db'
-import { requireAdmin } from '@/lib/request-context'
+import { requireAdminPageContext } from '@/lib/page-auth'
 
 export const metadata: Metadata = {
   title: 'Platform settings | EcoKart',
@@ -15,8 +14,7 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic'
 
 export default async function AdminSettingsPage() {
-  const requestHeaders = await headers()
-  const { context } = await requireAdmin(requestHeaders)
+  const context = await requireAdminPageContext('/admin/settings')
   const settings = await withContext(getDatabase(), context, (tx) =>
     listSettings(tx, context),
   )

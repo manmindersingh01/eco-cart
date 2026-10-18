@@ -265,7 +265,7 @@ async function seedSellers(db: Database): Promise<string[]> {
         throw new Error('The seed sends no messages')
       },
       config: {
-        baseURL: 'http://localhost:3000',
+        baseURL: 'http://localhost:3210',
         secret: 'development-only-seed-secret-never-signs-sessions',
         encryptionKey: randomBytes(32),
         smsOtpEnabled: false,

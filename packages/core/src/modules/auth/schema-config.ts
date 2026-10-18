@@ -13,7 +13,7 @@ function notForRuntime(): never {
 
 export const auth = createAuth({
   db: drizzle.mock(),
-  baseURL: 'http://localhost:3000',
+  baseURL: 'http://localhost:3210',
   secret: 'schema-generation-only-not-a-real-secret',
   // On, so the generated schema includes everything phone sign-in needs.
   smsOtpEnabled: true,

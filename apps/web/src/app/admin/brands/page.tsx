@@ -1,11 +1,10 @@
 import { listAllBrands, ValidationError, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
 import { BrandManager } from '@/components/admin/brand-manager'
 import { PageHeader } from '@/components/ui/page-header'
 import type { Brand } from '@/lib/admin-catalogue'
 import { getDatabase } from '@/lib/db'
-import { requireAdmin } from '@/lib/request-context'
+import { requireAdminPageContext } from '@/lib/page-auth'
 
 export const metadata: Metadata = {
   title: 'Brands | EcoKart',
@@ -17,8 +16,7 @@ export default async function AdminBrandsPage({
   const params = await searchParams
   const query = typeof params.q === 'string' ? params.q : ''
   const cursor = typeof params.cursor === 'string' ? params.cursor : undefined
-  const requestHeaders = await headers()
-  const { context } = await requireAdmin(requestHeaders)
+  const context = await requireAdminPageContext('/admin/brands')
   let items: Brand[] = []
   let nextCursor: string | null = null
   let error: string | undefined

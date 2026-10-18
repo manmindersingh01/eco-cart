@@ -1,6 +1,8 @@
 import { createCategory, getFullCategoryTree, withContext } from '@ecokart/core'
+import { revalidateTag } from 'next/cache'
 import { clientIp, handleErrors, readJsonBody } from '@/lib/api'
 import { getDatabase } from '@/lib/db'
+import { PUBLIC_CATEGORY_TAG } from '@/lib/public-catalogue'
 import { requireAdmin } from '@/lib/request-context'
 
 /** The whole category tree, including inactive categories. */
@@ -19,5 +21,6 @@ export const POST = handleErrors(async (request: Request) => {
   const category = await withContext(getDatabase(), context, (tx) =>
     createCategory(tx, context, input, clientIp(request)),
   )
+  revalidateTag(PUBLIC_CATEGORY_TAG, 'max')
   return Response.json({ category }, { status: 201 })
 })

@@ -41,7 +41,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   For SQL that Drizzle cannot express (grants, triggers, functions), use `pnpm --filter @ecokart/core exec drizzle-kit generate --custom --name=<name>` and fill in the file.
 - Regenerate the Better Auth tables after changing its plugins: `pnpm auth:schema`, then `pnpm db:generate`
 - First administrator: `pnpm admin:create --email <email> --name <name>`, then sign in with the code that arrives in Mailpit
-- Web app and worker together: `pnpm dev` (web on http://localhost:3000)
+- Web app and worker together: `pnpm dev` (web on http://localhost:3210)
 - Worker only: `pnpm --filter @ecokart/worker dev`
 - Everything CI runs, in order: `pnpm check` (format check, lint, typecheck, test, build)
 - Single steps: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm format`

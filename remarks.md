@@ -1,0 +1,4 @@
+- Documentation uploading by seller.
+- Product should have minimum buying quantity. they cannot buy just 1 product of 50 rs. it's too low. They should buy at least 
+- Sellers
+- Photos  1 video, 1 photo and 3 sub photos

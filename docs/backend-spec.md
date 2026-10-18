@@ -193,7 +193,7 @@ The five Better Auth tables (including `auth_rate_limits`) also have none, as th
 ### Done when
 
 - `pnpm db:up` then `pnpm db:migrate` builds every table on an empty database, and running `pnpm db:migrate` again reports that nothing changed.
-- `pnpm dev` starts the web app and the worker with their own database users, and `http://localhost:3000/api/health` reports the database as ok.
+- `pnpm dev` starts the web app and the worker with their own database users, and `http://localhost:3210/api/health` reports the database as ok.
 - The tests prove the row-level security rules for anonymous visitors, buyers, sellers, administrators, guests, and the worker, and that every table follows the schema rules.
 - `pnpm check` passes.
 
