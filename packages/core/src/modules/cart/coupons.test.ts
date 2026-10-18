@@ -67,6 +67,12 @@ const auditFor = (couponId: string) =>
     )
     .orderBy(auditLogs.id)
 
+const DAY = 24 * 60 * 60 * 1000
+/** A time `days` from now, so the sale below never runs out of date. */
+const inDays = (days: number) => new Date(Date.now() + days * DAY)
+const saleStart = inDays(1)
+const saleEnd = inDays(17)
+
 const diwali = (code: string) => ({
   code,
   description: 'Diwali sale',
@@ -76,8 +82,8 @@ const diwali = (code: string) => ({
   maxDiscountPaise: 30_000,
   usageLimit: 1_000,
   perUserLimit: 1,
-  startsAt: '2026-10-20T00:00:00+05:30',
-  endsAt: '2026-11-05T00:00:00+05:30',
+  startsAt: saleStart.toISOString(),
+  endsAt: saleEnd.toISOString(),
 })
 
 describe('createCoupon', () => {
@@ -91,7 +97,7 @@ describe('createCoupon', () => {
       usedCount: 0,
       isActive: true,
       createdBy: admin.userId,
-      startsAt: new Date('2026-10-19T18:30:00.000Z'),
+      startsAt: saleStart,
     })
     const [entry] = await auditFor(coupon.id)
     expect(entry).toMatchObject({
@@ -149,7 +155,7 @@ describe('createCoupon', () => {
     ],
     [
       'an end before the start',
-      { endsAt: '2026-10-19T00:00:00+05:30' },
+      { endsAt: inDays(0.5).toISOString() },
       ['endsAt must be after startsAt'],
     ],
     [

@@ -617,6 +617,7 @@ orders
   created_at, updated_at
   INDEX (user_id, created_at DESC, id DESC)
   INDEX (status, created_at, id)
+  INDEX (created_at DESC, id DESC)     the administrators' list of every order
 
 order_items
   id                    uuid PK
@@ -1021,7 +1022,7 @@ This is the flow that has to be correct under concurrency, so it is spelled out 
 7. `confirmOrderPayment` runs in one transaction: mark the payment captured, mark the order confirmed, write ledger entries for each seller (sale and commission), queue one invoice per seller, queue the order-placed and payment-received emails, and revalidate product caches.
 8. A scheduled job every five minutes cancels orders still `pending_payment` after the configured timeout and restores stock and coupon usage. If a capture webhook arrives for an order that was already cancelled, the payment is stored as captured and the order is flagged in the admin console for a manual refund.
 
-Cash on delivery skips steps 3 to 6 and confirms immediately. Its payment row is marked captured when the seller marks the shipment delivered.
+Cash on delivery skips steps 3 to 6 and confirms immediately. Its payment row is marked captured when the seller marks the shipment delivered; for an order from several sellers, when the last parcel is delivered and the order completes.
 
 ### 6.4 Dispatch, delivery, and cancellation
 

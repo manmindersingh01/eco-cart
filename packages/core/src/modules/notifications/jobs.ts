@@ -7,12 +7,16 @@ import { openSecret } from '../../lib/encryption.ts'
 import type { QueueDefinition } from '../../lib/queue.ts'
 import type { SmsSender } from '../../lib/sms.ts'
 import {
+  renderCancelledEmail,
+  renderDispatchedEmail,
   renderOrderPlacedEmail,
   renderOtpEmail,
   renderOtpSms,
   renderPaymentReceivedEmail,
 } from './templates.ts'
 import {
+  cancelledPayload,
+  dispatchedPayload,
   orderPlacedPayload,
   otpEmailPayload,
   otpSmsJob,
@@ -77,6 +81,14 @@ const RENDERERS: Partial<
   payment_received: (payload) => {
     const parsed = paymentReceivedPayload.safeParse(payload)
     return parsed.success ? renderPaymentReceivedEmail(parsed.data) : null
+  },
+  dispatched: (payload) => {
+    const parsed = dispatchedPayload.safeParse(payload)
+    return parsed.success ? renderDispatchedEmail(parsed.data) : null
+  },
+  cancelled: (payload) => {
+    const parsed = cancelledPayload.safeParse(payload)
+    return parsed.success ? renderCancelledEmail(parsed.data) : null
   },
 }
 

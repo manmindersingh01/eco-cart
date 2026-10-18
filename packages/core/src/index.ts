@@ -370,3 +370,34 @@ export {
   type Razorpay,
   type RazorpayConfig,
 } from './lib/razorpay.ts'
+// Orders after checkout (backend spec step 13).
+export {
+  cancelOrderAsAdmin,
+  cancelOwnOrder,
+  dispatchLines,
+  markShipmentDelivered,
+} from './modules/orders/fulfilment.ts'
+export {
+  findVerifiedPurchase,
+  getAdminOrder,
+  getBuyerOrder,
+  getSellerOrder,
+  listAdminOrders,
+  listBuyerOrders,
+  listSellerOrders,
+} from './modules/orders/views.ts'
+export type {
+  AdminOrderSummary,
+  AdminOrderView,
+  BuyerOrderSummary,
+  BuyerOrderView,
+  DispatchRequest,
+  OrderLineView,
+  OrderProgress,
+  PaymentState,
+  SellerOrderSummary,
+  SellerOrderTab,
+  SellerOrderView,
+  ShipmentView,
+  VerifiedPurchase,
+} from './modules/orders/types.ts'
