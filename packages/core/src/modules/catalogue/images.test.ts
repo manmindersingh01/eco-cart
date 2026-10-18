@@ -26,6 +26,7 @@ import {
   updateImage,
 } from './images.ts'
 import { processUploadedImage } from './jobs.ts'
+import { submitProduct } from './moderation.ts'
 import { createProduct, getOwnProduct, type SellerContext } from './products.ts'
 import type { ImageUpload, ProductView } from './types.ts'
 
@@ -216,7 +217,7 @@ describe('adding a photo', () => {
       ids.push(await addPhoto(product))
     await expect(requestUpload(product)).rejects.toThrow(
       new ConflictError(
-        'A product can have at most 10 photos; remove one first',
+        'A product can have at most 4 photos; remove one first',
       ),
     )
     // A photo that failed makes room again.
@@ -410,6 +411,27 @@ describe('arranging photos', () => {
         ),
       ),
     ).toEqual(['imageIds must list every photo of the product exactly once'])
+  })
+
+  test('a main photo that could not be used stops the listing until another photo is put first', async () => {
+    const product = await newProduct()
+    const broken = await addPhoto(product, Buffer.from('not a photo'))
+    const good = await addPhoto(product, await phonePhoto())
+    for (const id of [broken, good]) {
+      await processUploadedImage({ db: worker, storage }, id)
+    }
+    const submit = () =>
+      as(seller, (tx) => submitProduct(tx, storage, queue, seller, product.id))
+    expect(await validationIssues(submit())).toEqual([
+      'The main photo could not be used; remove it or put another photo first',
+    ])
+
+    await as(seller, (tx) =>
+      setImageOrder(tx, storage, seller, product.id, {
+        imageIds: [good, broken],
+      }),
+    )
+    expect((await submit()).status).toBe('pending_review')
   })
 
   test('changes alt text and the variant a photo shows', async () => {

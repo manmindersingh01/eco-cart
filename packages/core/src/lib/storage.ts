@@ -17,8 +17,9 @@ import { parseEnv, secretString } from './config.ts'
  *
  * Keys are grouped by who may read them:
  * - images/...    public product photo sizes, served through CloudFront
+ * - videos/...    public product videos and their posters, the same way
  * - uploads/...   files as the browser sent them, read only by the worker
- * - originals/... private copies of accepted photos
+ * - originals/... private copies of accepted photos and videos
  * - invoices/...  invoice PDFs, downloaded through short-lived signed links
  */
 
@@ -29,7 +30,10 @@ export interface StorageConfig {
   endpoint: string | undefined
   /** Left out in production, where the ECS task role signs requests. */
   credentials: { accessKeyId: string; secretAccessKey: string } | undefined
-  /** Where `images/...` keys are served from: CloudFront in production. */
+  /**
+   * Where `images/...` and `videos/...` keys are served from: CloudFront in
+   * production.
+   */
   publicUrl: string
 }
 
@@ -119,7 +123,7 @@ export interface ObjectStorage {
   ): Promise<void>
   /** Removes the object; nothing happens when it does not exist. */
   remove(key: string): Promise<void>
-  /** The public address of an `images/...` key. */
+  /** The public address of an `images/...` or `videos/...` key. */
   publicUrl(key: string): string
 }
 

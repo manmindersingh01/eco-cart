@@ -58,8 +58,9 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 
 - Follow the layout in design doc section 4: routes in `apps/web/src/app/`, business logic in `packages/core/src/modules/<domain>/` (`service.ts`, `queries.ts`, `jobs.ts`, `types.ts`), schema in `packages/core/src/db/schema/`, SQL migrations in `packages/core/src/db/migrations/`, worker job registration in `apps/worker/src/worker.ts`, external clients in `packages/core/src/lib/`.
 - The worker runs `packages/core` and its own code as TypeScript directly on Node.js, so use only type-level TypeScript syntax (no `enum`, `namespace`, or constructor parameter properties) and import local files with their `.ts` extension.
-- Code that only the worker runs and that loads heavy libraries (the image library `sharp`, the PDF library `pdfmake`) is exported from `@ecokart/core/worker`, never from `@ecokart/core`, so the web app never loads it.
+- Code that only the worker runs and that loads heavy libraries (the image library `sharp`, the PDF library `pdfmake`) or runs programs (ffmpeg and ffprobe for product videos) is exported from `@ecokart/core/worker`, never from `@ecokart/core`, so the web app never loads it.
 - The worker refuses to start while a queue in `packages/core/src/jobs.ts` is missing, so a deploy that skipped `pnpm db:migrate` fails loudly.
+  It also refuses to start without ffmpeg and ffprobe (on the `PATH`, or at `FFMPEG_PATH` and `FFPROBE_PATH`), so the worker's Docker image must install them.
 - Pages, server actions, and API routes call module services.
   They never write SQL themselves.
 - Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, conflict, validation, not configured, too many requests), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
@@ -77,7 +78,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Do not add Redis, Elasticsearch, a separate vector database, or another queue.
   Postgres covers all of these at launch, and section 9 of the design doc says when that changes.
 - Uploads go straight from the browser to object storage with a signed POST form (`ObjectStorage.createUploadForm`).
-  Files never pass through the web app, and the worker checks and re-encodes every photo before it is shown, so nothing a browser sent is ever served as it arrived.
+  Files never pass through the web app, and the worker checks and re-encodes every photo and video before it is shown, so nothing a browser sent is ever served as it arrived.
 - Public pages (home, category, product, content) use tag-based caching and must revalidate their tag when the product or category changes.
   Personal pages (cart, orders, seller portal, admin) are never cached.
 
@@ -158,7 +159,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Email codes are stored hashed (`storeOTP: "hashed"`); phone codes are not yet, and must be before SMS goes live (backend spec step 2).
   The OTP delivery callbacks only queue the email or SMS; they never send inline.
 - Object storage buckets are private, and every download of a private file (originals, imports, invoices, return photos) is a short-lived signed URL.
-  Only the product photo sizes under `images/` are public, served through CloudFront.
+  Only the product photo sizes under `images/` and the converted product videos under `videos/` are public, served through CloudFront.
 
 ## AI features
 

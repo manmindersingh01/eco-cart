@@ -74,6 +74,9 @@ jobs:
           cache: true
           require-lockfile: true
 
+      # The worker converts product videos with ffmpeg, and its tests run it.
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends ffmpeg
+
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck

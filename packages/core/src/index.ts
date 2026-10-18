@@ -112,6 +112,17 @@ export {
   setImageOrder,
   updateImage,
 } from './modules/catalogue/images.ts'
+export {
+  addVideo,
+  createVideoUpload,
+  PROCESS_VIDEO_QUEUE,
+  removeVideo,
+} from './modules/catalogue/videos.ts'
+export {
+  MAX_VIDEO_SECONDS,
+  MAX_VIDEO_UPLOAD_BYTES,
+  VIDEO_CONTENT_TYPES,
+} from './lib/videos.ts'
 export type {
   ImageUpload,
   ImageView,
@@ -121,6 +132,7 @@ export type {
   ProductSummary,
   ProductView,
   VariantView,
+  VideoView,
 } from './modules/catalogue/types.ts'
 export {
   approveProduct,
