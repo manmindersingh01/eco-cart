@@ -18,10 +18,12 @@ import {
   brands,
   productImages,
   productVariants,
+  productVideos,
   products,
 } from '../../db/schema/index.ts'
 import { NotFoundError, ValidationError } from '../../errors.ts'
 import { imageSizeKey, type ImageSize } from '../../lib/images.ts'
+import { videoFileKey, videoPosterKey } from '../../lib/videos.ts'
 import {
   afterKeyCursor,
   encodeKeyCursor,
@@ -52,6 +54,7 @@ import {
   type ProductFilters,
   type PublicImage,
   type PublicProduct,
+  type PublicVideo,
   type StorefrontSort,
 } from './storefront-types.ts'
 import { MAX_PRICE_PAISE, type CategoryView } from './types.ts'
@@ -97,6 +100,24 @@ function onSale(tree: Tree): SQL[] {
     sellerIsApproved(products.sellerId),
     ...(hidden.length > 0 ? [notInArray(products.categoryId, hidden)] : []),
   ]
+}
+
+function publicVideo(
+  photos: PhotoAddresses,
+  video: typeof productVideos.$inferSelect,
+): PublicVideo {
+  const { width, height, durationMs } = video
+  // The ready check in the database makes these always present.
+  if (width === null || height === null || durationMs === null) {
+    throw new Error(`Ready video ${video.id} has no size`)
+  }
+  return {
+    url: photos.publicUrl(videoFileKey(video.storageKey)),
+    posterUrl: photos.publicUrl(videoPosterKey(video.storageKey)),
+    width,
+    height,
+    durationMs,
+  }
 }
 
 function publicImage(
@@ -269,6 +290,7 @@ export async function listPublicProducts(
       inStock: products.inStock,
       ratingAvg: products.ratingAvg,
       ratingCount: products.ratingCount,
+      minOrderQuantity: products.minOrderQuantity,
       brandName: brands.name,
       brandSlug: brands.slug,
       imageId: productImages.id,
@@ -330,6 +352,7 @@ export async function listPublicProducts(
         inStock: row.inStock === true,
         ratingAvg: Number(row.ratingAvg),
         ratingCount: row.ratingCount,
+        minOrderQuantity: row.minOrderQuantity,
         image:
           row.imageId !== null && row.imageKey !== null
             ? publicImage(photos, {
@@ -481,6 +504,7 @@ export async function getPublicProduct(
       inStock: products.inStock,
       ratingAvg: products.ratingAvg,
       ratingCount: products.ratingCount,
+      minOrderQuantity: products.minOrderQuantity,
       publishedAt: products.publishedAt,
       brandId: brands.id,
       brandName: brands.name,
@@ -533,6 +557,20 @@ export async function getPublicProduct(
       asc(productImages.createdAt),
       asc(productImages.id),
     )
+  const [video] = await tx
+    .select()
+    .from(productVideos)
+    .where(
+      and(
+        eq(productVideos.productId, row.id),
+        eq(productVideos.status, 'ready'),
+      ),
+    )
+  // A variant with fewer left than the minimum order cannot be bought.
+  const publicVariants = variants.map(({ stock, ...variant }) => ({
+    ...variant,
+    inStock: stock >= row.minOrderQuantity,
+  }))
 
   return {
     id: row.id,
@@ -552,15 +590,14 @@ export async function getPublicProduct(
     minPricePaise: row.minPricePaise,
     maxPricePaise: row.maxPricePaise,
     minMrpPaise: row.minMrpPaise,
-    inStock: row.inStock === true,
+    inStock: publicVariants.some((variant) => variant.inStock),
     ratingAvg: Number(row.ratingAvg),
     ratingCount: row.ratingCount,
+    minOrderQuantity: row.minOrderQuantity,
     publishedAt: row.publishedAt,
-    variants: variants.map(({ stock, ...variant }) => ({
-      ...variant,
-      inStock: stock > 0,
-    })),
+    variants: publicVariants,
     images: images.map((image) => publicImage(photos, image)),
+    video: video ? publicVideo(photos, video) : null,
   }
 }
 
