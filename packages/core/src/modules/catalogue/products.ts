@@ -296,6 +296,7 @@ export async function readProductView(
     highlights: product.highlights,
     attributes: product.attributes,
     optionNames: product.optionNames,
+    minOrderQuantity: product.minOrderQuantity,
     hsnCode: product.hsnCode,
     gstRateBps: product.gstRateBps,
     category: {
@@ -366,6 +367,7 @@ export async function createProduct(
       highlights: details.highlights ?? [],
       attributes: details.attributes ?? {},
       optionNames,
+      minOrderQuantity: details.minOrderQuantity ?? 1,
       hsnCode: details.hsnCode ?? null,
       status: 'draft',
     })
@@ -449,6 +451,7 @@ export async function listOwnProducts(
       minPricePaise: products.minPricePaise,
       maxPricePaise: products.maxPricePaise,
       totalStock: products.totalStock,
+      minOrderQuantity: products.minOrderQuantity,
       thumbnailKey: productImages.storageKey,
       createdAt: products.createdAt,
       updatedAt: products.updatedAt,
@@ -494,7 +497,8 @@ const lockVariants = (tx: Transaction, productId: string) =>
 
 /**
  * Changes listing details of a draft or rejected product. New option names
- * rename the old ones in order, in every variant too.
+ * rename the old ones in order, in every variant too. The minimum buying
+ * quantity alone may change at any time, like a price.
  */
 export async function updateProduct(
   tx: Transaction,
@@ -509,7 +513,9 @@ export async function updateProduct(
     throw new ValidationError('There is nothing to change')
   }
   const current = await lockOwnProduct(tx, context, productId)
-  assertEditable(current)
+  if (Object.keys(changes).some((field) => field !== 'minOrderQuantity')) {
+    assertEditable(current)
+  }
   const renamed = changes.optionNames
   throwIfAny(INVALID, [
     changes.categoryId !== undefined &&
