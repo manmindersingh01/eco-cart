@@ -74,4 +74,14 @@ describe('checkWebSettings', () => {
       }),
     ).toThrow('AI_API_KEY is required when AI_ENABLED is true')
   })
+
+  test('stops when only some Razorpay keys are set', () => {
+    expect(() =>
+      checkWebSettings({
+        NODE_ENV: 'production',
+        ...realValues,
+        RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456',
+      }),
+    ).toThrow('must be set together, or none of them')
+  })
 })

@@ -8,8 +8,10 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../errors.ts'
+import { stateName } from '../../lib/states.ts'
 import { describeIssues, plainErrors } from '../../lib/validation.ts'
 import { recordAuditEntry } from '../audit/service.ts'
+import { invalidateStorefront } from '../catalogue/storefront-cache.ts'
 import {
   isSettingKey,
   settingDefinitions,
@@ -142,6 +144,10 @@ export async function updateSetting(
     })
     .returning()
 
+  if (key === 'company_details') {
+    // The storefront footer shows them (step 16).
+    await invalidateStorefront(tx, 'company')
+  }
   await recordAuditEntry(tx, {
     actorUserId: userId,
     actorRole: context.role === 'admin' ? 'admin' : 'system',
@@ -160,5 +166,45 @@ export async function updateSetting(
     source: 'saved',
     updatedAt: row!.updatedAt,
     updatedBy: row!.updatedBy,
+  }
+}
+
+/** The company details the storefront footer shows: all but the PAN. */
+export interface PublicCompanyDetails {
+  legalName: string
+  displayName: string
+  gstin: string
+  address: {
+    line1: string
+    line2: string | null
+    city: string
+    stateCode: string
+    stateName: string
+    pincode: string
+  }
+  supportEmail: string
+  supportPhone: string
+  /** Shown by law (Consumer Protection (E-Commerce) Rules, 2020). */
+  grievanceOfficer: { name: string; email: string; phone: string }
+}
+
+/**
+ * The company details for the storefront footer (backend spec step 16), for
+ * anyone. Throws NotConfiguredError until an administrator saves them.
+ */
+export async function getPublicCompanyDetails(
+  tx: Transaction,
+): Promise<PublicCompanyDetails> {
+  const {
+    pan: _pan,
+    address,
+    ...details
+  } = await getSetting(tx, 'company_details')
+  return {
+    ...details,
+    address: {
+      ...address,
+      stateName: stateName(address.stateCode) ?? address.stateCode,
+    },
   }
 }

@@ -194,15 +194,43 @@
     {
       "idx": 27,
       "version": "7",
-      "when": 1792346513171,
-      "tag": "0027_bank_accounts_and_return_photos",
+      "when": 1792346082970,
+      "tag": "0027_order_numbers",
       "breakpoints": true
     },
     {
       "idx": 28,
       "version": "7",
-      "when": 1792346522543,
-      "tag": "0028_bank_account_and_return_photo_grants",
+      "when": 1792346085033,
+      "tag": "0028_order_line_numbers",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792346630575,
+      "tag": "0029_reviews_and_content_pages",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792346632451,
+      "tag": "0030_product_rating_function",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792348120533,
+      "tag": "0031_bank_accounts_and_return_photos",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792348121872,
+      "tag": "0032_bank_account_and_return_photo_grants",
       "breakpoints": true
     }
   ]

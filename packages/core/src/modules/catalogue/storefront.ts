@@ -638,3 +638,42 @@ export async function getHomePage(
   }
   return sections
 }
+
+/* For other modules: reviews (step 16). */
+
+/** A product as another module names it. */
+export interface ProductLabel {
+  id: string
+  slug: string
+  title: string
+}
+
+/**
+ * The product on sale at `productSlug`, or null when visitors cannot see one
+ * there, so reviews can be read and written only where the product page is.
+ */
+export async function findProductOnSale(
+  tx: Transaction,
+  productSlug: string,
+): Promise<ProductLabel | null> {
+  if (productSlug.length > 100 || !SLUG.test(productSlug)) return null
+  const tree = await loadCategoryTree(tx)
+  const [row] = await tx
+    .select({ id: products.id, slug: products.slug, title: products.title })
+    .from(products)
+    .where(and(eq(products.slug, productSlug), ...onSale(tree)))
+  return row ?? null
+}
+
+/** The products among `ids` the context may read, by id. */
+export async function getProductLabels(
+  tx: Transaction,
+  ids: readonly string[],
+): Promise<Map<string, ProductLabel>> {
+  if (ids.length === 0) return new Map()
+  const rows = await tx
+    .select({ id: products.id, slug: products.slug, title: products.title })
+    .from(products)
+    .where(inArray(products.id, [...new Set(ids)]))
+  return new Map(rows.map((row) => [row.id, row]))
+}

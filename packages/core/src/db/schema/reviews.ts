@@ -36,6 +36,9 @@ export const reviews = pgTable(
     // Set when the review comes from a verified purchase.
     orderItemId: uuid('order_item_id').references(() => orderItems.id),
     rating: smallint('rating').notNull(),
+    // The name the buyer chose to show with the review, frozen with it, so
+    // showing reviews never reads Better Auth's users table (step 16).
+    authorName: text('author_name').notNull(),
     title: text('title'),
     body: text('body'),
     status: text('status').notNull().default('published'),
@@ -50,7 +53,17 @@ export const reviews = pgTable(
       t.createdAt.desc(),
       t.id.desc(),
     ),
+    // The administrators' list of every review, newest first.
+    index('reviews_status_created_at_idx').on(
+      t.status,
+      t.createdAt.desc(),
+      t.id.desc(),
+    ),
     check('reviews_rating_check', sql`rating between 1 and 5`),
+    check(
+      'reviews_author_name_check',
+      sql`length(author_name) between 1 and 50`,
+    ),
     check('reviews_status_check', sql`status in ('published', 'hidden')`),
     webSelect(
       sql`status = 'published' or user_id = ${currentUserId} or ${fullAccess}`,

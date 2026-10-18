@@ -15,7 +15,7 @@ import {
   getSellerBankAccount,
   readPayoutBankAccount,
   setSellerBankAccount,
-} from './service.ts'
+} from './bank-accounts.ts'
 
 /* Seller bank accounts (design doc 5.9) against the real database. */
 

@@ -227,3 +227,103 @@ describe('sendQueuedSms', () => {
     expect(sent).toEqual([])
   })
 })
+
+/** An order email in the outbox, as checkout queues it. */
+async function queueOrderEmail(
+  payload: Record<string, unknown>,
+  template: 'order_placed' | 'payment_received' = 'order_placed',
+) {
+  const [row] = await worker
+    .insert(emailOutbox)
+    .values({
+      toEmail: `${crypto.randomUUID()}@example.test`,
+      template,
+      subject:
+        template === 'order_placed'
+          ? 'Your EcoKart order EK-261018-000001 is placed'
+          : 'Payment received for order EK-261018-000002',
+      payload,
+    })
+    .returning()
+  return row!
+}
+
+describe('emails other than sign-in codes', () => {
+  const orderPlaced = {
+    orderNumber: 'EK-261018-000001',
+    buyerName: 'Asha Patil',
+    placedAt: '2026-10-18T09:30:00.000Z',
+    paymentMethod: 'cod',
+    lines: [
+      {
+        title: 'Bamboo Drinking Straw',
+        options: { Pack: '10' },
+        quantity: 5,
+        lineTotalPaise: 25_000,
+      },
+    ],
+    subtotalPaise: 25_000,
+    discountPaise: 0,
+    deliveryPaise: 4_900,
+    totalPaise: 29_900,
+    shippingAddress: {
+      fullName: 'Asha Patil',
+      phone: '+919812345678',
+      line1: '4 FC Road',
+      line2: null,
+      landmark: null,
+      city: 'Pune',
+      stateCode: '27',
+      pincode: '411004',
+    },
+  }
+
+  test('sends an order email and marks it sent', async () => {
+    const { sender, sent } = fakeEmailSender()
+    const row = await queueOrderEmail(orderPlaced)
+    await sendQueuedEmail(depsWith(sender), row.id)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({
+      to: row.toEmail,
+      subject: 'Your EcoKart order EK-261018-000001 is placed',
+    })
+    expect(sent[0]!.text).toContain('Bamboo Drinking Straw (10) × 5')
+    expect(sent[0]!.text).toContain('Total: ₹299')
+    expect(sent[0]!.text).toContain(
+      'Delivering to:\nAsha Patil\n4 FC Road\nPune, Maharashtra 411004\nPhone: +919812345678',
+    )
+    expect(await outboxRow(row.id)).toMatchObject({
+      status: 'sent',
+      attempts: 1,
+    })
+  })
+
+  test('names the payment method the way a buyer would', async () => {
+    const { sender, sent } = fakeEmailSender()
+    const row = await queueOrderEmail(
+      {
+        orderNumber: 'EK-261018-000002',
+        amountPaise: 24_800,
+        method: 'upi',
+        paidAt: '2026-10-18T09:30:00.000Z',
+      },
+      'payment_received',
+    )
+    await sendQueuedEmail(depsWith(sender), row.id)
+    expect(sent[0]!.text).toBe(
+      'We have received your payment of ₹248 for order EK-261018-000002 on 18 Oct 2026 by UPI.\n\nYour invoice will be ready to download from your order shortly.',
+    )
+  })
+
+  test('gives up at once on an email no template can render', async () => {
+    const { sender, sent } = fakeEmailSender()
+    const row = await queueOrderEmail({ orderNumber: 42 })
+    await sendQueuedEmail(depsWith(sender), row.id)
+    expect(sent).toEqual([])
+    expect(await outboxRow(row.id)).toMatchObject({
+      status: 'failed',
+      lastError:
+        'The order_placed email could not be rendered from its payload',
+    })
+  })
+})

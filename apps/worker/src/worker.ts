@@ -5,6 +5,7 @@ import {
   loadNotificationConfig,
   QUEUES,
   registerNotificationJobs,
+  registerOrderJobs,
   registerStorefrontCacheJobs,
   type StorageConfig,
 } from '@ecokart/core'
@@ -95,6 +96,7 @@ export async function startWorker(
     db,
     storage: createObjectStorage(options.storage),
   })
+  await registerOrderJobs(boss, { db })
   await registerReturnJobs(boss, {
     db,
     storage: createObjectStorage(options.storage),
