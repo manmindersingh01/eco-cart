@@ -97,7 +97,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Carts store no prices.
   Read price and stock fresh from `product_variants` every time the cart is shown or checked out.
 - Commercial values (commission, delivery charge, free-delivery threshold) and company details come from platform settings through `getSetting`, never from constants in code.
-- The catalogue service updates the summary fields on `products` (`min_price_paise`, `total_stock`, `rating_avg`, `search_text`, and the rest) on every write that affects them.
+- The catalogue service updates the summary fields on `products` (`min_price_paise`, `total_stock`, `search_text`, and the rest) on every write that affects them.
+  `rating_avg` and `rating_count` change only through `app.refresh_product_rating`, which the reviews service calls in the transaction of every review change.
 - The seller ledger (`seller_ledger_entries`) is append only.
   Fix a mistake with a new `adjustment` entry, never with UPDATE or DELETE.
 - If seller and buyer are in the same state, the invoice uses CGST plus SGST.

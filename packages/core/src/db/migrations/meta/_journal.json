@@ -204,6 +204,20 @@
       "when": 1792346085033,
       "tag": "0028_order_line_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792346630575,
+      "tag": "0029_reviews_and_content_pages",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792346632451,
+      "tag": "0030_product_rating_function",
+      "breakpoints": true
     }
   ]
 }

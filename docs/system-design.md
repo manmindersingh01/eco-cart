@@ -169,6 +169,12 @@ apps/
       api/categories/[slug]/products/   a category page with filters, sorting, and pages
       api/search/              keyword search, limited per visitor address
       api/admin/search/gaps/   the catalogue gap report: searches that found nothing
+      api/products/[slug]/reviews/   a product's published reviews for anyone; a buyer writes one,
+                               and reads or changes their own under reviews/mine
+      api/admin/reviews/       administrators list reviews and hide one or show it again
+      api/content/[slug]/      a published policy page in Markdown, for anyone
+      api/admin/content/       administrators write and publish the policy pages
+      api/company/             the company details and grievance officer for the storefront footer
       api/webhooks/razorpay/route.ts
     src/lib/                   api.ts (handleErrors, one HTTP answer per error), request-context.ts,
                                auth.ts, db.ts, queue.ts, storage.ts, sellers.ts, settings.ts,
@@ -187,7 +193,7 @@ packages/
       auth/  catalogue/  cart/  checkout/  orders/  payments/  ledger/
       invoices/  returns/  search/  ai/  imports/  notifications/
       settings/  audit/  sellers/  rate-limits/
-      addresses/
+      addresses/  reviews/  content/
         (each module has service.ts, plus jobs.ts, types.ts, or config.ts where needed; the
          catalogue splits its services by topic: categories.ts, brands.ts,
          tree.ts for the in-memory category tree, products.ts, images.ts,
@@ -794,14 +800,16 @@ reviews
   user_id        uuid FK users
   order_item_id  uuid FK order_items, nullable   set when it is a verified purchase
   rating         smallint CHECK (rating BETWEEN 1 AND 5)
+  author_name    text   the name the buyer chose to show, 1 to 50 characters, frozen with the review
   title, body    text
   status         text   published | hidden
   created_at, updated_at
   UNIQUE (product_id, user_id)
   INDEX (product_id, status, created_at DESC, id DESC)
+  INDEX (status, created_at DESC, id DESC)          administrators' list
 ```
 
-Writing a review updates `products.rating_avg` and `rating_count` in the same transaction.
+Writing a review updates `products.rating_avg` and `rating_count` in the same transaction, through the database function `app.refresh_product_rating`, which recalculates both from the published reviews (a buyer may change no product directly).
 
 ### 5.11 Imports
 
@@ -905,7 +913,7 @@ content_pages
   title         text
   body_markdown text
   status        text   draft | published
-  updated_by    uuid FK users
+  updated_by    uuid FK users, nullable   empty for the development seed's placeholder text
   published_at, created_at, updated_at
 
 email_outbox
