@@ -1,0 +1,2 @@
+ALTER TABLE "products" ADD COLUMN "min_order_quantity" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
+ALTER TABLE "products" ADD CONSTRAINT "products_min_order_quantity_check" CHECK (min_order_quantity between 1 and 1000);

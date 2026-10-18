@@ -416,6 +416,8 @@ products
   option_names        text[]  e.g. {Size, Colour}; variants carry the values
   hsn_code            text    4, 6, or 8 digits
   gst_rate_bps        int     copied from the category at approval, can be overridden
+  min_order_quantity  int     default 1, between 1 and 1000 (a CHECK); the fewest units of
+                              one variant a buyer may order at once, changeable any time
   status              text    draft | pending_review | approved | rejected | archived
   rejection_reason    text
   published_at        timestamptz   first approval; an approved product also has its
@@ -524,7 +526,7 @@ cart_items
   id          uuid PK
   cart_id     uuid FK carts
   variant_id  uuid FK product_variants
-  quantity    int  CHECK (quantity BETWEEN 1 AND 10)
+  quantity    int  CHECK (quantity BETWEEN 1 AND 1000)   at least the product's minimum buying quantity, at most the stock
   created_at, updated_at
   UNIQUE (cart_id, variant_id)
 

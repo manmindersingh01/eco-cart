@@ -41,6 +41,7 @@ import {
   removeCoupon,
   setCartItemQuantity,
 } from './service.ts'
+import { MAX_LINE_QUANTITY } from './types.ts'
 
 const pools: DatabasePool[] = []
 const connect = (url: string) => {
@@ -246,20 +247,52 @@ describe('what a line may hold', () => {
     )
   })
 
-  test('holds at most 10 of one item', async () => {
+  test(`holds at most ${MAX_LINE_QUANTITY} of one item`, async () => {
     const guest = newGuest()
-    const { variant, title } = await newItem({ stock: 50 })
+    const { variant, title } = await newItem({ stock: 5_000 })
     expect(
       await validationIssues(
-        add(guest, { variantId: variant.id, quantity: 11 }),
+        add(guest, { variantId: variant.id, quantity: MAX_LINE_QUANTITY + 1 }),
       ),
-    ).toEqual(['quantity must be at most 10'])
-    await add(guest, { variantId: variant.id, quantity: 8 })
+    ).toEqual([`quantity must be at most ${MAX_LINE_QUANTITY}`])
+    await add(guest, { variantId: variant.id, quantity: MAX_LINE_QUANTITY - 1 })
+    await expect(
+      add(guest, { variantId: variant.id, quantity: 2 }),
+    ).rejects.toThrow(
+      new ValidationError(
+        `You can buy at most ${MAX_LINE_QUANTITY} of ${title} in one order`,
+      ),
+    )
+  })
+
+  test("keeps every line at or above the product's minimum buying quantity", async () => {
+    const guest = newGuest()
+    const { product, variant, title } = await newItem({ stock: 20 })
+    await owner
+      .update(products)
+      .set({ minOrderQuantity: 5 })
+      .where(eq(products.id, product.id))
     await expect(
       add(guest, { variantId: variant.id, quantity: 3 }),
     ).rejects.toThrow(
-      new ValidationError(`You can buy at most 10 of ${title} in one order`),
+      new ValidationError(`${title} must be bought in at least 5`),
     )
+    // Left out, the quantity is the minimum.
+    const cart = await add(guest, { variantId: variant.id })
+    expect(cart.lines[0]).toMatchObject({ quantity: 5, minQuantity: 5 })
+    await expect(set(guest, variant.id, 4)).rejects.toThrow(
+      new ValidationError(`${title} must be bought in at least 5`),
+    )
+    // The seller raises the minimum after the line was added.
+    await owner
+      .update(products)
+      .set({ minOrderQuantity: 6 })
+      .where(eq(products.id, product.id))
+    expect(await view(guest)).toMatchObject({
+      lines: [{ problem: `${title} must be bought in at least 6` }],
+      canCheckOut: false,
+    })
+    expect((await set(guest, variant.id, 6)).canCheckOut).toBe(true)
   })
 
   test('refuses what is not for sale', async () => {
@@ -383,7 +416,7 @@ describe('signing in', () => {
 
     const cart = await view({ ...buyer, guestToken: guest.guestToken })
     expect(cart.lines.map((line) => [line.variantId, line.quantity])).toEqual([
-      [shared.variant.id, 10],
+      [shared.variant.id, 11],
       [extra.variant.id, 1],
     ])
     expect(cart.coupon?.code).toBe(coupon.code)

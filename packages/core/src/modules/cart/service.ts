@@ -99,9 +99,9 @@ async function openCart(tx: Transaction, shopper: Shopper): Promise<CartRow> {
 
 /**
  * Moves a guest's cart into the signed-in buyer's account: the whole cart if
- * they have none yet, otherwise each item added to theirs (at most 10 of
- * one item) and the guest's coupon if they have none. Does nothing without
- * a guest cart.
+ * they have none yet, otherwise each item added to theirs (at most 1000 of
+ * one item; the view flags a line over the stock) and the guest's coupon if
+ * they have none. Does nothing without a guest cart.
  */
 async function adoptGuestCart(
   tx: Transaction,

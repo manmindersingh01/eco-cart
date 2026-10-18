@@ -1,8 +1,12 @@
 import { z } from 'zod'
 import { idOf, strictObject, wholeNumber } from '../../lib/validation.ts'
 
-/** The most of one variant a cart line can hold (`cart_items` checks it too). */
-export const MAX_LINE_QUANTITY = 10
+/**
+ * The most of one variant a cart line can hold, whatever the stock: the
+ * largest minimum buying quantity a product may have (`cart_items` and
+ * `products` check the same number).
+ */
+export const MAX_LINE_QUANTITY = 1000
 
 /** Different items one cart can hold, so a cart stays quick to price. */
 export const MAX_CART_LINES = 50
@@ -49,7 +53,7 @@ export interface CartLine {
   lineTotalPaise: number
   /** The fewest this line may hold. */
   minQuantity: number
-  /** The most this line can hold now: the stock, at most 10. */
+  /** The most this line can hold now: the stock, at most 1000. */
   maxQuantity: number
   /** Why the line cannot be bought as it is, for example "Only 3 left". */
   problem: string | null

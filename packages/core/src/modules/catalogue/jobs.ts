@@ -13,6 +13,7 @@ import {
   MAX_UPLOAD_BYTES,
 } from '../../lib/images.ts'
 import type { ObjectStorage } from '../../lib/storage.ts'
+import type { AiModels } from '../../lib/ai/index.ts'
 import { PROCESS_IMAGE_QUEUE, processImageJob } from './images.ts'
 import {
   SCREEN_LISTING_QUEUE,
@@ -168,7 +169,10 @@ export async function processUploadedImage(
 
 export async function registerCatalogueJobs(
   boss: PgBoss,
-  deps: CatalogueJobDependencies,
+  deps: CatalogueJobDependencies & {
+    /** For the AI screening checks (step 20); null when AI_ENABLED is false. */
+    ai: AiModels | null
+  },
 ): Promise<void> {
   await boss.work(
     PROCESS_IMAGE_QUEUE,
@@ -181,9 +185,15 @@ export async function registerCatalogueJobs(
       })
     },
   )
-  await boss.work(SCREEN_LISTING_QUEUE, async ([job]) => {
-    if (!job) return
-    const { reviewId } = screenListingJob.parse(job.data)
-    await screenListing(deps, reviewId)
-  })
+  await boss.work(
+    SCREEN_LISTING_QUEUE,
+    { includeMetadata: true },
+    async ([job]) => {
+      if (!job) return
+      const { reviewId } = screenListingJob.parse(job.data)
+      await screenListing(deps, reviewId, {
+        lastAttempt: job.retryCount >= job.retryLimit,
+      })
+    },
+  )
 }

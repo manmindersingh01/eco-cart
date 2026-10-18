@@ -1,5 +1,5 @@
 {
-  "id": "7e9c9058-3ea0-4c3e-aaac-ed9d506db38c",
+  "id": "66cc7bb4-0132-4152-be44-7c9ecbba869b",
   "prevId": "4f355369-2f85-4292-b65b-927dbcf66452",
   "version": "7",
   "dialect": "postgresql",
@@ -1168,29 +1168,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "coupons_created_at_idx": {
-          "name": "coupons_created_at_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "coupons_created_by_users_id_fk": {
           "name": "coupons_created_by_users_id_fk",
@@ -2420,6 +2398,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "min_order_quantity": {
+          "name": "min_order_quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
         "gst_rate_bps": {
           "name": "gst_rate_bps",
           "type": "integer",
@@ -2845,6 +2830,10 @@
         "products_total_stock_check": {
           "name": "products_total_stock_check",
           "value": "total_stock >= 0"
+        },
+        "products_min_order_quantity_check": {
+          "name": "products_min_order_quantity_check",
+          "value": "min_order_quantity between 1 and 1000"
         },
         "products_price_range_check": {
           "name": "products_price_range_check",

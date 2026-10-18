@@ -138,8 +138,15 @@
     {
       "idx": 19,
       "version": "7",
-      "when": 1792343088761,
-      "tag": "0019_coupon_list",
+      "when": 1792342668306,
+      "tag": "0019_min_order_quantity",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792343806263,
+      "tag": "0020_cart_lines_and_coupon_list",
       "breakpoints": true
     }
   ]
