@@ -28,6 +28,11 @@ export const storefrontTags = {
   catalogue: 'catalogue',
   home: 'home',
   product: (id: string) => `product:${id}`,
+  /**
+   * On a product page by its address, also when nothing is on sale there
+   * yet, so approving the product at that address refreshes it.
+   */
+  productSlug: (slug: string) => `product-slug:${slug}`,
   /** On every list page of the category, which also lists everything below it. */
   category: (id: string) => `category:${id}`,
   /** On the pages of the seller's products, which show the seller's name. */
@@ -79,6 +84,7 @@ async function tagsOf(
   // at most (MAX_CATEGORY_DEPTH), so two joins reach the top.
   const rows = await tx
     .select({
+      slug: products.slug,
       category: categories.id,
       parent: parent.id,
       grandparent: grandparent.id,
@@ -91,6 +97,7 @@ async function tagsOf(
   return [
     storefrontTags.home,
     ...ids.map(storefrontTags.product),
+    ...rows.map((row) => storefrontTags.productSlug(row.slug)),
     ...rows.flatMap((row) =>
       [row.category, row.parent, row.grandparent]
         .filter((id) => id !== null)

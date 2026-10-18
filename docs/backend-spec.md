@@ -947,6 +947,7 @@ When Green Basket changes the spatula's price, the product page and the category
    | Tag | On | Invalidated when |
    | --- | --- | --- |
    | `product:{id}` | The product page | The product changes: details, price, stock, status, photos, rating |
+   | `product-slug:{slug}` | The product page at that address, also when nothing is on sale there, so a cached "not found" ends when the product is approved | The product at that address changes |
    | `category:{id}` | Every list page of that category | A product in it or anywhere below it changes |
    | `seller:{id}` | The pages of that seller's products | The seller's display name changes |
    | `home` | The home page | Any published product changes |
@@ -954,12 +955,15 @@ When Green Basket changes the spatula's price, the product page and the category
    | `content:{slug}` | A content page (step 16) | The page is edited or published |
 
    `invalidateStorefront(tx, change)` in `packages/core/src/modules/catalogue/storefront-cache.ts` records the tags for a change inside the caller's transaction, so the cache is refreshed only if the change commits, and it works the same in the web app and the worker:
-   - `{ productIds }`: each product's tag, the tags of its category and every category above it, and `home`.
+   - `{ productIds }`: each product's tag and address tag, the tags of its category and every category above it, and `home`.
    - `{ sellerId }`: the seller's tag.
    - `{ contentSlug }`: the content page's tag (step 16).
    - `'everything'`: the `catalogue` tag.
 
    `refreshProducts` (step 6) calls it for every product it rebuilds that has ever been published, so price, stock, photo, and approval changes are covered without each caller remembering.
+   Step 7's archiving, moving back to draft, and take-downs call it themselves, because they change a product on sale without rebuilding its summary.
+
+   A page that is not found, or a query that is not valid, is cached as an answer and thrown again outside the cache, because Next.js passes an error thrown inside `'use cache'` on without its class (and in production without its message), which made every 404 and 400 a 500.
    Changes that do not go through `refreshProducts` call it themselves: category and brand changes (step 5) and seller approval, suspension, reinstatement, and display-name changes (step 4) do so in this step; step 7 must do so when it archives or hides a product without rebuilding its summary, and step 16 when a rating changes or a content page is published (with `{ contentSlug }`).
    Because the helper runs inside the services' transactions, routes need no revalidation calls of their own, and a step that merges later only calls it in its own services.
 7. **How a recorded tag reaches every web container:** a new append-only table, `cache_invalidations` (tag and time), and a custom Next.js cache handler (`apps/web/src/cache-handler.ts`, set as `cacheHandlers.default`).
@@ -1597,4 +1601,5 @@ Green Basket's 101st call of the day is refused with 429, "You have used todayâ€
   The design doc was updated in the same change (sections 3.1, 4, 5.2, 5.5, 5.13, 6.8, 7, 8, and 11).
 - 18 October 2026: Step 9 merged with main after steps 7, 10, 14, and 17.
   Its migrations were generated again on top of step 17's as `0019_storefront_lists_and_cache` and `0020_storefront_search_functions_and_grants`, with the same SQL.
-  Step 7's `products_approved_check` replaces the `published_at` rule this step had left open.
+  Step 7's archiving, moving back to draft, and take-downs now refresh the storefront, and step 7's `products_approved_check` replaces the `published_at` rule this step had left open.
+  The end-to-end check after the merge found that every 404 and 400 from the cached readers answered 500; they are now cached as answers, with a product address tag so a cached "not found" ends when the product is approved.

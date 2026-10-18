@@ -40,6 +40,7 @@ import {
   type PhotoAddresses,
 } from './products.ts'
 import { SCREEN_LISTING_QUEUE } from './screening.ts'
+import { invalidateStorefront } from './storefront-cache.ts'
 import { refreshProducts } from './summary.ts'
 import {
   approval,
@@ -256,6 +257,9 @@ export async function moveToDraft(
     .update(products)
     .set({ status: 'draft' })
     .where(eq(products.id, productId))
+  if (product.status === 'approved') {
+    await invalidateStorefront(tx, { productIds: [productId] })
+  }
   return readProductView(tx, photos, productId)
 }
 
@@ -278,6 +282,7 @@ export async function archiveProduct(
     .update(products)
     .set({ status: 'archived' })
     .where(eq(products.id, productId))
+  await invalidateStorefront(tx, { productIds: [productId] })
   return readProductView(tx, photos, productId)
 }
 
@@ -606,6 +611,7 @@ export async function takeDownProduct(
     .update(products)
     .set({ status: 'rejected', rejectionReason: reason })
     .where(eq(products.id, productId))
+  await invalidateStorefront(tx, { productIds: [productId] })
   await recordAuditEntry(tx, {
     ...administratorActor(context),
     action: 'product.take_down',

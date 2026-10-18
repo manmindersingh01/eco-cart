@@ -34,6 +34,7 @@ import {
 } from '../sellers/service.ts'
 import { deleteBrand, updateBrand } from './brands.ts'
 import { createCategory, deleteCategory, updateCategory } from './categories.ts'
+import { archiveProduct, moveToDraft, takeDownProduct } from './moderation.ts'
 import { updateVariant } from './products.ts'
 import {
   invalidateStorefront,
@@ -83,6 +84,16 @@ const tagsAfter = async (since: number) =>
       .where(gt(cacheInvalidations.id, since))
   ).map((row) => row.tag)
 
+/** Whether `change` records the tag of the product's page. */
+async function refreshes(
+  productId: string,
+  change: (productId: string) => Promise<unknown>,
+): Promise<boolean> {
+  const since = await mark()
+  await change(productId)
+  return (await tagsAfter(since)).includes(`product:${productId}`)
+}
+
 const asAdmin = <T>(work: Parameters<typeof withContext<T>>[2]) =>
   withContext(web, admin, work)
 
@@ -111,7 +122,7 @@ async function threeLevels() {
 }
 
 describe('invalidateStorefront', () => {
-  test('a product change records the product, its category and the ones above it, and home', async () => {
+  test('a product change records the product, its address, its category and the ones above it, and home', async () => {
     const { top, middle, leaf } = await threeLevels()
     const { seller } = await createTestSeller(owner)
     const { product } = await createTestProduct(owner, {
@@ -121,15 +132,23 @@ describe('invalidateStorefront', () => {
     })
     const since = await mark()
     await record({ productIds: [product.id, product.id] })
-    expect((await tagsAfter(since)).toSorted()).toEqual(
+    const tags = await tagsAfter(since)
+    // Other test files record tags at the same time, so only ours count.
+    const ours = [product.id, product.slug, leaf.id, middle.id, top.id]
+    expect(
+      tags
+        .filter((tag) => ours.some((id) => tag.endsWith(`:${id}`)))
+        .toSorted(),
+    ).toEqual(
       [
         `category:${leaf.id}`,
         `category:${middle.id}`,
         `category:${top.id}`,
-        'home',
         `product:${product.id}`,
+        `product-slug:${product.slug}`,
       ].toSorted(),
     )
+    expect(tags).toContain('home')
   })
 
   test('a seller, a content page, and everything have their own tags', async () => {
@@ -291,6 +310,55 @@ describe('changes that refresh the storefront', () => {
       { displayName: 'Green Basket Organics' },
     )
     expect(await tagsAfter(since)).toContain(`seller:${seller.id}`)
+  })
+
+  test('taking a listing off sale refreshes its pages; moving one not on sale does not', async () => {
+    const category = await createTestCategory(owner)
+    const { owner: user, seller } = await createTestSeller(owner)
+    const context: RequestContext = {
+      role: 'seller',
+      userId: user.id,
+      sellerId: seller.id,
+    }
+    const onSale = async () =>
+      (
+        await createTestProduct(owner, {
+          sellerId: seller.id,
+          categoryId: category.id,
+        })
+      ).product.id
+    const asSeller = <T>(work: Parameters<typeof withContext<T>>[2]) =>
+      withContext(web, context, work)
+    expect(
+      await refreshes(await onSale(), (id) =>
+        asSeller((tx) => archiveProduct(tx, photos, context, id)),
+      ),
+    ).toBe(true)
+    expect(
+      await refreshes(await onSale(), (id) =>
+        asSeller((tx) => moveToDraft(tx, photos, context, id)),
+      ),
+    ).toBe(true)
+    expect(
+      await refreshes(await onSale(), (id) =>
+        asAdmin((tx) =>
+          takeDownProduct(tx, photos, admin, id, {
+            reason: 'Misleading photos',
+          }),
+        ),
+      ),
+    ).toBe(true)
+    // An archived listing is not on the storefront, so nothing to refresh.
+    const { product: archived } = await createTestProduct(owner, {
+      sellerId: seller.id,
+      categoryId: category.id,
+      status: 'archived',
+    })
+    expect(
+      await refreshes(archived.id, (id) =>
+        asSeller((tx) => moveToDraft(tx, photos, context, id)),
+      ),
+    ).toBe(false)
   })
 })
 

@@ -7,7 +7,7 @@ import {
   createTestUser,
 } from '@ecokart/core/testing'
 import { eq } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
 import { closePool } from '@/lib/db'
 import { signInWithEmail } from '@/testing/sign-in'
 import { GET as gaps } from '../admin/search/gaps/route'
@@ -90,23 +90,34 @@ describe('GET /api/search', () => {
 
   test('answers 429 with Retry-After after 120 searches a minute from one address', async () => {
     const address = `198.19.${randomInt(256)}.${randomInt(256)}`
-    // The visitor cannot dodge the limit by sending a made-up first address.
-    const responses = await Promise.all(
-      Array.from({ length: 120 }, (_, index) =>
-        search(searchRequest(`q=${term}`, `10.0.0.${index % 250}, ${address}`)),
-      ),
-    )
-    expect(responses.every((response) => response.status === 200)).toBe(true)
+    // The limit counts per clock minute, so a real clock crossing a minute
+    // would start the count again; only Date stands still, so the database
+    // driver's timers keep running.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-12T10:00:01Z'))
+    try {
+      // The visitor cannot dodge the limit by sending a made-up first address.
+      const responses = await Promise.all(
+        Array.from({ length: 120 }, (_, index) =>
+          search(
+            searchRequest(`q=${term}`, `10.0.0.${index % 250}, ${address}`),
+          ),
+        ),
+      )
+      expect(responses.every((response) => response.status === 200)).toBe(true)
 
-    const refused = await search(
-      searchRequest(`q=${term}`, `10.9.9.9, ${address}`),
-    )
-    expect(refused.status).toBe(429)
-    expect(Number(refused.headers.get('retry-after'))).toBeGreaterThan(0)
-    expect(await refused.json()).toEqual({
-      error:
-        'Too many searches from your address; please wait a moment and try again',
-    })
+      const refused = await search(
+        searchRequest(`q=${term}`, `10.9.9.9, ${address}`),
+      )
+      expect(refused.status).toBe(429)
+      expect(refused.headers.get('retry-after')).toBe('59')
+      expect(await refused.json()).toEqual({
+        error:
+          'Too many searches from your address; please wait a moment and try again',
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

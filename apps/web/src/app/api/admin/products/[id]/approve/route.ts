@@ -19,8 +19,6 @@ export const POST = handleErrors(
     const review = await withContext(getDatabase(), context, (tx) =>
       approveProduct(tx, getStorage(), context, id, input, clientIp(request)),
     )
-    // Step 9 (storefront lane): refresh the storefront cache of this product
-    // here, after the approval has committed.
     return Response.json(review)
   },
 )

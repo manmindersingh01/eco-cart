@@ -15,8 +15,6 @@ export const POST = handleErrors(
     const product = await withContext(getDatabase(), context, (tx) =>
       archiveProduct(tx, getStorage(), context, id),
     )
-    // Step 9 (storefront lane): refresh the storefront cache of this product
-    // here, after the change has committed.
     return Response.json({ product })
   },
 )
