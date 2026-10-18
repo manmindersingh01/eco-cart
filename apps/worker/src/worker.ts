@@ -13,7 +13,7 @@ import {
   registerInvoiceJobs,
   type VideoTools,
 } from '@ecokart/core/worker'
-import type { AiSettings } from '@ecokart/core'
+import { createAiModels, type AiSettings } from '@ecokart/core'
 import { PgBoss } from 'pg-boss'
 
 export interface WorkerOptions {
@@ -22,10 +22,7 @@ export interface WorkerOptions {
   storage: StorageConfig
   /** ffmpeg and ffprobe, which convert product videos. */
   videoTools: VideoTools
-  /**
-   * Null when AI_ENABLED is false. The AI jobs from step 18 on build their
-   * models from it.
-   */
+  /** Null when AI_ENABLED is false. The AI jobs build their models from it. */
   ai: AiSettings | null
 }
 
@@ -79,6 +76,7 @@ export async function startWorker(
     db,
     storage: createObjectStorage(options.storage),
     videoTools: options.videoTools,
+    ai: options.ai ? createAiModels(options.ai) : null,
   })
   await registerInvoiceJobs(boss, {
     db,

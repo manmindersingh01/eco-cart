@@ -17,6 +17,7 @@ import { requireEnv } from '../../env.ts'
 import { ConflictError, ForbiddenError, NotFoundError } from '../../errors.ts'
 import { encodeCursor } from '../../lib/pagination.ts'
 import { startJobQueue, type JobQueue } from '../../lib/queue.ts'
+import { createObjectStorage, loadStorageConfig } from '../../lib/storage.ts'
 import { validationIssues } from '../../testing/errors.ts'
 import {
   createTestBrand,
@@ -45,6 +46,9 @@ import {
 } from './products.ts'
 import { SCREEN_LISTING_QUEUE, screenListing } from './screening.ts'
 import type { ProductView, ReviewQueueItem } from './types.ts'
+
+// Screening runs without AI here; its AI checks are tested in screening.test.ts.
+const storage = createObjectStorage(loadStorageConfig())
 
 const pools: DatabasePool[] = []
 const connect = (url: string) => {
@@ -155,7 +159,7 @@ const reviewsOf = (productId: string) =>
 async function screen(productId: string): Promise<void> {
   const review = await openReview(productId)
   if (!review) throw new Error(`Product ${productId} has no open review`)
-  await screenListing({ db: worker }, review.id)
+  await screenListing({ db: worker, storage, ai: null }, review.id)
 }
 
 /** A listing that was submitted and screened, waiting for a decision. */
@@ -425,7 +429,9 @@ describe('approveProduct', () => {
       expect.objectContaining({
         id: review!.id,
         risk: 'low',
-        flags: [],
+        flags: [
+          { code: 'ai_not_checked', detail: 'AI checks are switched off' },
+        ],
         decision: 'approved',
         decidedBy: admin.userId,
         reason: null,
@@ -709,7 +715,7 @@ describe('moveToDraft', () => {
       (await wholeQueue()).some((item) => item.product.id === product.id),
     ).toBe(false)
     // A screening job that runs late leaves the withdrawn review alone.
-    await screenListing({ db: worker }, review!.id)
+    await screenListing({ db: worker, storage, ai: null }, review!.id)
     expect((await reviewsOf(product.id))[0]!.aiRisk).toBeNull()
 
     // Changed and submitted again, it opens a new review.
@@ -901,6 +907,7 @@ describe('listReviewQueue', () => {
       risk: 'medium',
       flags: [
         { code: 'missing_description', detail: 'The description is empty' },
+        { code: 'ai_not_checked', detail: 'AI checks are switched off' },
       ],
       product: {
         title: 'Bamboo Toothbrush, Pack of 4',

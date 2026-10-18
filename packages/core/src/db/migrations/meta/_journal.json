@@ -145,15 +145,22 @@
     {
       "idx": 20,
       "version": "7",
-      "when": 1792343434035,
-      "tag": "0020_product_videos",
+      "when": 1792343806263,
+      "tag": "0020_cart_lines_and_coupon_list",
       "breakpoints": true
     },
     {
       "idx": 21,
       "version": "7",
-      "when": 1792343437732,
-      "tag": "0021_product_video_grants",
+      "when": 1792344232630,
+      "tag": "0021_product_videos",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792344233626,
+      "tag": "0022_product_video_grants",
       "breakpoints": true
     }
   ]

@@ -26,6 +26,8 @@ import {
   createTestPhoto,
   createTestSeller,
   createTestVideo,
+  fakeChatReply,
+  startFakeAiServer,
   waitUntil,
 } from '@ecokart/core/testing'
 import { PgBoss } from 'pg-boss'
@@ -361,8 +363,9 @@ test('a video travels from the browser upload through the worker to its public f
   // small runner.
 }, 60_000)
 
-test('a submitted listing is screened by the worker against the prohibited terms', async () => {
-  const worker = await startWorker(options())
+test('a submitted listing is screened by the worker against the prohibited terms and by the AI checks', async () => {
+  const fake = await startFakeAiServer()
+  const worker = await startWorker({ ...options(), ai: fake.settings() })
   const webUrl = requireEnv('WEB_DATABASE_URL')
   const webPool = createPool(webUrl, 'worker-e2e-screening-web')
   const ownerPool = createPool(
@@ -395,6 +398,13 @@ test('a submitted listing is screened by the worker against the prohibited terms
       }),
     )
     await createTestPhoto(owner, product.id)
+    fake.queue(
+      fakeChatReply({
+        prohibited: true,
+        prohibitedReason: 'Ivory comes from protected wildlife',
+        photos: [{ photo: 1, usable: true, reason: '' }],
+      }),
+    )
     await withContext(web, seller, (tx) =>
       submitProduct(tx, storage, queue, seller, product.id),
     )
@@ -410,13 +420,22 @@ test('a submitted listing is screened by the worker against the prohibited terms
       risk: 'high',
       flags: [
         { code: 'prohibited_term', detail: '"ivory" appears in the title' },
+        {
+          code: 'ai_prohibited',
+          detail:
+            'The AI check says this may not be sold: Ivory comes from protected wildlife',
+        },
       ],
       decision: null,
     })
+    expect(fake.requests.map((request) => request.path)).toEqual([
+      '/chat/completions',
+    ])
   } finally {
     await queue.stop()
     await Promise.all([webPool.end(), ownerPool.end()])
     await worker.stop()
+    await fake.close()
   }
   // The worker picks jobs up every two seconds, so allow for a slow runner.
 }, 30_000)

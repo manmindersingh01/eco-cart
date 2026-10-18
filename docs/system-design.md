@@ -539,7 +539,7 @@ cart_items
   id          uuid PK
   cart_id     uuid FK carts
   variant_id  uuid FK product_variants
-  quantity    int  CHECK (quantity BETWEEN 1 AND 10)
+  quantity    int  CHECK (quantity BETWEEN 1 AND 1000)   at least the product's minimum buying quantity, at most the stock
   created_at, updated_at
   UNIQUE (cart_id, variant_id)
 
@@ -558,6 +558,7 @@ coupons
   is_active           boolean
   created_by          uuid FK users
   created_at, updated_at
+  INDEX (created_at DESC, id DESC)   the administrators' coupon list
 ```
 
 Cart items store no price.
