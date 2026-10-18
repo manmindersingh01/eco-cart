@@ -70,8 +70,8 @@ async function columns(): Promise<
 }
 
 describe('schema rules', () => {
-  test('the database has all 37 tables from the design', async () => {
-    expect(await publicTables()).toHaveLength(37)
+  test('the database has all 38 tables from the design', async () => {
+    expect(await publicTables()).toHaveLength(38)
   })
 
   test('every table with buyer or seller data has row-level security', async () => {

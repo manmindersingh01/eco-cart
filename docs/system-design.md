@@ -64,7 +64,7 @@ Each of those can be added later if measurements show a need, and the code is st
 
 | AWS service | Role in EcoKart |
 | --- | --- |
-| ECR | Stores the one Docker image that both services run |
+| ECR | Stores the one Docker image that both services run; it must include ffmpeg, which the worker uses to convert product videos |
 | ECS Fargate, service `web` | Next.js app behind an Application Load Balancer; two tasks in production, one in staging |
 | ECS Fargate, service `worker` | The job runner; one task, no load balancer, scheduled jobs come from pg-boss cron inside it |
 | PostgreSQL 16 in Docker | The `pgvector/pgvector` image from `compose.yaml` with its data on a persistent volume, in a private subnet, with the `vector` and `pg_trgm` extensions. Decided 5 October 2026 instead of Amazon RDS, for now. Where the container runs and how it is backed up are settled with the compute shape and the backup plan (section 11). |
@@ -190,9 +190,9 @@ packages/
       schema/                  Drizzle schema, one file per domain
       migrations/              SQL migrations including RLS policies and indexes
     src/jobs.ts                every job queue and its retry settings, created by `pnpm db:migrate`
-    src/worker.ts              worker-only exports (`@ecokart/core/worker`), such as the photo job
-                               and the invoice PDF job, so the web app never loads the image or
-                               PDF library
+    src/worker.ts              worker-only exports (`@ecokart/core/worker`), such as the photo and
+                               video jobs and the invoice PDF job, so the web app never loads the
+                               image or PDF library or runs ffmpeg
     src/errors.ts              the errors services throw; the web app turns each into one HTTP status
     src/index.ts               everything the web app and worker may use; src/env.ts reads required settings
     src/testing/               test database setup and fixtures, used only by tests
@@ -203,6 +203,8 @@ packages/
       storage-setup.ts  sets up the local bucket (`pnpm db:up`) and the test buckets
       images.ts      photo formats, limits, and sizes
       image-processing.ts  checks photos and makes the sizes; loaded only by the worker
+      videos.ts      video formats and limits
+      video-processing.ts  checks and converts videos with ffmpeg; loaded only by the worker
       queue.ts       sends pg-boss jobs inside the caller's transaction
       encryption.ts  seals short secrets, such as queued sign-in codes
       config.ts      validates environment variables at startup
@@ -260,7 +262,7 @@ Three rules keep this maintainable.
 | --- | --- |
 | Identity | `users`, `sessions`, `accounts`, `verifications`, `auth_rate_limits` (the five managed by Better Auth), `addresses` |
 | Sellers | `sellers` |
-| Catalogue | `categories`, `brands`, `products`, `product_variants`, `product_images`, `product_moderation`, `product_embeddings` |
+| Catalogue | `categories`, `brands`, `products`, `product_variants`, `product_images`, `product_videos`, `product_moderation`, `product_embeddings` |
 | Cart and promotions | `carts`, `cart_items`, `coupons` |
 | Orders | `orders`, `order_items`, `shipments`, `order_events`, `return_requests`, `invoices` |
 | Payments | `payments`, `payment_events`, `refunds` |
@@ -468,9 +470,20 @@ product_images
   content_hash  text
   width, height int
   alt           text
-  sort_order    int
+  sort_order    int     the seller's order; the first is the main photo, and a product has
+                        at most 4 photos (one main photo and three more)
   created_at, updated_at
   INDEX (product_id, sort_order)
+
+product_videos
+  id            uuid PK
+  product_id    uuid FK products, UNIQUE: a product has at most one video
+  storage_key   text UNIQUE   videos/{id}; the public files are videos/{id}/video.mp4 and poster.jpg
+  status        text    processing | ready | failed, like a photo
+  upload_key    text    UNIQUE, the browser's upload (MP4, MOV, or WebM, at most 50 MB and 60 seconds)
+  failure_reason text   shown to the seller when the video cannot be used
+  duration_ms, width, height int   of the converted file: H.264 and AAC in MP4, at most 720p
+  created_at, updated_at
 
 product_moderation
   id             uuid PK
@@ -526,7 +539,7 @@ cart_items
   id          uuid PK
   cart_id     uuid FK carts
   variant_id  uuid FK product_variants
-  quantity    int  CHECK (quantity BETWEEN 1 AND 10)
+  quantity    int  CHECK (quantity BETWEEN 1 AND 1000)   at least the product's minimum buying quantity, at most the stock
   created_at, updated_at
   UNIQUE (cart_id, variant_id)
 
@@ -545,6 +558,7 @@ coupons
   is_active           boolean
   created_by          uuid FK users
   created_at, updated_at
+  INDEX (created_at DESC, id DESC)   the administrators' coupon list
 ```
 
 Cart items store no price.
@@ -936,7 +950,7 @@ Listing details change only in `draft` and `rejected`; price, MRP, stock, and a 
 
 1. A seller creates a listing by hand, from photographs with the AI listing builder, or through a catalogue import. Every path produces a product in `draft`.
 2. On submit the product moves to `pending_review`, a `product_moderation` row is created, and a screening job runs.
-   A listing that could not be sold as it is (no ready photo, a photo still being processed, no active variant, no HSN code from the product or its category, or an inactive category or brand) is refused at once with a list of what to fix.
+   A listing that could not be sold as it is (no ready photo, a main photo that could not be used, a photo or video still being processed, no active variant, no HSN code from the product or its category, or an inactive category or brand) is refused at once with a list of what to fix.
 3. The screening job runs deterministic checks first (prohibited terms from platform settings as whole words, a price 70% or more below its MRP, an empty description; the database already refuses a price above the MRP), then asks the text model whether the title and description describe a prohibited category and the vision model whether any image is unusable (both DeepSeek V4.1 Flash through OpenRouter), and stores flags and a risk level on the moderation row.
 4. An administrator sees the queue sorted by risk, highest first and then oldest first, approves (only once screening has finished) or rejects with a reason, and the decision is written to the moderation row, the product, and `audit_logs`.
 5. On approval the product's GST rate is copied from its category (an administrator may choose another current rate), its HSN code is its own or the category's default, its first publication time is set, its search text and summary fields are rebuilt, embeddings are queued, and the product page cache tag is revalidated.
@@ -1061,8 +1075,8 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 - Sign-in codes waiting to be sent are encrypted with `MESSAGE_ENCRYPTION_KEY` and removed once sent.
 - Razorpay webhooks are verified with the webhook secret before anything is read from the payload, and the checkout return is verified with the key secret. No card data is ever received by EcoKart.
 - All prices, totals, stock, and permissions are recomputed on the server; the browser is never trusted.
-- Secrets live in environment variables in the hosting platform, never in the repository. Object storage buckets are private and every download of a private file (originals, imports, invoices, buyers' return photos) is a short-lived signed URL. Only the product photo sizes under `images/` are public, served through CloudFront with origin access control.
-- Uploads go straight from the browser to the bucket with a signed form that allows one key, one content type, and at most 10 MB. The worker checks every photo and re-encodes it, which removes all metadata such as GPS locations, so nothing a browser sent is ever served as it arrived.
+- Secrets live in environment variables in the hosting platform, never in the repository. Object storage buckets are private and every download of a private file (originals, imports, invoices, buyers' return photos) is a short-lived signed URL. Only the product photo sizes under `images/` and the converted product videos under `videos/` are public, served through CloudFront with origin access control.
+- Uploads go straight from the browser to the bucket with a signed form that allows one key, one content type, and at most 10 MB for a photo or 50 MB for a video. The worker checks every photo and video and re-encodes it, which removes all metadata such as GPS locations, so nothing a browser sent is ever served as it arrived.
 - Standard Next.js protections cover cross-site scripting and request forgery; parameterised queries through Drizzle cover injection.
 - Every administrator action and every state change on an order is written to `audit_logs` or `order_events`.
 

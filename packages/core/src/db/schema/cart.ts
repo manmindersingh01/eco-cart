@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   boolean,
   check,
+  index,
   integer,
   pgTable,
   text,
@@ -69,7 +70,9 @@ export const cartItems = pgTable(
   },
   (t) => [
     unique('cart_items_cart_id_variant_id_key').on(t.cartId, t.variantId),
-    check('cart_items_quantity_check', sql`quantity between 1 and 10`),
+    // At least the product's minimum buying quantity (up to 1000) and at most
+    // the stock, both checked by the cart service (backend spec step 11).
+    check('cart_items_quantity_check', sql`quantity between 1 and 1000`),
     // Visible exactly when its cart is visible under the carts policy.
     webAll(sql`exists (select 1 from carts c where c.id = cart_items.cart_id)`),
     workerPolicy(),
@@ -103,7 +106,9 @@ export const coupons = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  () => [
+  (t) => [
+    // The administrators' coupon list, newest first (backend spec step 11).
+    index('coupons_created_at_idx').on(t.createdAt.desc(), t.id.desc()),
     check('coupons_code_check', sql`code = upper(code) and code <> ''`),
     check(
       'coupons_discount_type_check',

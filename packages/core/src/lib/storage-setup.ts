@@ -14,8 +14,8 @@ import {
 /*
  * Sets up a local bucket the way the infrastructure code will set up the
  * production one: browsers on `corsOrigins` may post uploads, and anyone may
- * read `images/...`, which CloudFront serves in production. Run by
- * `pnpm db:up` and by the test setup; never in production.
+ * read `images/...` and `videos/...`, which CloudFront serves in production.
+ * Run by `pnpm db:up` and by the test setup; never in production.
  */
 
 const isAlreadyThere = (error: unknown) =>
@@ -56,11 +56,14 @@ export async function prepareLocalBucket(
         Version: '2012-10-17',
         Statement: [
           {
-            Sid: 'PublicProductPhotos',
+            Sid: 'PublicProductPhotosAndVideos',
             Effect: 'Allow',
             Principal: '*',
             Action: ['s3:GetObject'],
-            Resource: [`arn:aws:s3:::${Bucket}/images/*`],
+            Resource: [
+              `arn:aws:s3:::${Bucket}/images/*`,
+              `arn:aws:s3:::${Bucket}/videos/*`,
+            ],
           },
         ],
       }),

@@ -5,6 +5,10 @@ import {
   type ImageSize,
 } from '../../lib/images.ts'
 import {
+  MAX_VIDEO_UPLOAD_BYTES,
+  VIDEO_CONTENT_TYPES,
+} from '../../lib/videos.ts'
+import {
   gstRateBps,
   hsnCode,
   idOf,
@@ -263,6 +267,20 @@ export interface ImageView {
   urls: Record<ImageSize, string> | null
 }
 
+/** A product's video; its status works like a photo's. */
+export interface VideoView {
+  id: string
+  status: ImageStatus
+  /** Why the video cannot be used, when it failed. */
+  failureReason: string | null
+  /** Of the converted video, once it is ready. */
+  durationMs: number | null
+  width: number | null
+  height: number | null
+  /** Public addresses of the MP4 file and its poster image, once ready. */
+  urls: { video: string; poster: string } | null
+}
+
 export interface ProductView {
   id: string
   slug: string
@@ -297,6 +315,8 @@ export interface ProductView {
   updatedAt: Date
   variants: VariantView[]
   images: ImageView[]
+  /** Null when the product has no video. */
+  video: VideoView | null
 }
 
 /** A product in the seller's list. */
@@ -354,7 +374,28 @@ export const imageOrder = strictObject({
   imageIds: z.array(idOf('a photo')),
 })
 
-/** A signed form for one photo upload, straight to object storage. */
+/* The product video (one at most). */
+
+export const videoUploadRequest = strictObject({
+  contentType: z.enum(VIDEO_CONTENT_TYPES, {
+    error: (issue) =>
+      issue.input === undefined
+        ? undefined
+        : 'must be video/mp4, video/quicktime, or video/webm',
+  }),
+  /** In bytes. */
+  size: z
+    .number()
+    .int('must be a whole number')
+    .min(1, 'must be at least 1 byte')
+    .max(MAX_VIDEO_UPLOAD_BYTES, 'must be at most 50 MB'),
+})
+
+export const newVideo = strictObject({ uploadKey: z.string() })
+
+/**
+ * A signed form for one photo or video upload, straight to object storage.
+ */
 export interface ImageUpload {
   /** Pass back as `uploadKey` once the file is uploaded. */
   key: string
