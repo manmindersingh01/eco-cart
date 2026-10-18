@@ -831,3 +831,22 @@ export async function getPublicSellers(
  */
 export const sellerIsApproved = (sellerId: AnyPgColumn): SQL =>
   sql`exists (select 1 from ${sellers} where ${sellers.id} = ${sellerId} and ${sellers.status} = 'approved')`
+
+/* Checkout (backend spec step 12). */
+
+/**
+ * Each seller's own commission rate in basis points, or null where the
+ * platform rate applies, so checkout can freeze the rate on each order line
+ * without reading this module's table.
+ */
+export async function getCommissionRates(
+  tx: Transaction,
+  ids: string[],
+): Promise<Map<string, number | null>> {
+  if (ids.length === 0) return new Map()
+  const rows = await tx
+    .select({ id: sellers.id, commissionBps: sellers.commissionBps })
+    .from(sellers)
+    .where(inArray(sellers.id, [...new Set(ids)]))
+  return new Map(rows.map((row) => [row.id, row.commissionBps]))
+}

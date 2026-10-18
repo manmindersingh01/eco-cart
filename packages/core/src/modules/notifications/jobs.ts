@@ -6,8 +6,19 @@ import type { EmailSender } from '../../lib/email.ts'
 import { openSecret } from '../../lib/encryption.ts'
 import type { QueueDefinition } from '../../lib/queue.ts'
 import type { SmsSender } from '../../lib/sms.ts'
-import { renderOtpEmail, renderOtpSms } from './templates.ts'
-import { otpEmailPayload, otpSmsJob, sendEmailJob } from './types.ts'
+import {
+  renderOrderPlacedEmail,
+  renderOtpEmail,
+  renderOtpSms,
+  renderPaymentReceivedEmail,
+} from './templates.ts'
+import {
+  orderPlacedPayload,
+  otpEmailPayload,
+  otpSmsJob,
+  paymentReceivedPayload,
+  sendEmailJob,
+} from './types.ts'
 
 export const SEND_EMAIL_QUEUE = 'notifications.send-email'
 export const SEND_SMS_QUEUE = 'notifications.send-sms'
@@ -53,10 +64,65 @@ export interface NotificationJobDependencies {
 const errorText = (error: unknown) =>
   (error instanceof Error ? error.message : String(error)).slice(0, 500)
 
+type EmailContent = { text: string; html: string }
+
+/** Renders each template that is not a sign-in code from its payload. */
+const RENDERERS: Partial<
+  Record<string, (payload: unknown) => EmailContent | null>
+> = {
+  order_placed: (payload) => {
+    const parsed = orderPlacedPayload.safeParse(payload)
+    return parsed.success ? renderOrderPlacedEmail(parsed.data) : null
+  },
+  payment_received: (payload) => {
+    const parsed = paymentReceivedPayload.safeParse(payload)
+    return parsed.success ? renderPaymentReceivedEmail(parsed.data) : null
+  },
+}
+
+/**
+ * What to send for an outbox row, or why it can never be sent, and the
+ * payload to keep afterwards: a sign-in code is removed once the email is
+ * sent or given up on.
+ */
+function prepareEmail(
+  row: typeof emailOutbox.$inferSelect,
+  deps: NotificationJobDependencies,
+  now: Date,
+):
+  | { content: EmailContent; keep: unknown }
+  | { failure: string; keep: unknown } {
+  const unrenderable = {
+    failure: `The ${row.template} email could not be rendered from its payload`,
+    keep: row.payload,
+  }
+  if (row.template !== 'otp') {
+    const content = RENDERERS[row.template]?.(row.payload)
+    return content ? { content, keep: row.payload } : unrenderable
+  }
+  const parsed = otpEmailPayload.safeParse(row.payload)
+  if (!parsed.success) return unrenderable
+  const payload = parsed.data
+  const wiped = { ...payload, code: null }
+  if (payload.code === null || new Date(payload.expiresAt) <= now) {
+    return { failure: 'The code expired before it could be sent', keep: wiped }
+  }
+  return {
+    content: renderOtpEmail(
+      openSecret(payload.code, deps.encryptionKey),
+      new Date(payload.expiresAt),
+      now,
+    ),
+    keep: wiped,
+  }
+}
+
 /**
  * Sends one outbox email. The provider is called outside any transaction,
  * and the row is updated afterwards, only if it is still queued, so a job
- * that runs twice never sends a finished email again.
+ * that runs twice never sends a finished email again. An email that can
+ * never be sent, such as an expired code or a payload no template can
+ * render, is marked failed at once instead of being retried.
  */
 export async function sendQueuedEmail(
   deps: NotificationJobDependencies,
@@ -73,32 +139,24 @@ export async function sendQueuedEmail(
     eq(emailOutbox.id, outboxId),
     eq(emailOutbox.status, 'queued'),
   )
-  const payload = otpEmailPayload.parse(row.payload)
-  // The code is removed once the email is sent or given up on.
-  const wipedPayload = { ...payload, code: null }
-
-  if (payload.code === null || new Date(payload.expiresAt) <= now) {
+  const prepared = prepareEmail(row, deps, now)
+  if ('failure' in prepared) {
     await deps.db
       .update(emailOutbox)
       .set({
         status: 'failed',
-        lastError: 'The code expired before it could be sent',
-        payload: wipedPayload,
+        lastError: prepared.failure,
+        payload: prepared.keep,
       })
       .where(stillQueued)
     return
   }
 
-  const content = renderOtpEmail(
-    openSecret(payload.code, deps.encryptionKey),
-    new Date(payload.expiresAt),
-    now,
-  )
   try {
     const { providerMessageId } = await deps.emailSender.send({
       to: row.toEmail,
       subject: row.subject,
-      ...content,
+      ...prepared.content,
     })
     await deps.db
       .update(emailOutbox)
@@ -108,7 +166,7 @@ export async function sendQueuedEmail(
         attempts: sql`${emailOutbox.attempts} + 1`,
         providerMessageId,
         lastError: null,
-        payload: wipedPayload,
+        payload: prepared.keep,
       })
       .where(stillQueued)
   } catch (error) {
@@ -118,7 +176,7 @@ export async function sendQueuedEmail(
       .set({
         attempts: sql`${emailOutbox.attempts} + 1`,
         lastError: errorText(error),
-        ...(giveUp ? { status: 'failed', payload: wipedPayload } : {}),
+        ...(giveUp ? { status: 'failed', payload: prepared.keep } : {}),
       })
       .where(stillQueued)
     // Throwing hands the job back to pg-boss, which retries it later.

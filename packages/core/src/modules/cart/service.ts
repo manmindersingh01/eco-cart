@@ -163,6 +163,19 @@ function quantityProblem(
   return null
 }
 
+/**
+ * Why a cart line cannot be bought as it is now, or null, in words for the
+ * buyer; checkout refuses a cart with any such line.
+ */
+export function lineProblem(
+  variant: PurchasableVariant | undefined,
+  quantity: number,
+): string | null {
+  if (!variant) return 'An item in your cart is no longer for sale'
+  if (!variant.forSale) return `${itemName(variant)} is no longer for sale`
+  return quantityProblem(variant, quantity)
+}
+
 /** The variant a buyer asked for, or why it cannot be in a cart. */
 async function variantForSale(
   tx: Transaction,
@@ -512,4 +525,71 @@ export async function removeCoupon(
     .where(eq(carts.id, cart.id))
     .returning()
   return viewCart(tx, context, updated!, photos)
+}
+
+// Checkout (backend spec step 12) reads the cart through these, because
+// this module owns the cart tables.
+
+export interface CartForCheckout {
+  cartId: string
+  couponCode: string | null
+  /** In the order the buyer added them. */
+  items: { variantId: string; quantity: number }[]
+}
+
+/**
+ * The signed-in buyer's cart, locked until the transaction ends, with any
+ * guest cart from their cookie moved in first; null when it is empty.
+ */
+export async function cartForCheckout(
+  tx: Transaction,
+  buyer: Extract<RequestContext, { role: 'buyer' }>,
+): Promise<CartForCheckout | null> {
+  await adoptGuestCart(tx, buyer)
+  const cart = await findCart(tx, buyer)
+  if (!cart) return null
+  const items = await tx
+    .select({ variantId: cartItems.variantId, quantity: cartItems.quantity })
+    .from(cartItems)
+    .where(eq(cartItems.cartId, cart.id))
+    .orderBy(asc(cartItems.createdAt), asc(cartItems.id))
+  if (items.length === 0) return null
+  return { cartId: cart.id, couponCode: cart.couponCode, items }
+}
+
+/** Empties a cart once its items have become an order. */
+export async function emptyCart(
+  tx: Transaction,
+  cartId: string,
+): Promise<void> {
+  await tx.delete(cartItems).where(eq(cartItems.cartId, cartId))
+  await tx.update(carts).set({ couponCode: null }).where(eq(carts.id, cartId))
+}
+
+/**
+ * Puts an order's items (and coupon) back into the buyer's cart, for an
+ * order whose online payment could not be started, so the buyer can try
+ * again (design doc 6.3 step 4).
+ */
+export async function restoreCart(
+  tx: Transaction,
+  userId: string,
+  order: CartForCheckout,
+): Promise<void> {
+  const buyer = { role: 'buyer' as const, userId }
+  const cart = await openCart(tx, buyer)
+  for (const item of order.items) {
+    await tx.execute(sql`
+      insert into cart_items (cart_id, variant_id, quantity)
+      values (${cart.id}, ${item.variantId}, ${item.quantity})
+      on conflict (cart_id, variant_id) do update
+        set quantity = least(cart_items.quantity + excluded.quantity, ${MAX_LINE_QUANTITY})
+    `)
+  }
+  if (cart.couponCode === null && order.couponCode !== null) {
+    await tx
+      .update(carts)
+      .set({ couponCode: order.couponCode })
+      .where(eq(carts.id, cart.id))
+  }
 }
