@@ -122,6 +122,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   Never add a second path.
 - EcoKart never receives card data.
   Keep it that way.
+- Online payment is off while the `RAZORPAY_*` keys are blank, which leaves cash on delivery.
+  Tests and local runs use the stand-in Razorpay server `startFakeRazorpay` from `@ecokart/core/testing`, never the real one.
 
 ## Database and security
 

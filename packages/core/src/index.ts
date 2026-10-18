@@ -10,6 +10,7 @@ export {
   NotFoundError,
   NotSignedInError,
   TooManyRequestsError,
+  UnavailableError,
   ValidationError,
 } from './errors.ts'
 export { QUEUES } from './jobs.ts'
@@ -369,3 +370,28 @@ export {
   type NewCoupon,
 } from './modules/cart/types.ts'
 export { formatRupees } from './lib/money.ts'
+export {
+  checkoutOptions,
+  placeOrder,
+  type BuyerAccount,
+  type PlacedOrder,
+} from './modules/checkout/service.ts'
+export {
+  confirmCheckoutPayment,
+  confirmOrderPayment,
+  handleRazorpayWebhook,
+  type ConfirmationOutcome,
+  type PaymentResult,
+  type WebhookOutcome,
+} from './modules/payments/service.ts'
+export {
+  EXPIRE_UNPAID_QUEUE,
+  expireUnpaidOrders,
+  registerOrderJobs,
+} from './modules/orders/jobs.ts'
+export {
+  createRazorpay,
+  loadRazorpayConfig,
+  type Razorpay,
+  type RazorpayConfig,
+} from './lib/razorpay.ts'

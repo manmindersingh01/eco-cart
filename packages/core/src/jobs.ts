@@ -7,6 +7,7 @@ import { videoQueues } from './modules/catalogue/videos.ts'
 import { importQueues } from './modules/imports/service.ts'
 import { invoiceQueues } from './modules/invoices/service.ts'
 import { notificationQueues } from './modules/notifications/jobs.ts'
+import { orderQueues } from './modules/orders/jobs.ts'
 import { sellerQueues } from './modules/sellers/documents.ts'
 
 /**
@@ -23,4 +24,5 @@ export const QUEUES: QueueDefinition[] = [
   ...invoiceQueues,
   ...storefrontCacheQueues,
   ...sellerQueues,
+  ...orderQueues,
 ]

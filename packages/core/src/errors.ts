@@ -62,3 +62,11 @@ export class TooManyRequestsError extends Error {
     this.resetAt = options.resetAt
   }
 }
+
+/**
+ * 503: a service EcoKart depends on did not answer, for example Razorpay
+ * when checkout starts an online payment. Trying again later may work.
+ */
+export class UnavailableError extends Error {
+  override name = 'UnavailableError'
+}
