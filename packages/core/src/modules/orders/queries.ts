@@ -25,3 +25,15 @@ export async function countCouponUses(
     )
   return row?.uses ?? 0
 }
+
+/** How many of the buyer's orders are waiting for an online payment. */
+export async function countOrdersAwaitingPayment(
+  tx: Transaction,
+  userId: string,
+): Promise<number> {
+  const [row] = await tx
+    .select({ waiting: count() })
+    .from(orders)
+    .where(and(eq(orders.userId, userId), eq(orders.status, 'pending_payment')))
+  return row?.waiting ?? 0
+}

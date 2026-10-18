@@ -3,6 +3,7 @@ import { catalogueQueues } from './modules/catalogue/images.ts'
 import { screeningQueues } from './modules/catalogue/screening.ts'
 import { invoiceQueues } from './modules/invoices/service.ts'
 import { notificationQueues } from './modules/notifications/jobs.ts'
+import { orderQueues } from './modules/orders/jobs.ts'
 
 /**
  * Every job queue, created and kept up to date by `pnpm db:migrate`. A module
@@ -13,4 +14,5 @@ export const QUEUES: QueueDefinition[] = [
   ...catalogueQueues,
   ...screeningQueues,
   ...invoiceQueues,
+  ...orderQueues,
 ]

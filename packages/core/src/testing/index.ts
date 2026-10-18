@@ -9,3 +9,6 @@ export * from './urls.ts'
 
 // AI client test server (backend spec step 17).
 export * from './ai.ts'
+
+// Razorpay test server (backend spec step 12).
+export * from './razorpay.ts'

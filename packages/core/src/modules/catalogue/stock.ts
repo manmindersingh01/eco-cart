@@ -1,7 +1,8 @@
-import { eq, inArray, sql } from 'drizzle-orm'
+import { asc, eq, inArray, sql } from 'drizzle-orm'
 import type { Transaction } from '../../db/client.ts'
 import { products, productVariants } from '../../db/schema/index.ts'
 import { getSellerLabels } from '../sellers/service.ts'
+import { refreshProducts } from './summary.ts'
 
 /*
  * What the cart and checkout need from the catalogue (backend spec steps 11
@@ -112,4 +113,98 @@ export async function readPurchasableVariants(
       return [row.variantId, variant]
     }),
   )
+}
+
+/** One line of stock to take or give back. */
+export interface StockLine {
+  productId: string
+  variantId: string
+  quantity: number
+}
+
+/**
+ * Locks the products of `variantIds` in id order, then the variants in id
+ * order, the same order every change to a product takes (backend spec step
+ * 6), so checkout never deadlocks with a seller's edit or another checkout.
+ * Read the variants after this, so the prices and stock are the ones that
+ * will be sold.
+ */
+export async function lockStock(
+  tx: Transaction,
+  variantIds: string[],
+): Promise<void> {
+  if (variantIds.length === 0) return
+  const ids = [...new Set(variantIds)]
+  const owners = await tx
+    .selectDistinct({ productId: productVariants.productId })
+    .from(productVariants)
+    .where(inArray(productVariants.id, ids))
+  const productIds = owners.map((row) => row.productId)
+  if (productIds.length > 0) {
+    await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(inArray(products.id, productIds))
+      .orderBy(asc(products.id))
+      .for('update')
+  }
+  await tx
+    .select({ id: productVariants.id })
+    .from(productVariants)
+    .where(inArray(productVariants.id, ids))
+    .orderBy(asc(productVariants.id))
+    .for('update')
+}
+
+/**
+ * Takes `lines` out of stock, each with one conditional statement, so a
+ * variant can never go below zero even if a caller forgot to lock it
+ * (design doc 6.3). Returns the variant ids that did not have enough stock;
+ * the caller rolls back when any did. Rebuilds the products' summary fields.
+ */
+export async function takeStock(
+  tx: Transaction,
+  lines: StockLine[],
+): Promise<string[]> {
+  const short: string[] = []
+  for (const line of lines.toSorted((a, b) =>
+    a.variantId.localeCompare(b.variantId),
+  )) {
+    const taken = await tx
+      .update(productVariants)
+      .set({ stock: sql`${productVariants.stock} - ${line.quantity}` })
+      .where(
+        sql`${productVariants.id} = ${line.variantId} and ${productVariants.stock} >= ${line.quantity}`,
+      )
+      .returning({ id: productVariants.id })
+    if (taken.length === 0) short.push(line.variantId)
+  }
+  await refreshLines(tx, lines)
+  return short
+}
+
+/**
+ * Puts `lines` back in stock, for an order that was cancelled or never paid.
+ * Call `lockStock` first.
+ */
+export async function giveBackStock(
+  tx: Transaction,
+  lines: StockLine[],
+): Promise<void> {
+  for (const line of lines.toSorted((a, b) =>
+    a.variantId.localeCompare(b.variantId),
+  )) {
+    await tx
+      .update(productVariants)
+      .set({ stock: sql`${productVariants.stock} + ${line.quantity}` })
+      .where(eq(productVariants.id, line.variantId))
+  }
+  await refreshLines(tx, lines)
+}
+
+async function refreshLines(tx: Transaction, lines: StockLine[]) {
+  const productIds = [...new Set(lines.map((line) => line.productId))]
+  if (productIds.length > 0) {
+    await refreshProducts(tx, inArray(products.id, productIds))
+  }
 }

@@ -148,6 +148,20 @@
       "when": 1792343806263,
       "tag": "0020_cart_lines_and_coupon_list",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792344285257,
+      "tag": "0021_order_numbers",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792344439737,
+      "tag": "0022_order_line_numbers",
+      "breakpoints": true
     }
   ]
 }

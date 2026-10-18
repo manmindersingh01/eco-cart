@@ -5,6 +5,7 @@ import {
   NotFoundError,
   NotSignedInError,
   TooManyRequestsError,
+  UnavailableError,
   ValidationError,
 } from '@ecokart/core'
 
@@ -40,6 +41,7 @@ function errorResponse(error: unknown): Response {
   if (error instanceof ConflictError) return answer(409, error.message)
   if (error instanceof NotConfiguredError) return answer(503, error.message)
   if (error instanceof TooManyRequestsError) return tooManyRequests(error)
+  if (error instanceof UnavailableError) return answer(503, error.message)
   // Anything else is a bug: Next.js logs it and answers 500 without details.
   throw error
 }

@@ -186,11 +186,15 @@ export const orderItems = pgTable(
     commissionBps: integer('commission_bps').notNull(),
     commissionPaise: paise('commission_paise').notNull(),
     status: text('status').notNull().default('confirmed'),
+    // 1, 2, 3 in the order the buyer added the items, so the order page and
+    // the invoices list the lines as the cart did (backend spec step 12).
+    lineNumber: integer('line_number').notNull().default(1),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     index('order_items_order_id_idx').on(t.orderId),
+    check('order_items_line_number_check', sql`line_number > 0`),
     index('order_items_seller_id_status_created_at_idx').on(
       t.sellerId,
       t.status,
