@@ -19,7 +19,7 @@ export {
   type JobQueue,
   type QueueDefinition,
 } from './lib/queue.ts'
-export { type Auth } from './modules/auth/auth.ts'
+export { isPlaceholderEmail, type Auth } from './modules/auth/auth.ts'
 export { loadAuthConfig, type AuthConfig } from './modules/auth/config.ts'
 export {
   createAppAuth,
