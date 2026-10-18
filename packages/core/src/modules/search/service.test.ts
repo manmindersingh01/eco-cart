@@ -117,7 +117,11 @@ const logged = (text: string) =>
 
 describe('keyword search', () => {
   test('matches words with English stemming and ranks closer matches first', async () => {
-    const term = word()
+    // The stemmer keeps the "s" of a plural when the word already ends in
+    // "s" or its only vowel is the last letter, so a fully random word made
+    // this test fail about one run in 26. A vowel at the start and a "t" at
+    // the end make the plural always stem back to the word.
+    const term = `ka${word(6)}t`
     const once = await listed({ title: `Steel ${term} bottle` })
     const often = await listed({
       title: `${term} ${term} flask`,
