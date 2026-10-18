@@ -1,0 +1,9 @@
+diff --git a/interfaces.d.ts b/interfaces.d.ts
+index d3b1db4453af8f9ea7dc47ded61bd47cd2e1d999..1563a756fc756b3ba820f1c4c9fd28d66b7c57aa 100644
+--- a/interfaces.d.ts
++++ b/interfaces.d.ts
+@@ -1,4 +1,3 @@
+-/// <reference lib="dom" />
+ /// <reference types="node" />
+ /// <reference types="pdfkit" />
+ 

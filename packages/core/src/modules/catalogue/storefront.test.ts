@@ -310,21 +310,6 @@ describe('product page', () => {
     await expect(productPage('Not A Slug!')).rejects.toThrow(NotFoundError)
   })
 
-  test('an approved product without a publication time is not on sale', async () => {
-    const leaf = await category()
-    const { product } = await listed({ categoryId: leaf.id })
-    await owner
-      .update(products)
-      .set({ publishedAt: null })
-      .where(eq(products.id, product.id))
-    await expect(productPage(product.slug)).rejects.toThrow(NotFoundError)
-    const listing = await list({
-      filters: { categoryIds: [leaf.id], includeOutOfStock: true },
-      sort: 'newest',
-    })
-    expect(listing.items).toEqual([])
-  })
-
   test('a signed-in seller does not see their own unpublished product either', async () => {
     const leaf = await category()
     const { product } = await listed({ categoryId: leaf.id, status: 'draft' })

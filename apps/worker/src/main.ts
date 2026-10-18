@@ -1,3 +1,4 @@
+import { loadAiConfig } from '@ecokart/core'
 import {
   loadNotificationConfig,
   loadStorageConfig,
@@ -11,6 +12,8 @@ const worker = await startWorker({
   databaseUrl: requireEnv('DATABASE_URL'),
   notifications: loadNotificationConfig(),
   storage: loadStorageConfig(),
+  // AI (backend spec step 17).
+  ai: loadAiConfig(),
 })
 console.info('Worker started')
 

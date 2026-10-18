@@ -161,3 +161,44 @@ export function afterKeyCursor(
   const after = direction === 'asc' ? sql`>` : sql`<`
   return sql`(${key}, ${id}) ${after} (${last}::${sql.raw(type)}, ${lastId}::uuid)`
 }
+
+/*
+ * Ranked, then oldest first, by (rank, created time, id), for queues such as
+ * the listing review queue (backend spec step 7): a small whole-number rank
+ * first, for example 0 for high risk, then the time with microseconds.
+ */
+
+const rankedCursorShape = z.tuple([
+  z.literal('ranked'),
+  z.number().int().min(0).max(32_767),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/),
+  z.uuid(),
+])
+
+export function encodeRankedCursor(
+  rank: number,
+  time: string,
+  id: string,
+): string {
+  return Buffer.from(JSON.stringify(['ranked', rank, time, id])).toString(
+    'base64url',
+  )
+}
+
+/** Rows that come after the cursor in ranked, oldest-first order. */
+export function afterRankedCursor(
+  cursor: string,
+  rank: AnyPgColumn,
+  time: AnyPgColumn,
+  id: AnyPgColumn,
+): SQL {
+  const [, lastRank, lastTime, lastId] = decodeCursor(cursor, rankedCursorShape)
+  return sql`(${rank}, ${time}, ${id}) > (${lastRank}::smallint, ${lastTime}::timestamptz, ${lastId}::uuid)`
+}
+
+/** The ranked cursor of a row selected with its rank and `exactTime`. */
+export const rankedCursor = (row: {
+  rank: number
+  cursorTime: string
+  id: string
+}) => encodeRankedCursor(row.rank, row.cursorTime, row.id)

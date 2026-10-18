@@ -5,3 +5,9 @@ export {
   registerCatalogueJobs,
   type CatalogueJobDependencies,
 } from './modules/catalogue/jobs.ts'
+// Loads the PDF library.
+export {
+  registerInvoiceJobs,
+  renderInvoice,
+  type InvoiceJobDependencies,
+} from './modules/invoices/jobs.ts'

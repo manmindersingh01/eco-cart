@@ -3,6 +3,7 @@ import {
   formatBasisPoints,
   formatIndianDate,
   formatInr,
+  formatState,
   formatStatusLabel,
 } from './format'
 
@@ -15,6 +16,11 @@ describe('frontend formatters', () => {
   test('formats basis points as a percentage', () => {
     expect(formatBasisPoints(1_000)).toBe('10%')
     expect(formatBasisPoints(1_250)).toBe('12.5%')
+  })
+
+  test('names a GST state code, keeping an unknown one as it is', () => {
+    expect(formatState('27')).toBe('Maharashtra')
+    expect(formatState('99')).toBe('99')
   })
 
   test('formats dates in Asia/Kolkata', () => {

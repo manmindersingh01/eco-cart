@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./worker": "./src/worker.ts",
     "./cache": "./src/cache.ts",
-    "./testing": "./src/testing/index.ts"
+    "./testing": "./src/testing/index.ts",
+    "./states": "./src/lib/states.ts"
   },
   "scripts": {
     "typecheck": "tsc",
@@ -21,9 +22,11 @@
   "dependencies": {
     "@aws-sdk/client-s3": "catalog:",
     "@aws-sdk/s3-presigned-post": "catalog:",
+    "@aws-sdk/s3-request-presigner": "catalog:",
     "@better-auth/drizzle-adapter": "catalog:",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
+    "pdfmake": "catalog:",
     "pg": "catalog:",
     "pg-boss": "catalog:",
     "sharp": "catalog:",
@@ -31,11 +34,13 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pdfmake": "catalog:",
     "@types/pg": "catalog:",
     "auth": "catalog:",
     "drizzle-kit": "catalog:",
     "prettier": "catalog:",
     "typescript": "catalog:",
+    "unpdf": "catalog:",
     "vitest": "catalog:"
   }
 }

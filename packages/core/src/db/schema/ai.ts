@@ -6,6 +6,7 @@ import {
   index,
   integer,
   jsonb,
+  pgPolicy,
   pgTable,
   text,
   uuid,
@@ -16,12 +17,17 @@ import {
   currentSellerId,
   currentUserId,
   fullAccess,
-  webAll,
   webInsert,
+  webRole,
   webSelect,
   workerPolicy,
 } from './rls.ts'
 import { sellers } from './sellers.ts'
+
+// Rows with no user and no seller are the shared cache; the rest belong to
+// the user or seller who caused them.
+const ownOrShared = sql`(user_id is null and seller_id is null) or user_id = ${currentUserId} or seller_id = ${currentSellerId}`
+const inProgress = sql`status in ('queued', 'running')`
 
 /**
  * Every AI call. Serves the three AI operating controls: the per-seller and
@@ -41,7 +47,9 @@ export const aiRequests = pgTable(
     inputHash: text('input_hash').notNull(),
     inputTokens: integer('input_tokens'),
     outputTokens: integer('output_tokens'),
-    costMicroInr: bigint('cost_micro_inr', { mode: 'number' }),
+    // As the provider reports it: OpenRouter bills in US dollars (backend
+    // spec step 17). Null when the provider reports no cost.
+    costMicroUsd: bigint('cost_micro_usd', { mode: 'number' }),
     status: text('status').notNull().default('queued'),
     result: jsonb('result'),
     error: text('error'),
@@ -64,13 +72,19 @@ export const aiRequests = pgTable(
     ),
     check(
       'ai_requests_counts_check',
-      sql`input_tokens >= 0 and output_tokens >= 0 and cost_micro_inr >= 0 and latency_ms >= 0`,
+      sql`input_tokens >= 0 and output_tokens >= 0 and cost_micro_usd >= 0 and latency_ms >= 0`,
     ),
-    // Rows with no user and no seller are the shared cache; the rest belong
-    // to the user or seller who caused them.
-    webAll(
-      sql`${fullAccess} or (user_id is null and seller_id is null) or user_id = ${currentUserId} or seller_id = ${currentSellerId}`,
-    ),
+    webSelect(sql`${fullAccess} or (${ownOrShared})`),
+    // The web app writes only calls still in progress (backend spec step
+    // 17). Once an answer is stored, other requests may be served it from
+    // the cache, so no request path may change or replace it.
+    webInsert(sql`${fullAccess} or ((${ownOrShared}) and ${inProgress})`),
+    pgPolicy('web_update', {
+      for: 'update',
+      to: webRole,
+      using: sql`${fullAccess} or ((${ownOrShared}) and ${inProgress})`,
+      withCheck: sql`${fullAccess} or (${ownOrShared})`,
+    }),
     workerPolicy(),
   ],
 ).enableRLS()

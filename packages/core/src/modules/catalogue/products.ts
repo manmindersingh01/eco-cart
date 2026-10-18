@@ -130,7 +130,7 @@ const productSlug = (title: string, id: string) =>
   `${slugify(title, 'product').slice(0, 50).replace(/-+$/, '')}-${id.slice(0, 6)}`
 
 /** A problem with the category a product is listed in, or null. */
-async function categoryIssue(
+export async function categoryIssue(
   tx: Transaction,
   categoryId: string,
 ): Promise<string | null> {
@@ -143,7 +143,8 @@ async function categoryIssue(
   return null
 }
 
-async function brandIssue(
+/** A problem with the brand a product carries, or null. */
+export async function brandIssue(
   tx: Transaction,
   brandId: string,
 ): Promise<string | null> {

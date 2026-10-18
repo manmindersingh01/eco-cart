@@ -58,11 +58,11 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 
 - Follow the layout in design doc section 4: routes in `apps/web/src/app/`, business logic in `packages/core/src/modules/<domain>/` (`service.ts`, `queries.ts`, `jobs.ts`, `types.ts`), schema in `packages/core/src/db/schema/`, SQL migrations in `packages/core/src/db/migrations/`, worker job registration in `apps/worker/src/worker.ts`, external clients in `packages/core/src/lib/`.
 - The worker runs `packages/core` and its own code as TypeScript directly on Node.js, so use only type-level TypeScript syntax (no `enum`, `namespace`, or constructor parameter properties) and import local files with their `.ts` extension.
-- Code that only the worker runs and that loads heavy libraries (the image library `sharp`) is exported from `@ecokart/core/worker`, never from `@ecokart/core`, so the web app never loads it.
+- Code that only the worker runs and that loads heavy libraries (the image library `sharp`, the PDF library `pdfmake`) is exported from `@ecokart/core/worker`, never from `@ecokart/core`, so the web app never loads it.
 - The worker refuses to start while a queue in `packages/core/src/jobs.ts` is missing, so a deploy that skipped `pnpm db:migrate` fails loudly.
 - Pages, server actions, and API routes call module services.
   They never write SQL themselves.
-- Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, conflict, validation, not configured), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
+- Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, conflict, validation, not configured, too many requests), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
 - Services check input with `parseInput` and the shared formats and `strictObject` in `packages/core/src/lib/validation.ts`, so every message is plain language.
 - A service that also changes a Better Auth account (through `AccountDirectory`) takes the database and runs its own transactions in a safe order; other services take a transaction.
 - The catalogue module splits its services by topic (`categories.ts`, `brands.ts`, `tree.ts`, `products.ts`, `images.ts`, `summary.ts`, `jobs.ts`) instead of one `service.ts`.
@@ -163,7 +163,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 
 ## AI features
 
-- Every AI call goes through `packages/core/src/lib/ai/`, one OpenAI-compatible HTTP client whose base URL, API key, and model names come from environment variables (`AI_BASE_URL`, `AI_API_KEY`, `AI_CHAT_MODEL`, `AI_VISION_MODEL`, `AI_EMBED_MODEL`, `AI_EMBED_DIMENSIONS`, see design doc section 3.2).
+- Every AI call goes through `packages/core/src/lib/ai/`, one OpenAI-compatible HTTP client whose base URL, API key, and model names come from environment variables (`AI_ENABLED`, `AI_BASE_URL`, `AI_API_KEY`, `AI_CHAT_MODEL`, `AI_VISION_MODEL`, `AI_EMBED_MODEL`, `AI_EMBED_DIMENSIONS`, see design doc section 3.2).
   Never import a vendor SDK anywhere else, and never hard-code a provider or model name outside that folder.
 - The gateway is OpenRouter (`https://openrouter.ai/api/v1`), decided by the client on 2 October 2026.
   Chat and vision use `deepseek/deepseek-v4.1-flash`; embeddings use `voyageai/voyage-multimodal-3.5` at 1024 dimensions.
@@ -177,7 +177,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Log every AI call in `ai_requests`.
   Check the cache on `(feature, input_hash)` first, and enforce the daily platform and per-seller limits before calling out.
 - Run deterministic checks before AI checks.
-  For example, listing screening checks price above MRP and prohibited terms before asking the model.
+  For example, listing screening checks prohibited terms and an implausibly large discount (70% or more below the MRP) before asking the model.
 - The shopping assistant answers only from the product data it was given and says so when it cannot answer.
   It returns a structured object with cited product ids, and the storefront renders product cards from that object, never raw model text as HTML.
 

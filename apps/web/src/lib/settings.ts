@@ -1,4 +1,5 @@
 import {
+  loadAiConfig,
   loadAuthConfig,
   loadStorageConfig,
   requireEnv,
@@ -16,4 +17,6 @@ export function checkWebSettings(env: NodeJS.ProcessEnv = process.env): void {
   loadAuthConfig(env)
   loadStorageConfig(env)
   trustedProxyCount(env)
+  // AI (backend spec step 17).
+  loadAiConfig(env)
 }

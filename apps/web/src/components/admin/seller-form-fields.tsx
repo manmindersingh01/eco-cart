@@ -138,7 +138,7 @@ export function SellerBusinessFields({
             onChange={(event) => onChange('pincode', event.target.value)}
             autoComplete="postal-code"
             inputMode="numeric"
-            maxLength={6}
+            maxLength={4}
             disabled={disabled}
           />
         </Field>
@@ -186,7 +186,7 @@ export function SellerBusinessFields({
         <Field
           label="Invoice prefix"
           htmlFor="seller-invoice-prefix"
-          hint="Use 1 to 6 capital letters or digits. It cannot change after the first invoice."
+          hint="Use 1 to 4 capital letters or digits. It cannot change after the first invoice."
           error={error('invoicePrefix')}
           required
         >

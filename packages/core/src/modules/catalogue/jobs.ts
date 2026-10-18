@@ -14,11 +14,16 @@ import {
 } from '../../lib/images.ts'
 import type { ObjectStorage } from '../../lib/storage.ts'
 import { PROCESS_IMAGE_QUEUE, processImageJob } from './images.ts'
+import {
+  SCREEN_LISTING_QUEUE,
+  screenListing,
+  screenListingJob,
+} from './screening.ts'
 import { refreshProducts } from './summary.ts'
 
 /*
- * The worker's catalogue jobs (backend spec step 6). Only the worker loads
- * this file, because it loads the image library.
+ * The worker's catalogue jobs (backend spec steps 6 and 7). Only the worker
+ * loads this file, because it loads the image library.
  */
 
 export interface CatalogueJobDependencies {
@@ -176,4 +181,9 @@ export async function registerCatalogueJobs(
       })
     },
   )
+  await boss.work(SCREEN_LISTING_QUEUE, async ([job]) => {
+    if (!job) return
+    const { reviewId } = screenListingJob.parse(job.data)
+    await screenListing(deps, reviewId)
+  })
 }

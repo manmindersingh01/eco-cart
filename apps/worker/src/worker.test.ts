@@ -11,12 +11,16 @@ import {
   loadNotificationConfig,
   loadStorageConfig,
   QUEUES,
+  getProductForReview,
   requireEnv,
   startJobQueue,
+  submitProduct,
+  updateSetting,
   withContext,
 } from '@ecokart/core'
 import {
   createTestCategory,
+  createTestPhoto,
   createTestSeller,
   waitUntil,
 } from '@ecokart/core/testing'
@@ -30,6 +34,7 @@ const options = () => ({
   databaseUrl: requireEnv('DATABASE_URL'),
   notifications: loadNotificationConfig(),
   storage: loadStorageConfig(),
+  ai: null,
 })
 
 test('starts the job queue against the database and stops cleanly', async () => {
@@ -249,6 +254,66 @@ test('a photo travels from the browser upload through the worker to its public s
     expect(card.status).toBe(200)
     const size = await sharp(Buffer.from(await card.arrayBuffer())).metadata()
     expect([size.format, size.width, size.height]).toEqual(['webp', 480, 480])
+  } finally {
+    await queue.stop()
+    await Promise.all([webPool.end(), ownerPool.end()])
+    await worker.stop()
+  }
+  // The worker picks jobs up every two seconds, so allow for a slow runner.
+}, 30_000)
+
+test('a submitted listing is screened by the worker against the prohibited terms', async () => {
+  const worker = await startWorker(options())
+  const webUrl = requireEnv('WEB_DATABASE_URL')
+  const webPool = createPool(webUrl, 'worker-e2e-screening-web')
+  const ownerPool = createPool(
+    requireEnv('MIGRATION_DATABASE_URL'),
+    'worker-e2e-screening-owner',
+  )
+  const queue = await startJobQueue(webUrl, 'worker-e2e-screening-queue')
+  const web = createDatabase(webPool)
+  const owner = createDatabase(ownerPool)
+  const storage = createObjectStorage(loadStorageConfig())
+  try {
+    await withContext(web, { role: 'system' }, (tx) =>
+      updateSetting(tx, { role: 'system' }, 'prohibited_terms', ['ivory']),
+    )
+    const { owner: user, seller: business } = await createTestSeller(owner)
+    const seller = {
+      role: 'seller' as const,
+      userId: user.id,
+      sellerId: business.id,
+    }
+    const category = await createTestCategory(owner)
+    const product = await withContext(web, seller, (tx) =>
+      createProduct(tx, storage, seller, {
+        categoryId: category.id,
+        title: 'Hand-carved Ivory Comb',
+        description: 'Carved by hand.',
+        variants: [
+          { sku: 'COMB-1', pricePaise: 29_900, mrpPaise: 34_900, stock: 4 },
+        ],
+      }),
+    )
+    await createTestPhoto(owner, product.id)
+    await withContext(web, seller, (tx) =>
+      submitProduct(tx, storage, queue, seller, product.id),
+    )
+
+    const review = async () =>
+      (
+        await withContext(web, { role: 'system' }, (tx) =>
+          getProductForReview(tx, storage, { role: 'system' }, product.id),
+        )
+      ).reviews[0]
+    await waitUntil(async () => (await review())?.risk != null, 15_000)
+    expect(await review()).toMatchObject({
+      risk: 'high',
+      flags: [
+        { code: 'prohibited_term', detail: '"ivory" appears in the title' },
+      ],
+      decision: null,
+    })
   } finally {
     await queue.stop()
     await Promise.all([webPool.end(), ownerPool.end()])

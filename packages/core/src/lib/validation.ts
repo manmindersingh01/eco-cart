@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ValidationError } from '../errors.ts'
+import { isGstStateCode } from './states.ts'
 
 /*
  * Formats used across India-specific data, kept in one place so settings,
@@ -48,10 +49,13 @@ export const email = z.email({
   error: unlessMissing('must be an email address'),
 })
 
-/** Two-digit GST state code, for example 27 for Maharashtra. */
+/**
+ * A GST state code from lib/states.ts, for example 27 for Maharashtra. The
+ * database only checks for two digits; this check refuses codes such as 99.
+ */
 export const stateCode = z
   .string()
-  .regex(/^\d{2}$/, 'must be a two-digit GST state code, like 27')
+  .refine(isGstStateCode, 'must be a GST state code, like 27 for Maharashtra')
 
 export const pincode = z
   .string()

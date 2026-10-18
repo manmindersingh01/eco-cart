@@ -88,6 +88,8 @@ async function listed(spec: {
     title: spec.title,
     slug: `product-${id}`,
     highlights: spec.highlights ?? [],
+    hsnCode: '3924',
+    gstRateBps: 1800,
     status: 'approved',
     publishedAt: new Date(),
   })
