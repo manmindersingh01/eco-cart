@@ -663,6 +663,11 @@ async function seedProduct(
     send: async (_tx, name, data) => {
       jobs.push({ name, data })
     },
+    // The seed never looks after failed jobs.
+    counts: async () => [],
+    findJob: async () => null,
+    findJobsWithData: async () => [],
+    retry: async () => false,
     stop: async () => {},
   }
   const runJobs = async () => {

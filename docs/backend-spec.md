@@ -142,7 +142,7 @@ Checkout, payment confirmation, order expiry, cancellation, and refunds run as `
 | `catalogue_imports`, `catalogue_import_rows` | The seller; full access | Seller adds imports; the worker processes rows |
 | `ai_requests` | Shared cache rows (no user, no seller) for anyone; otherwise the owning user or seller; full access | The same, but only rows still `queued` or `running` (step 17); full access |
 | `search_queries` | Full access | Anyone, for themselves or with no user (append only) |
-| `email_outbox` | Full access | Anyone may add a row; only the worker changes rows, to record sending |
+| `email_outbox` | Full access | Anyone may add a row; the worker changes rows to record sending, and full access may put a failed or stuck email back in the queue (its status and attempts only) |
 | `audit_logs` | Full access | Full access, or a signed-in user recording their own action (append only) |
 
 Tables with no buyer or seller data have no row-level security, and the application checks permissions for them: `categories`, `brands`, `coupons`, `platform_settings`, `content_pages`, and `rate_limits`.

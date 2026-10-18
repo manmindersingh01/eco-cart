@@ -17,6 +17,7 @@ export { QUEUES } from './jobs.ts'
 export {
   startJobQueue,
   type JobQueue,
+  type QueueCounts,
   type QueueDefinition,
 } from './lib/queue.ts'
 export { type Auth } from './modules/auth/auth.ts'
@@ -35,6 +36,19 @@ export {
 } from './modules/auth/accounts.ts'
 export { loadNotificationConfig } from './modules/notifications/config.ts'
 export { registerNotificationJobs } from './modules/notifications/jobs.ts'
+export {
+  listUndeliveredEmails,
+  retryEmail,
+  STUCK_EMAIL_MINUTES,
+  type EmailState,
+  type OutboxEmailView,
+} from './modules/notifications/outbox.ts'
+export {
+  listFailedJobs,
+  listJobQueues,
+  retryFailedJob,
+  type FailedJobView,
+} from './modules/background-jobs/service.ts'
 export {
   settingKeys,
   type CompanyDetails,
