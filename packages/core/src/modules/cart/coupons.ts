@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm'
+import { desc, eq, sql } from 'drizzle-orm'
 import type { Transaction } from '../../db/client.ts'
 import type { RequestContext } from '../../db/context.ts'
 import { coupons } from '../../db/schema/index.ts'
@@ -331,4 +331,34 @@ export async function couponProblem(
     }
   }
   return null
+}
+
+/**
+ * Counts one more use of the coupon at checkout, with one conditional
+ * statement, so two buyers racing for the last use cannot both get it
+ * (design doc 6.3). Returns false when the coupon is used up.
+ */
+export async function takeCouponUse(
+  tx: Transaction,
+  couponId: string,
+): Promise<boolean> {
+  const taken = await tx
+    .update(coupons)
+    .set({ usedCount: sql`${coupons.usedCount} + 1` })
+    .where(
+      sql`${coupons.id} = ${couponId} and (${coupons.usageLimit} is null or ${coupons.usedCount} < ${coupons.usageLimit})`,
+    )
+    .returning({ id: coupons.id })
+  return taken.length > 0
+}
+
+/** Gives one use back, for an order that was cancelled or never paid. */
+export async function giveBackCouponUse(
+  tx: Transaction,
+  couponId: string,
+): Promise<void> {
+  await tx
+    .update(coupons)
+    .set({ usedCount: sql`${coupons.usedCount} - 1` })
+    .where(sql`${coupons.id} = ${couponId} and ${coupons.usedCount} > 0`)
 }

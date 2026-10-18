@@ -611,7 +611,7 @@ Per-user coupon usage is counted from `orders` (same coupon, same user, not canc
 ```
 orders
   id                uuid PK
-  order_number      text UNIQUE   human readable, e.g. EK-261001-000123
+  order_number      text UNIQUE   human readable, e.g. EK-261001-000123 (date in India, then the next number of order_number_seq)
   user_id           uuid FK users
   status            text   pending_payment | confirmed | cancelled | completed
   payment_method    text   razorpay | cod
@@ -629,6 +629,7 @@ orders
 order_items
   id                    uuid PK
   order_id              uuid FK orders
+  line_number           int      1, 2, 3 in cart order, so the lines always show in the same order
   seller_id             uuid FK sellers
   product_id            uuid FK products
   variant_id            uuid FK product_variants

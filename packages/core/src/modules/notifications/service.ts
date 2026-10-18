@@ -4,18 +4,31 @@ import { emailOutbox } from '../../db/schema/index.ts'
 import { sealSecret } from '../../lib/encryption.ts'
 import type { JobQueue } from '../../lib/queue.ts'
 import { SEND_EMAIL_QUEUE, SEND_SMS_QUEUE } from './jobs.ts'
-import { otpEmailSubject } from './templates.ts'
+import {
+  orderPlacedSubject,
+  otpEmailSubject,
+  paymentReceivedSubject,
+} from './templates.ts'
 import type {
   EmailOtpPurpose,
+  OrderPlacedPayload,
   OtpEmailPayload,
   OtpSmsJob,
+  PaymentReceivedPayload,
   SendEmailJob,
 } from './types.ts'
 
 export interface OutboxEmail {
   userId?: string | null
   to: string
-  template: 'otp'
+  /** One of the templates `email_outbox` allows. */
+  template:
+    | 'otp'
+    | 'order_placed'
+    | 'payment_received'
+    | 'dispatched'
+    | 'cancelled'
+    | 'refund_recorded'
   subject: string
   payload: Record<string, unknown>
 }
@@ -96,4 +109,36 @@ export async function queueOtpSms(
     expiresAt: message.expiresAt.toISOString(),
   }
   await queue.send(tx, SEND_SMS_QUEUE, job)
+}
+
+/** Queues the order placed email (backend spec step 12). */
+export async function queueOrderPlacedEmail(
+  tx: Transaction,
+  queue: JobQueue,
+  to: { userId: string; email: string },
+  order: OrderPlacedPayload,
+): Promise<number | null> {
+  return queueEmail(tx, queue, {
+    userId: to.userId,
+    to: to.email,
+    template: 'order_placed',
+    subject: orderPlacedSubject(order.orderNumber),
+    payload: order,
+  })
+}
+
+/** Queues the payment received email (backend spec step 12). */
+export async function queuePaymentReceivedEmail(
+  tx: Transaction,
+  queue: JobQueue,
+  to: { userId: string; email: string },
+  payment: PaymentReceivedPayload,
+): Promise<number | null> {
+  return queueEmail(tx, queue, {
+    userId: to.userId,
+    to: to.email,
+    template: 'payment_received',
+    subject: paymentReceivedSubject(payment.orderNumber),
+    payload: payment,
+  })
 }

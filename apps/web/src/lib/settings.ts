@@ -1,6 +1,7 @@
 import {
   loadAiConfig,
   loadAuthConfig,
+  loadRazorpayConfig,
   loadStorageConfig,
   requireEnv,
   trustedProxyCount,
@@ -19,4 +20,7 @@ export function checkWebSettings(env: NodeJS.ProcessEnv = process.env): void {
   trustedProxyCount(env)
   // AI (backend spec step 17).
   loadAiConfig(env)
+  // Razorpay (backend spec step 12): all three keys, or none for cash on
+  // delivery only.
+  loadRazorpayConfig(env)
 }

@@ -6,6 +6,11 @@ name: ecokart
 services:
   postgres:
     image: pgvector/pgvector:0.8.6-pg16
+    # Several checkouts (git worktrees) run their test suites against this one
+    # server at the same time, and each suite holds up to about 40
+    # connections, so the default limit of 100 made runs fail with "too many
+    # clients" now and then.
+    command: ['postgres', '-c', 'max_connections=300']
     environment:
       POSTGRES_USER: ecokart
       POSTGRES_PASSWORD: ecokart
