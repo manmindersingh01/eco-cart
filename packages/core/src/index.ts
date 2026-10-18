@@ -10,6 +10,7 @@ export {
   NotFoundError,
   NotSignedInError,
   TooManyRequestsError,
+  UnavailableError,
   ValidationError,
 } from './errors.ts'
 export { QUEUES } from './jobs.ts'
@@ -369,3 +370,66 @@ export {
   type NewCoupon,
 } from './modules/cart/types.ts'
 export { formatRupees } from './lib/money.ts'
+export {
+  checkoutOptions,
+  placeOrder,
+  type BuyerAccount,
+  type PlacedOrder,
+} from './modules/checkout/service.ts'
+export {
+  confirmCheckoutPayment,
+  confirmOrderPayment,
+  handleRazorpayWebhook,
+  type ConfirmationOutcome,
+  type PaymentResult,
+  type WebhookOutcome,
+} from './modules/payments/service.ts'
+export {
+  EXPIRE_UNPAID_QUEUE,
+  expireUnpaidOrders,
+  registerOrderJobs,
+} from './modules/orders/jobs.ts'
+export {
+  createRazorpay,
+  loadRazorpayConfig,
+  type Razorpay,
+  type RazorpayConfig,
+} from './lib/razorpay.ts'
+// Reviews, content pages, and the storefront footer (backend spec step 16).
+export {
+  getOwnReview,
+  listProductReviews,
+  listReviews,
+  setReviewStatus,
+  updateOwnReview,
+  writeReview,
+} from './modules/reviews/service.ts'
+export type {
+  AdminReview,
+  AdminReviewOptions,
+  OwnReview,
+  PublicReview,
+  ReviewStatus,
+} from './modules/reviews/types.ts'
+export {
+  getContentPage,
+  getPublishedContentPage,
+  listContentPages,
+  saveContentPage,
+} from './modules/content/service.ts'
+export {
+  CONTENT_PAGES,
+  CONTENT_SLUGS,
+  type ContentPageView,
+  type ContentSlug,
+  type PublicContentPage,
+} from './modules/content/types.ts'
+export {
+  getPublicCompanyDetails,
+  type PublicCompanyDetails,
+} from './modules/settings/service.ts'
+export {
+  findProductOnSale,
+  getProductLabels,
+  type ProductLabel,
+} from './modules/catalogue/storefront.ts'

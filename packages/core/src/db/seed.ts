@@ -50,6 +50,10 @@ import {
   type SettingValue,
 } from '../modules/settings/definitions.ts'
 import { listSettings, updateSetting } from '../modules/settings/service.ts'
+import {
+  listContentPages,
+  saveContentPage,
+} from '../modules/content/service.ts'
 import { createDatabase, type Database } from './client.ts'
 import { withContext } from './context.ts'
 import { createPool } from './pool.ts'
@@ -245,6 +249,33 @@ export async function seedDevelopmentData(
     categories: await seedCategories(db),
     brands: await seedBrands(db),
   }
+}
+
+/**
+ * Publishes placeholder text for each policy page nobody has saved yet, so
+ * the storefront's footer links work locally, and returns their addresses.
+ * The client provides the real text before launch.
+ */
+export async function seedContentPages(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string[]> {
+  if (env.NODE_ENV === 'production') {
+    throw new Error('The development seed never runs in production')
+  }
+  return withContext(db, { role: 'system' }, async (tx) => {
+    const written: string[] = []
+    for (const page of await listContentPages(tx, { role: 'system' })) {
+      if (page.saved) continue
+      await saveContentPage(tx, { role: 'system' }, page.slug, {
+        title: page.title,
+        bodyMarkdown: `# ${page.title}\n\nThis is placeholder text for local development. EcoKart publishes its real ${page.title.toLowerCase()} here before launch.\n`,
+        status: 'published',
+      })
+      written.push(page.slug)
+    }
+    return written
+  })
 }
 
 async function seedCategories(db: Database): Promise<string[]> {
@@ -731,6 +762,7 @@ if (import.meta.main) {
     const { settings, sellers, categories, brands } = await seedDevelopmentData(
       createDatabase(pool),
     )
+    const contentPages = await seedContentPages(createDatabase(pool))
     const products = await seedExampleProducts({
       db: createDatabase(pool),
       worker: createDatabase(workerPool),
@@ -755,6 +787,11 @@ if (import.meta.main) {
       brands.length === 0
         ? 'Brands: the example brands already exist'
         : `Brands: created ${brands.join(', ')}`,
+    )
+    console.info(
+      contentPages.length === 0
+        ? 'Content pages: every page has already been saved'
+        : `Content pages: published placeholder text for ${contentPages.join(', ')}`,
     )
     console.info(
       products.length === 0

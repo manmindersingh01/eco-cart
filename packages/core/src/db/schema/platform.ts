@@ -44,9 +44,8 @@ export const contentPages = pgTable(
     title: text('title').notNull(),
     bodyMarkdown: text('body_markdown').notNull().default(''),
     status: text('status').notNull().default('draft'),
-    updatedBy: uuid('updated_by')
-      .notNull()
-      .references(() => users.id),
+    // Empty for the placeholder text the development seed writes.
+    updatedBy: uuid('updated_by').references(() => users.id),
     publishedAt: timestamptz('published_at'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

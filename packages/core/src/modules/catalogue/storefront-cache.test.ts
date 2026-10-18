@@ -151,17 +151,19 @@ describe('invalidateStorefront', () => {
     expect(tags).toContain('home')
   })
 
-  test('a seller, a content page, and everything have their own tags', async () => {
+  test('a seller, a content page, the company details, and everything have their own tags', async () => {
     const sellerId = randomUUID()
     const since = await mark()
     await record({ sellerId })
     await record({ contentSlug: 'returns' })
     await record('everything')
+    await record('company')
     expect(await tagsAfter(since)).toEqual(
       expect.arrayContaining([
         `seller:${sellerId}`,
         'content:returns',
         'catalogue',
+        'company',
       ]),
     )
     expect(storefrontTags.content('returns')).toBe('content:returns')
