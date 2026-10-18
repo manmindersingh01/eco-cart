@@ -623,8 +623,10 @@ async function seedProduct(
         const { imageId } = processImageJob.parse(data)
         await processUploadedImage({ db: worker, storage }, imageId)
       } else if (name === SCREEN_LISTING_QUEUE) {
+        // The seed never calls an AI provider: the example listings get the
+        // fixed checks and an "AI not checked" flag.
         await screenListing(
-          { db: worker },
+          { db: worker, storage, ai: null },
           screenListingJob.parse(data).reviewId,
         )
       } else {

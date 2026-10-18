@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, count, eq, gte, inArray, sql } from 'drizzle-orm'
+import { count, eq, inArray, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { z } from 'zod'
 import {
@@ -34,7 +34,7 @@ import {
   LIMIT_RULES,
   type AiCall,
 } from './service.ts'
-import { indianDayStart } from './days.ts'
+import { DAY_MS, indianDayStart } from './days.ts'
 
 const pools: DatabasePool[] = []
 function connect(url: string, name: string): Database {
@@ -545,33 +545,30 @@ describe('daily limits', () => {
   })
 
   test('refuses every counted call once the platform limit is used up', async () => {
-    // Only this file writes ai_requests, and its tests run one at a time,
-    // so nothing else changes today's count meanwhile.
-    const [today] = await owner
-      .select({ n: count() })
-      .from(aiRequests)
-      .where(
-        and(
-          gte(aiRequests.createdAt, indianDayStart(new Date())),
-          sql`${aiRequests.feature} <> 'embedding'`,
-        ),
-      )
+    // A day three days ago, filled up to the limit. Its count also includes
+    // every later call, so other test files only raise it, and today's count,
+    // which their own calls depend on, is untouched.
+    const day = new Date(indianDayStart(new Date()).getTime() - 3 * DAY_MS)
     const filler = 'platform-limit-test'
-    await insertCalls(PLATFORM_LIMIT - today!.n, { model: filler })
+    await insertCalls(PLATFORM_LIMIT, {
+      model: filler,
+      createdAt: new Date(day.getTime() + 60_000),
+    })
+    const thatDay = new Date(day.getTime() + 3_600_000)
     try {
       const error = await rejectionOf(
-        callAi(web, anonymous, models, nlCall()),
+        callAi(web, anonymous, models, nlCall(), thatDay),
         TooManyRequestsError,
       )
       expect(error.message).toBe(
         'Today’s AI calls for EcoKart are used up; more are available after midnight India time',
       )
+      expect(error.resetAt).toEqual(new Date(day.getTime() + DAY_MS))
       const { context, sellerId } = await sellerContext()
       await expect(
-        callAi(web, context, models, draftCall(sellerId)),
+        callAi(web, context, models, draftCall(sellerId), thatDay),
       ).rejects.toThrow(error.message)
     } finally {
-      // The later tests need the platform's calls back.
       await owner.delete(aiRequests).where(eq(aiRequests.model, filler))
     }
   })
