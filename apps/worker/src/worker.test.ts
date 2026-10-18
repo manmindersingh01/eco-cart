@@ -6,17 +6,20 @@ import {
   createObjectStorage,
   createPool,
   createProduct,
+  getListingDraft,
   getOwnProduct,
   loadAuthConfig,
   loadNotificationConfig,
   loadStorageConfig,
   QUEUES,
   getProductForReview,
+  requestListingDraft,
   requireEnv,
   startJobQueue,
   submitProduct,
   updateSetting,
   withContext,
+  createAiModels,
 } from '@ecokart/core'
 import {
   createTestCategory,
@@ -332,6 +335,65 @@ test('a submitted listing is screened by the worker against the prohibited terms
     expect(fake.requests.map((request) => request.path)).toEqual([
       '/chat/completions',
     ])
+  } finally {
+    await queue.stop()
+    await Promise.all([webPool.end(), ownerPool.end()])
+    await worker.stop()
+    await fake.close()
+  }
+  // The worker picks jobs up every two seconds, so allow for a slow runner.
+}, 30_000)
+
+test('the worker writes a listing draft a seller asked for', async () => {
+  const fake = await startFakeAiServer()
+  const worker = await startWorker({ ...options(), ai: fake.settings() })
+  const webUrl = requireEnv('WEB_DATABASE_URL')
+  const webPool = createPool(webUrl, 'worker-e2e-draft-web')
+  const ownerPool = createPool(
+    requireEnv('MIGRATION_DATABASE_URL'),
+    'worker-e2e-draft-owner',
+  )
+  const queue = await startJobQueue(webUrl, 'worker-e2e-draft-queue')
+  const web = createDatabase(webPool)
+  const owner = createDatabase(ownerPool)
+  const storage = createObjectStorage(loadStorageConfig())
+  try {
+    const { owner: user, seller: business } = await createTestSeller(owner)
+    const seller = {
+      role: 'seller' as const,
+      userId: user.id,
+      sellerId: business.id,
+    }
+    const category = await createTestCategory(owner)
+    const product = await withContext(web, seller, (tx) =>
+      createProduct(tx, storage, seller, {
+        categoryId: category.id,
+        title: 'Coir mat',
+        variants: [
+          { sku: 'COIR-1', pricePaise: 39_900, mrpPaise: 49_900, stock: 2 },
+        ],
+      }),
+    )
+    await createTestPhoto(owner, product.id)
+    const suggestion = {
+      title: 'Coir Doormat, 60 x 40 cm',
+      description: 'A doormat woven from coconut coir.',
+      highlights: ['Natural coir'],
+      attributes: { Material: 'Coir' },
+    }
+    fake.queue(fakeChatReply(suggestion))
+    const asked = await withContext(web, seller, (tx) =>
+      requestListingDraft(
+        tx,
+        { storage, queue, ai: createAiModels(fake.settings()) },
+        seller,
+        { productId: product.id },
+      ),
+    )
+    const draft = () =>
+      withContext(web, seller, (tx) => getListingDraft(tx, seller, asked.id))
+    await waitUntil(async () => (await draft()).status === 'succeeded', 15_000)
+    expect((await draft()).suggestion).toEqual(suggestion)
   } finally {
     await queue.stop()
     await Promise.all([webPool.end(), ownerPool.end()])
