@@ -336,6 +336,9 @@ describe('listSettings', () => {
 const exampleNames = (list: ExampleCategory[]): string[] =>
   list.flatMap(({ name, children = [] }) => [name, ...exampleNames(children)])
 
+const byTitle = (a: { title: string }, b: { title: string }) =>
+  a.title.localeCompare(b.title)
+
 describe('seedDevelopmentData', () => {
   test('fills only the missing example values, as the system', async () => {
     await save(admin, 'commission_bps', 1500)
@@ -409,9 +412,11 @@ describe('seedDevelopmentData', () => {
     expect(await seedExampleProducts(services, development)).toEqual(titles)
     const seeded = await owner
       .select({
+        title: products.title,
         status: products.status,
         gstRateBps: products.gstRateBps,
         hsnCode: products.hsnCode,
+        minOrderQuantity: products.minOrderQuantity,
         hasPhoto: sql<boolean>`${products.primaryImageId} is not null`,
         risk: productModeration.aiRisk,
         decision: productModeration.decision,
@@ -433,15 +438,17 @@ describe('seedDevelopmentData', () => {
         ),
       )
     // Every example category's rate is 5%.
-    expect(seeded).toEqual(
-      titles.map(() => ({
+    expect(seeded.toSorted(byTitle)).toEqual(
+      DEVELOPMENT_PRODUCTS.map((example) => ({
+        title: example.title,
         status: 'approved',
         gstRateBps: 500,
         hsnCode: expect.stringMatching(/^\d{4}$/),
+        minOrderQuantity: example.minOrderQuantity ?? 1,
         hasPhoto: true,
         risk: 'low',
         decision: 'approved',
-      })),
+      })).toSorted(byTitle),
     )
     expect(await seedExampleProducts(services, development)).toEqual([])
   }, 60_000)

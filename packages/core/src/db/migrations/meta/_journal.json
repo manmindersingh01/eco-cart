@@ -134,6 +134,13 @@
       "when": 1791799486495,
       "tag": "0018_ai_requests_drop_old",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792342668306,
+      "tag": "0019_min_order_quantity",
+      "breakpoints": true
     }
   ]
 }
