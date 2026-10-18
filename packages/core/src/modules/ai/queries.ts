@@ -1,14 +1,19 @@
-import { and, desc, gte, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, lt, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import type { Transaction } from '../../db/client.ts'
 import type { RequestContext } from '../../db/context.ts'
 import { aiRequests } from '../../db/schema/index.ts'
 import { ForbiddenError, ValidationError } from '../../errors.ts'
-import { parseInput, strictObject } from '../../lib/validation.ts'
+import { isUuid, parseInput, strictObject } from '../../lib/validation.ts'
 import { getSetting } from '../settings/service.ts'
 import { DAY_MS, indianDate, indianDateStart } from './days.ts'
 import { countCallsToday } from './service.ts'
-import { isAiFeature, type AiFeature } from './types.ts'
+import {
+  isAiFeature,
+  isAiRequestStatus,
+  type AiFeature,
+  type AiRequestStatus,
+} from './types.ts'
 
 /*
  * The AI usage report for administrators (backend spec step 17): the cost
@@ -144,4 +149,47 @@ export async function getAiUsage(
       return { date: day, feature, ...totals }
     }),
   }
+}
+
+export interface AiRequestView {
+  id: string
+  feature: AiFeature
+  status: AiRequestStatus
+  sellerId: string | null
+  userId: string | null
+  /** The checked answer, once the call succeeded. */
+  result: unknown
+  createdAt: Date
+  completedAt: Date | null
+}
+
+/**
+ * One AI call of `feature`, if the caller's row-level security context can
+ * see it, or null. The feature that made the call checks who may read it.
+ */
+export async function getAiRequest(
+  tx: Transaction,
+  feature: AiFeature,
+  id: string,
+): Promise<AiRequestView | null> {
+  if (!isUuid(id)) return null
+  const [row] = await tx
+    .select({
+      id: aiRequests.id,
+      feature: aiRequests.feature,
+      status: aiRequests.status,
+      sellerId: aiRequests.sellerId,
+      userId: aiRequests.userId,
+      result: aiRequests.result,
+      createdAt: aiRequests.createdAt,
+      completedAt: aiRequests.completedAt,
+    })
+    .from(aiRequests)
+    .where(and(eq(aiRequests.id, id), eq(aiRequests.feature, feature)))
+  if (!row) return null
+  // The CHECK constraint on ai_requests.status allows nothing else.
+  if (!isAiRequestStatus(row.status)) {
+    throw new Error(`Unknown AI request status ${row.status}`)
+  }
+  return { ...row, feature, status: row.status }
 }

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { and, desc, eq, gte, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm'
 import type { z } from 'zod'
 import type { Database, Transaction } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
@@ -10,6 +10,7 @@ import {
   TooManyRequestsError,
 } from '../../errors.ts'
 import {
+  AiProviderError,
   usageOfFailure,
   type AiUsage,
   type ModelReply,
@@ -25,6 +26,12 @@ import { AI_FEATURES, type AiFeature } from './types.ts'
  * ai_requests for every call that reached the model. The model is called
  * between two short transactions, never inside one, so a slow provider never
  * holds a database lock.
+ *
+ * A call a seller waits for in the background, such as a listing draft
+ * (step 19), is queued instead: queueAiCall checks the cache and the limits
+ * and writes a `queued` row in the request's transaction, and the job makes
+ * the call with runQueuedAiCall, so the row is the seller's place in the
+ * day's limit from the moment they ask.
  */
 
 export interface LimitRule {
@@ -253,98 +260,51 @@ const errorText = (error: unknown): string => {
 const microUsd = (costUsd: number | null): number | null =>
   costUsd === null ? null : Math.round(costUsd * 1_000_000)
 
+type Outcome =
+  | { status: 'succeeded'; result: unknown; usage: AiUsage }
+  | { status: 'failed'; error: string; usage: AiUsage }
+  /** A failed attempt that the job's queue will try again. */
+  | { status: 'queued'; error: string; usage: AiUsage }
+
 async function recordOutcome(
   db: Database,
   context: RequestContext,
   requestId: string,
-  outcome:
-    | { status: 'succeeded'; result: unknown; usage: AiUsage }
-    | { status: 'failed'; error: string; usage: AiUsage },
+  outcome: Outcome,
   latencyMs: number,
 ): Promise<void> {
+  const cost = microUsd(outcome.usage.costUsd)
   await withContext(db, context, (tx) =>
     tx
       .update(aiRequests)
       .set({
         status: outcome.status,
         result: outcome.status === 'succeeded' ? outcome.result : null,
-        error: outcome.status === 'failed' ? outcome.error : null,
-        inputTokens: outcome.usage.inputTokens,
-        outputTokens: outcome.usage.outputTokens,
-        costMicroUsd: microUsd(outcome.usage.costUsd),
+        error: outcome.status === 'succeeded' ? null : outcome.error,
+        // Added up, so a queued call that took several attempts is logged
+        // with what all of them used.
+        inputTokens: sql`coalesce(${aiRequests.inputTokens}, 0) + ${outcome.usage.inputTokens}`,
+        outputTokens: sql`coalesce(${aiRequests.outputTokens}, 0) + ${outcome.usage.outputTokens}`,
+        costMicroUsd:
+          cost === null
+            ? sql`${aiRequests.costMicroUsd}`
+            : sql`coalesce(${aiRequests.costMicroUsd}, 0) + ${cost}`,
         latencyMs,
-        completedAt: sql`now()`,
+        completedAt: outcome.status === 'queued' ? null : sql`now()`,
       })
       .where(eq(aiRequests.id, requestId)),
   )
 }
 
-/**
- * Answers one AI call: from the cache when the same input was answered
- * recently enough, otherwise by the model, within the daily limits.
- *
- * Throws NotConfiguredError when AI is switched off, TooManyRequestsError
- * when a daily limit is used up (its `resetAt` is the next midnight India
- * time), and the model's own error (AiProviderError or AiReplyError) after
- * recording it, so each feature decides how to fall back.
- *
- * For example, the listing builder (step 19) calls it with the feature
- * `listing_draft`, the seller's id, the vision model, and the prompt and
- * photo addresses as the input.
- */
-export async function callAi<K extends keyof AiModels, T>(
+/** Runs the model for a reserved row and records what happened. */
+async function runAndRecord<K extends keyof AiModels, T>(
   db: Database,
   context: RequestContext,
-  models: AiModels | null,
+  models: AiModels,
+  requestId: string,
   call: AiCall<K, T>,
-  now: Date = new Date(),
-): Promise<AiAnswer<T>> {
-  if (models === null) {
-    throw new NotConfiguredError('AI features are switched off')
-  }
-  assertCanCallFor(context, call)
-  const rule = LIMIT_RULES[call.feature]
-  if (rule.seller && call.sellerId === undefined) {
-    throw new Error(`${call.feature} calls must name the seller they are for`)
-  }
-  const model = models[call.uses]
-  const inputHash = aiInputHash(call.feature, model.model, call.input)
-
-  const reservation = await withContext(
-    db,
-    context,
-    async (tx): Promise<Reservation<T>> => {
-      const cached = await findCached(tx, call, inputHash, now)
-      if (cached) {
-        return { kind: 'cached', requestId: cached.id, value: cached.value }
-      }
-      if (rule.platform || rule.seller) {
-        await checkDailyLimits(tx, rule, call.sellerId, now)
-      }
-      const [row] = await tx
-        .insert(aiRequests)
-        .values({
-          feature: call.feature,
-          userId: call.userId ?? null,
-          sellerId: call.sellerId ?? null,
-          provider: model.provider,
-          model: model.model,
-          inputHash,
-          status: 'running',
-        })
-        .returning({ id: aiRequests.id })
-      return { kind: 'reserved', requestId: row!.id }
-    },
-  )
-  if (reservation.kind === 'cached') {
-    return {
-      requestId: reservation.requestId,
-      value: reservation.value,
-      cached: true,
-    }
-  }
-
-  const { requestId } = reservation
+  retried: (error: unknown) => boolean,
+): Promise<T> {
   const started = performance.now()
   let reply: ModelReply<T>
   try {
@@ -357,7 +317,7 @@ export async function callAi<K extends keyof AiModels, T>(
         context,
         requestId,
         {
-          status: 'failed',
+          status: retried(error) ? 'queued' : 'failed',
           error: errorText(error),
           usage: usageOfFailure(error),
         },
@@ -379,5 +339,232 @@ export async function callAi<K extends keyof AiModels, T>(
     { status: 'succeeded', result: reply.value, usage: reply.usage },
     Math.round(performance.now() - started),
   )
-  return { requestId, value: reply.value, cached: false }
+  return reply.value
+}
+
+/** Checks a call before anything is counted, and gives its model and cache key. */
+function prepare<K extends keyof AiModels>(
+  context: RequestContext,
+  models: AiModels | null,
+  call: Omit<AiCall<K, unknown>, 'run' | 'schema'>,
+): {
+  models: AiModels
+  rule: LimitRule
+  model: AiModels[K]
+  inputHash: string
+} {
+  if (models === null) {
+    throw new NotConfiguredError('AI features are switched off')
+  }
+  assertCanCallFor(context, call)
+  const rule = LIMIT_RULES[call.feature]
+  if (rule.seller && call.sellerId === undefined) {
+    throw new Error(`${call.feature} calls must name the seller they are for`)
+  }
+  const model = models[call.uses]
+  return {
+    models,
+    rule,
+    model,
+    inputHash: aiInputHash(call.feature, model.model, call.input),
+  }
+}
+
+/**
+ * The cache, then the daily limits, then a new row with `status`, all in
+ * the caller's transaction.
+ */
+async function reserve<T>(
+  tx: Transaction,
+  call: Omit<AiCall<keyof AiModels, T>, 'run'>,
+  prepared: {
+    rule: LimitRule
+    model: { provider: string; model: string }
+    inputHash: string
+  },
+  status: 'queued' | 'running',
+  now: Date,
+): Promise<Reservation<T>> {
+  const cached = await findCached(tx, call, prepared.inputHash, now)
+  if (cached) {
+    return { kind: 'cached', requestId: cached.id, value: cached.value }
+  }
+  const { rule } = prepared
+  if (rule.platform || rule.seller) {
+    await checkDailyLimits(tx, rule, call.sellerId, now)
+  }
+  const [row] = await tx
+    .insert(aiRequests)
+    .values({
+      feature: call.feature,
+      userId: call.userId ?? null,
+      sellerId: call.sellerId ?? null,
+      provider: prepared.model.provider,
+      model: prepared.model.model,
+      inputHash: prepared.inputHash,
+      status,
+    })
+    .returning({ id: aiRequests.id })
+  return { kind: 'reserved', requestId: row!.id }
+}
+
+/**
+ * Answers one AI call: from the cache when the same input was answered
+ * recently enough, otherwise by the model, within the daily limits.
+ *
+ * Throws NotConfiguredError when AI is switched off, TooManyRequestsError
+ * when a daily limit is used up (its `resetAt` is the next midnight India
+ * time), and the model's own error (AiProviderError or AiReplyError) after
+ * recording it, so each feature decides how to fall back.
+ *
+ * For example, listing screening (step 20) calls it with the feature
+ * `screening`, the product's seller, the vision model, and the prompt and
+ * photo addresses as the input.
+ */
+export async function callAi<K extends keyof AiModels, T>(
+  db: Database,
+  context: RequestContext,
+  models: AiModels | null,
+  call: AiCall<K, T>,
+  now: Date = new Date(),
+): Promise<AiAnswer<T>> {
+  const prepared = prepare(context, models, call)
+  const reservation = await withContext(db, context, (tx) =>
+    reserve(tx, call, prepared, 'running', now),
+  )
+  if (reservation.kind === 'cached') {
+    return {
+      requestId: reservation.requestId,
+      value: reservation.value,
+      cached: true,
+    }
+  }
+  const value = await runAndRecord(
+    db,
+    context,
+    prepared.models,
+    reservation.requestId,
+    call,
+    () => false,
+  )
+  return { requestId: reservation.requestId, value, cached: false }
+}
+
+export type AiQueuedCall<K extends keyof AiModels, T> = Omit<
+  AiCall<K, T>,
+  'run'
+>
+
+export type QueuedAiCall<T> =
+  | { kind: 'cached'; requestId: string; value: T }
+  | { kind: 'queued'; requestId: string }
+
+/**
+ * Queues one AI call for a job, inside the caller's transaction, so the
+ * job can be sent in the same transaction: an answer from the cache when
+ * there is one, otherwise a `queued` row within the daily limits. The row
+ * counts against the limits from now on, so asking many times while the
+ * jobs wait cannot go over them.
+ *
+ * Throws NotConfiguredError when AI is switched off and TooManyRequestsError
+ * when a daily limit is used up, like callAi.
+ */
+export async function queueAiCall<K extends keyof AiModels, T>(
+  tx: Transaction,
+  context: RequestContext,
+  models: AiModels | null,
+  call: AiQueuedCall<K, T>,
+  now: Date = new Date(),
+): Promise<QueuedAiCall<T>> {
+  const prepared = prepare(context, models, call)
+  const reservation = await reserve(tx, call, prepared, 'queued', now)
+  return reservation.kind === 'cached'
+    ? reservation
+    : { kind: 'queued', requestId: reservation.requestId }
+}
+
+/**
+ * Makes a queued call from its job. The limits were checked when it was
+ * queued, so they are not checked again; `call` must be the same feature,
+ * seller, and user, and its input may have changed since (for example a
+ * photo added), so the row takes its new cache key.
+ *
+ * Returns null when the call already finished, for example on a job run
+ * twice. Throws the model's error after recording it: a provider failure
+ * before the job's `lastAttempt` leaves the row queued for the next
+ * attempt, and anything else marks it failed.
+ */
+export async function runQueuedAiCall<K extends keyof AiModels, T>(
+  db: Database,
+  context: RequestContext,
+  models: AiModels | null,
+  requestId: string,
+  call: AiCall<K, T>,
+  { lastAttempt = true }: { lastAttempt?: boolean } = {},
+): Promise<AiAnswer<T> | null> {
+  if (models === null) {
+    // AI was switched off after the call was queued.
+    await failQueuedAiCall(
+      db,
+      context,
+      requestId,
+      'AI features are switched off',
+    )
+    throw new NotConfiguredError('AI features are switched off')
+  }
+  const prepared = prepare(context, models, call)
+  const claimed = await withContext(db, context, (tx) =>
+    tx
+      .update(aiRequests)
+      .set({
+        // A row left running by a worker that stopped is run again.
+        status: 'running',
+        provider: prepared.model.provider,
+        model: prepared.model.model,
+        inputHash: prepared.inputHash,
+      })
+      .where(
+        and(
+          eq(aiRequests.id, requestId),
+          eq(aiRequests.feature, call.feature),
+          sql`${aiRequests.sellerId} is not distinct from ${call.sellerId ?? null}`,
+          sql`${aiRequests.userId} is not distinct from ${call.userId ?? null}`,
+          inArray(aiRequests.status, ['queued', 'running']),
+        ),
+      )
+      .returning({ id: aiRequests.id }),
+  )
+  if (claimed.length === 0) return null
+  const value = await runAndRecord(
+    db,
+    context,
+    models,
+    requestId,
+    call,
+    (error) => error instanceof AiProviderError && !lastAttempt,
+  )
+  return { requestId, value, cached: false }
+}
+
+/**
+ * Marks a queued call failed without calling anyone, for a job that finds
+ * it cannot be made, for example because the product's photos are gone.
+ */
+export async function failQueuedAiCall(
+  db: Database,
+  context: RequestContext,
+  requestId: string,
+  reason: string,
+): Promise<void> {
+  await withContext(db, context, (tx) =>
+    tx
+      .update(aiRequests)
+      .set({ status: 'failed', error: reason, completedAt: sql`now()` })
+      .where(
+        and(
+          eq(aiRequests.id, requestId),
+          inArray(aiRequests.status, ['queued', 'running']),
+        ),
+      ),
+  )
 }

@@ -105,6 +105,10 @@ const productVisible = (column: string) =>
 const productEditable = (column: string) =>
   sql`exists (select 1 from products p where p.id = ${sql.raw(column)} and (p.seller_id = ${currentSellerId} or ${fullAccess}))`
 
+// The condition of the partial storefront indexes; storefront queries repeat
+// it so the planner can use them.
+const onSale = sql`status = 'approved' and deleted_at is null`
+
 export const products = pgTable(
   'products',
   {
@@ -196,6 +200,18 @@ export const products = pgTable(
       'gin',
       t.searchText.op('gin_trgm_ops'),
     ),
+    // Storefront lists (backend spec step 9) read only products on sale, so
+    // their indexes leave everything else out.
+    index('products_public_category_published_idx')
+      .on(t.categoryId, t.publishedAt.desc(), t.id.desc())
+      .where(onSale),
+    index('products_public_category_price_idx')
+      .on(t.categoryId, t.minPricePaise, t.id)
+      .where(onSale),
+    index('products_public_published_idx')
+      .on(t.publishedAt.desc(), t.id.desc())
+      .where(onSale),
+    index('products_public_brand_idx').on(t.brandId).where(onSale),
     check(
       'products_status_check',
       sql`status in ('draft', 'pending_review', 'approved', 'rejected', 'archived')`,
@@ -316,6 +332,56 @@ export const productImages = pgTable(
     webInsert(productEditable('product_images.product_id')),
     webUpdate(productEditable('product_images.product_id')),
     webDelete(productEditable('product_images.product_id')),
+    workerPolicy(),
+  ],
+).enableRLS()
+
+/** A product's one optional video, checked and converted by the worker. */
+export const productVideos = pgTable(
+  'product_videos',
+  {
+    id: uuidPrimaryKey(),
+    // Unique: a product has at most one video.
+    productId: uuid('product_id')
+      .notNull()
+      .unique()
+      .references(() => products.id),
+    // videos/{id}: the public files are videos/{id}/video.mp4 and poster.jpg.
+    storageKey: text('storage_key').notNull().unique(),
+    // processing until the worker has converted it, like a photo.
+    status: text('status').notNull().default('processing'),
+    // The browser's upload; unique, so one upload becomes one video.
+    uploadKey: text('upload_key').unique(),
+    // Shown to the seller when the video cannot be used.
+    failureReason: text('failure_reason'),
+    // The converted file's, filled in by the worker.
+    durationMs: integer('duration_ms'),
+    width: integer('width'),
+    height: integer('height'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  () => [
+    check(
+      'product_videos_status_check',
+      sql`status in ('processing', 'ready', 'failed')`,
+    ),
+    check(
+      'product_videos_ready_check',
+      sql`status <> 'ready' or (duration_ms is not null and width is not null and height is not null)`,
+    ),
+    check(
+      'product_videos_failed_check',
+      sql`(status = 'failed') = (failure_reason is not null)`,
+    ),
+    check(
+      'product_videos_size_check',
+      sql`duration_ms > 0 and width > 0 and height > 0`,
+    ),
+    webSelect(productVisible('product_videos.product_id')),
+    webInsert(productEditable('product_videos.product_id')),
+    webUpdate(productEditable('product_videos.product_id')),
+    webDelete(productEditable('product_videos.product_id')),
     workerPolicy(),
   ],
 ).enableRLS()

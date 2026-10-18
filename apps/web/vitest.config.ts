@@ -18,6 +18,7 @@ export default defineConfig({
     testTimeout: 20_000,
     // Rebuilds ecokart_test_web from the real migrations before every run.
     globalSetup: ['./vitest.global-setup.ts'],
+    setupFiles: ['./vitest.setup.ts'],
     env: {
       DATABASE_URL: database.webUrl,
       // For test fixtures and reading queued codes back.
@@ -27,6 +28,8 @@ export default defineConfig({
       // "development-only-encryption-key!" in base64.
       MESSAGE_ENCRYPTION_KEY: 'ZGV2ZWxvcG1lbnQtb25seS1lbmNyeXB0aW9uLWtleSE=',
       SMS_PROVIDER: 'mailpit',
+      // As in development; a test that needs AI points it at the fake server.
+      AI_ENABLED: 'false',
       // Its own bucket on the compose.yaml storage service, or CI's.
       ...testStorageEnv('web'),
     },

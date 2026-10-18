@@ -1,4 +1,5 @@
 import {
+  clientAddress,
   ConflictError,
   ForbiddenError,
   NotConfiguredError,
@@ -68,13 +69,9 @@ export async function readJsonBody(request: Request): Promise<unknown> {
   }
 }
 
-/** The visitor's address as the load balancer reports it, for audit logs. */
+/** The visitor's address, for audit logs and per-address limits. */
 export function clientIp(request: Request): string | null {
-  const forwarded = request.headers
-    .get('x-forwarded-for')
-    ?.split(',')[0]
-    ?.trim()
-  return forwarded || request.headers.get('x-real-ip') || null
+  return clientAddress(request.headers)
 }
 
 /** `?cursor=...&limit=20` from a list request, as list services take them. */

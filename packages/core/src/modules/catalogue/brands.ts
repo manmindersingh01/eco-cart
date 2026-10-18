@@ -19,6 +19,7 @@ import { foreignKeyViolation, uniqueViolation } from '../../lib/postgres.ts'
 import { firstFreeSlug, slugify } from '../../lib/slug.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
 import { recordAuditEntry, type AuditEntry } from '../audit/service.ts'
+import { invalidateStorefront } from './storefront-cache.ts'
 import { refreshProducts } from './summary.ts'
 import {
   brandUpdate,
@@ -282,6 +283,8 @@ export async function updateBrand(
       Object.fromEntries(
         Object.entries(auditable(brand)).filter(([key]) => key in changes),
       )
+    // Cached storefront pages show brand names and filter by brand.
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'brand.update',
@@ -322,6 +325,7 @@ export async function deleteBrand(
     if (foreignKeyViolation(error)) throw new ConflictError(IN_USE)
     throw error
   }
+  await invalidateStorefront(tx, 'everything')
   await recordAuditEntry(tx, {
     ...administratorActor(context),
     action: 'brand.delete',

@@ -23,6 +23,8 @@ import {
   productModeration,
   productVariants,
   products,
+  sellerDocumentFiles,
+  sellerDocumentRequests,
   sellerLedgerEntries,
   sellers,
 } from './schema/index.ts'
@@ -841,5 +843,155 @@ describe('invoices', () => {
       .from(invoices)
       .where(eq(invoices.id, invoiceIds.order1A))
     expect(row).toEqual({ totalPaise: 50_000 })
+  })
+})
+
+/** A file uploaded by seller A, as the portal would add it. */
+const fileFor = (requestId: string, sellerId: string) => ({
+  requestId,
+  sellerId,
+  uploadKey: `uploads/seller-documents/${requestId}/${crypto.randomUUID()}`,
+  uploadedBy: sellerA.owner.id,
+})
+
+describe('seller documents', () => {
+  // One request for each seller, each with one uploaded file.
+  const documents = { requestA: '', requestB: '', fileA: '', fileB: '' }
+
+  beforeAll(async () => {
+    const [requestA, requestB] = await owner
+      .insert(sellerDocumentRequests)
+      .values(
+        [sellerA, sellerB].map((s) => ({
+          sellerId: s.seller.id,
+          documentType: 'pan_card',
+          note: 'A clear copy of the PAN card',
+          status: 'processing',
+          requestedBy: admin.id,
+        })),
+      )
+      .returning()
+    const [fileA, fileB] = await owner
+      .insert(sellerDocumentFiles)
+      .values(
+        [
+          { s: sellerA, request: requestA! },
+          { s: sellerB, request: requestB! },
+        ].map(({ s, request }) => ({
+          requestId: request.id,
+          sellerId: request.sellerId,
+          uploadKey: `uploads/seller-documents/${request.id}/${crypto.randomUUID()}`,
+          uploadedBy: s.owner.id,
+        })),
+      )
+      .returning()
+    Object.assign(documents, {
+      requestA: requestA!.id,
+      requestB: requestB!.id,
+      fileA: fileA!.id,
+      fileB: fileB!.id,
+    })
+  })
+
+  const visible = (context: RequestContext) =>
+    withContext(web, context, async (tx) => ({
+      requests: (
+        await tx
+          .select({ id: sellerDocumentRequests.id })
+          .from(sellerDocumentRequests)
+          .where(
+            inArray(sellerDocumentRequests.id, [
+              documents.requestA,
+              documents.requestB,
+            ]),
+          )
+      ).map((row) => row.id),
+      files: (
+        await tx
+          .select({ id: sellerDocumentFiles.id })
+          .from(sellerDocumentFiles)
+          .where(
+            inArray(sellerDocumentFiles.id, [documents.fileA, documents.fileB]),
+          )
+      ).map((row) => row.id),
+    }))
+
+  test('a seller sees only their own requests and files', async () => {
+    expect(await visible(as.seller(sellerA))).toEqual({
+      requests: [documents.requestA],
+      files: [documents.fileA],
+    })
+  })
+
+  test('buyers and visitors see none; administrators see all', async () => {
+    const none = { requests: [], files: [] }
+    expect(await visible(as.buyer(buyer1))).toEqual(none)
+    expect(await visible(as.anonymous())).toEqual(none)
+    const all = await visible(as.admin())
+    expect(all.requests).toHaveLength(2)
+    expect(all.files).toHaveLength(2)
+  })
+
+  test('a seller cannot ask for documents or decide on their own', async () => {
+    const asking = await errorCode(
+      withContext(web, as.seller(sellerA), (tx) =>
+        tx.insert(sellerDocumentRequests).values({
+          sellerId: sellerA.seller.id,
+          documentType: 'other',
+          note: 'Asked by myself',
+        }),
+      ),
+    )
+    expect(asking).toBe(INSUFFICIENT_PRIVILEGE)
+    const accepting = await errorCode(
+      withContext(web, as.seller(sellerA), (tx) =>
+        tx
+          .update(sellerDocumentRequests)
+          .set({ status: 'accepted', acceptedAt: new Date() })
+          .where(eq(sellerDocumentRequests.id, documents.requestA)),
+      ),
+    )
+    expect(accepting).toBe(INSUFFICIENT_PRIVILEGE)
+    const reviewing = await withContext(web, as.seller(sellerA), (tx) =>
+      tx
+        .update(sellerDocumentFiles)
+        .set({ status: 'failed', failureReason: 'Changed by the seller' })
+        .where(eq(sellerDocumentFiles.id, documents.fileA))
+        .returning({ id: sellerDocumentFiles.id }),
+    )
+    expect(reviewing).toEqual([])
+  })
+
+  test('a seller adds files only to their own requests, unchecked', async () => {
+    for (const values of [
+      // Another seller's request, under either seller's id.
+      fileFor(documents.requestB, sellerA.seller.id),
+      fileFor(documents.requestB, sellerB.seller.id),
+      // Marked as already checked.
+      {
+        ...fileFor(documents.requestA, sellerA.seller.id),
+        status: 'received',
+        storageKey: 'seller-documents/x',
+        contentType: 'application/pdf',
+        sizeBytes: 1,
+        contentHash: 'x',
+      },
+    ]) {
+      const code = await errorCode(
+        withContext(web, as.seller(sellerA), (tx) =>
+          tx.insert(sellerDocumentFiles).values(values),
+        ),
+      )
+      expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    }
+  })
+
+  test('a request has at most one file in check or review', async () => {
+    const code = await errorCode(
+      owner
+        .insert(sellerDocumentFiles)
+        .values(fileFor(documents.requestA, sellerA.seller.id)),
+    )
+    expect(code).toBe(UNIQUE_VIOLATION)
   })
 })

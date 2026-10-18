@@ -1,5 +1,11 @@
-import { loadAuthConfig, loadStorageConfig, requireEnv } from '@ecokart/core'
-import { loadAiConfig, loadRazorpayConfig } from '@ecokart/core'
+import {
+  loadAiConfig,
+  loadAuthConfig,
+  loadRazorpayConfig,
+  loadStorageConfig,
+  requireEnv,
+  trustedProxyCount,
+} from '@ecokart/core'
 
 /**
  * Reads every setting the web app needs and stops with one clear error if
@@ -11,6 +17,7 @@ export function checkWebSettings(env: NodeJS.ProcessEnv = process.env): void {
   requireEnv('DATABASE_URL', env)
   loadAuthConfig(env)
   loadStorageConfig(env)
+  trustedProxyCount(env)
   // AI (backend spec step 17).
   loadAiConfig(env)
   // Razorpay (backend spec step 12): all three keys, or none for cash on

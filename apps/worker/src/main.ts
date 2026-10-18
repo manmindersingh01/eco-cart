@@ -4,6 +4,7 @@ import {
   loadStorageConfig,
   requireEnv,
 } from '@ecokart/core'
+import { loadVideoTools } from '@ecokart/core/worker'
 import { startWorker } from './worker.ts'
 
 // Settings are read once, so a missing or wrong one stops the worker here
@@ -12,6 +13,7 @@ const worker = await startWorker({
   databaseUrl: requireEnv('DATABASE_URL'),
   notifications: loadNotificationConfig(),
   storage: loadStorageConfig(),
+  videoTools: loadVideoTools(),
   // AI (backend spec step 17).
   ai: loadAiConfig(),
 })
