@@ -69,7 +69,7 @@ Each of those can be added later if measurements show a need, and the code is st
 | ECS Fargate, service `worker` | The job runner; one task, no load balancer, scheduled jobs come from pg-boss cron inside it |
 | PostgreSQL 16 in Docker | The `pgvector/pgvector` image from `compose.yaml` with its data on a persistent volume, in a private subnet, with the `vector` and `pg_trgm` extensions. Decided 5 October 2026 instead of Amazon RDS, for now. Where the container runs and how it is backed up are settled with the compute shape and the backup plan (section 11). |
 | S3 | One private bucket per environment for images, import files, and invoice PDFs, with a CORS rule for uploads from the web app's address and a lifecycle rule that deletes unused uploads after a day. Locally, SeaweedFS from `compose.yaml` stands in for it. |
-| CloudFront | One distribution in front of the ALB for public page caching and TLS, and one in front of the bucket with origin access control |
+| CloudFront | One distribution in front of the ALB for TLS and static files, passing page HTML through to Next.js (whose cache is refreshed by tags, section 7), and one in front of the bucket with origin access control for photos |
 | Route 53 + ACM | DNS and certificates |
 | Secrets Manager | Database password, Razorpay keys, AI provider keys, email and SMS keys, injected into task definitions |
 | CloudWatch | Logs from both services and alarms on error rate, queue depth, and database CPU |
@@ -160,10 +160,19 @@ apps/
                                take down a listing on sale
       api/account/addresses/   a signed-in buyer's saved delivery addresses
       api/admin/ai/usage/      administrators see AI calls, tokens, and cost per day, and today's calls against the limit
+      api/home/                the home page: new arrivals and a row per top-level category
+      api/products/[slug]/     one product page, for anyone
+      api/categories/[slug]/products/   a category page with filters, sorting, and pages
+      api/search/              keyword search, limited per visitor address
+      api/admin/search/gaps/   the catalogue gap report: searches that found nothing
       api/webhooks/razorpay/route.ts
     src/lib/                   api.ts (handleErrors, one HTTP answer per error), request-context.ts,
-                               auth.ts, db.ts, queue.ts, storage.ts, sellers.ts, settings.ts
+                               auth.ts, db.ts, queue.ts, storage.ts, sellers.ts, settings.ts,
+                               storefront.ts (the public reads the API and storefront pages share),
+                               product-photos.ts (next/image loader for the pre-sized photos)
     src/instrumentation.ts     checks every setting when the server starts, and stops it if one is wrong
+    src/cache-handler.ts       the 'use cache' handler: Next.js's in-memory cache, plus the changed tags
+                               read from cache_invalidations every second (section 7)
     scripts/create-admin.ts    `pnpm admin:create`: the first administrator
   worker/                      background worker (@ecokart/worker)
     src/main.ts                process entry: reads settings, starts, stops gracefully
@@ -180,7 +189,11 @@ packages/
          tree.ts for the in-memory category tree, products.ts, images.ts,
          summary.ts for the summary fields on products, moderation.ts for
          submitting, reviewing, and archiving listings, screening.ts for the
-         screening job, and jobs.ts)
+         screening job, storefront.ts and storefront-types.ts for the public
+         product, category, and home pages and the product list they share
+         with search, storefront-cache.ts for the cache tags and
+         invalidateStorefront, and jobs.ts; search/ turns a request into
+         filters, logs it, limits it, and reads the catalogue's product list)
     src/db/
       pool.ts                  database connection pool
       client.ts                Drizzle database on top of the pool
@@ -193,11 +206,13 @@ packages/
     src/worker.ts              worker-only exports (`@ecokart/core/worker`), such as the photo and
                                video jobs and the invoice PDF job, so the web app never loads the
                                image or PDF library or runs ffmpeg
+    src/cache.ts               what the web app's cache handler needs (`@ecokart/core/cache`)
     src/errors.ts              the errors services throw; the web app turns each into one HTTP status
     src/index.ts               everything the web app and worker may use; src/env.ts reads required settings
     src/testing/               test database setup and fixtures, used only by tests
     src/lib/
-      razorpay.ts  email.ts  sms.ts  cache.ts
+      razorpay.ts  email.ts  sms.ts
+      cache.ts       the shared log of changed cache tags (cache_invalidations): record, read, clear
       storage.ts     one S3 client: signed upload forms, signed download links, reading and writing
                      objects, public photo addresses
       storage-setup.ts  sets up the local bucket (`pnpm db:up`) and the test buckets
@@ -214,6 +229,7 @@ packages/
       mailpit.ts     local mail catcher, for development and tests only
       pagination.ts  keyset pagination with exact (microsecond) cursors
       slug.ts        readable names for web addresses, numbered when taken
+      client-address.ts  the visitor's IP address, read from the trusted end of X-Forwarded-For
       states.ts      the GST state codes with their names; imports nothing, so the browser
                      can use it too (`@ecokart/core/states`)
       ai/
@@ -270,9 +286,9 @@ Three rules keep this maintainable.
 | Reviews | `reviews` |
 | Imports | `catalogue_imports`, `catalogue_import_rows` |
 | AI and search | `ai_requests`, `search_queries` |
-| Platform | `platform_settings`, `content_pages`, `email_outbox`, `audit_logs`, `rate_limits` |
+| Platform | `platform_settings`, `content_pages`, `email_outbox`, `audit_logs`, `rate_limits`, `cache_invalidations` |
 
-That is 37 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
+That is 38 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
 Better Auth keeps its rate-limit counters in `auth_rate_limits`; our own `rate_limits` table, with a different shape, serves the per-address sign-in code limit, and later checkout, search, and AI.
 
 ### 5.3 Identity
@@ -443,6 +459,11 @@ products
   INDEX (category_id, status)
   INDEX (status, created_at DESC, id DESC)
   INDEX (status, min_price_paise, id)
+  -- storefront lists, only products on sale (WHERE status = 'approved' AND deleted_at IS NULL)
+  INDEX (category_id, published_at DESC, id DESC)       category pages, newest first
+  INDEX (category_id, min_price_paise, id)              category pages by price, both ways
+  INDEX (published_at DESC, id DESC)                    the home page's new arrivals
+  INDEX (brand_id)                                      the brand filter
   GIN INDEX (search_vector)
   GIN INDEX (search_text gin_trgm_ops)
 
@@ -904,6 +925,12 @@ rate_limits
   window_start  timestamptz
   count         int
   INDEX (window_start)   for clearing old windows
+
+cache_invalidations                     append only; no row-level security: only tags of public pages
+  id            bigserial PK
+  tag           text   e.g. product:<id>, category:<id>, home, catalogue
+  created_at    the time of the statement that recorded it
+  INDEX (created_at)    every web container reads the latest rows each second
 ```
 
 Each setting has a rule its value must follow, checked whenever it is saved or read.
@@ -1022,6 +1049,9 @@ GST credit notes for returns are deferred, as quotation 4.0 says.
 All four discovery features end in the same place: one SQL query over `products` with filters and a ranking expression.
 
 - Keyword search: `search_vector @@ websearch_to_tsquery(...)`, ranked by `ts_rank`, with a trigram similarity fallback on `search_text` for typos.
+  The fallback runs only when the words match nothing, and the answer says which kind of match it is.
+  The match itself runs in two small database functions that return only products on sale, because the full-text and trigram operators cannot use their indexes under row-level security (backend spec, step 9).
+  Category pages and search share one product list, with the same filters (brand, price, in stock), sorts (newest, price, and relevance for search), and keyset pages.
 - Natural-language search: the text model turns the sentence into structured filters and a clean query string (category, brand, price range, attributes), the query string is embedded as a search query, and the results are ordered by cosine distance over the product text embeddings with the filters applied.
   Parsed queries are cached by hash for a day, and if the parser times out the sentence is run as a keyword search instead.
 - Image search: the uploaded photo is resized, embedded with the same multimodal model, and matched against the product image embeddings; results are de-duplicated by product.
@@ -1030,6 +1060,8 @@ All four discovery features end in the same place: one SQL query over `products`
 - Similar products: nearest neighbours of the product's own text embedding within the same category, computed on demand and cached with the product page.
 
 Every search writes a `search_queries` row, and zero-result queries surface in the admin console as the catalogue gap report.
+A row is written for each new search, not for each further page, and keyword search rows carry no user or session, because the report needs only the words and the count.
+Searches are limited per visitor address (120 a minute), counted in `rate_limits`.
 
 ### 6.9 Shopping assistant
 
@@ -1043,12 +1075,12 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 
 | Technique | Where it applies | Effect |
 | --- | --- | --- |
-| Full-page caching with tags | Home, category, product, and content pages | Rendered once, served from cache, and refreshed only when the underlying product or category changes. Personal pages (cart, orders, seller, admin) are never cached. |
-| CDN in front of everything public | Cached pages, images, static assets | Most storefront traffic never reaches the application. |
+| Full-page caching with tags | Home, category, product, and content pages | Rendered once, served from cache, and refreshed only when the underlying product or category changes. Each change records its tags in `cache_invalidations` in its own transaction, and every web container reads them within a second, so a change made through another container or by the worker refreshes the pages too, without Redis. Personal pages (cart, orders, seller, admin) are never cached. |
+| CDN in front of static files and photos | Images, static assets | Most bytes never reach the application. Page HTML is not cached at the CDN, because it cannot see tag invalidations; Next.js serves cached pages from memory without touching the database. |
 | Denormalised summary fields | `products.min_price_paise`, `total_stock`, `rating_avg`, `search_text` | Listing, search, and category pages read one table with one index. |
 | Purpose-built indexes | Every list the UI shows has a matching composite index (see section 5) | No sequential scans on hot paths. |
 | Keyset pagination | Product lists, order lists, ledgers, seller lists | Page 200 costs the same as page 1. The cursor keeps the time to the microsecond, so rows created in the same millisecond are never repeated or skipped. |
-| Small category tree in memory | Category filters and breadcrumbs | Descendant category ids are computed in the app from a 60-second cached tree; no recursive queries. |
+| Small category tree in memory | Category filters and breadcrumbs | Descendant category ids are computed in the app from the tree, loaded in one small query; no recursive queries. Cached pages keep the result, so the tree needs no cache of its own and is never behind an administrator's change. |
 | Everything slow goes to the worker | AI calls, embeddings, image resizing, PDFs, emails, imports | Requests stay under a few hundred milliseconds regardless of external service latency. |
 | Pre-sized images on the CDN | Thumbnail, card, and gallery sizes generated at upload | No on-the-fly resizing; immutable cache headers, because each photo has its own id in its address and its files never change. |
 | Connection pooling | Every database connection | Each container keeps a small connection pool. The row-level security values are set with `SET LOCAL` inside each transaction, so they never leak to the next request on a pooled connection, and they keep working if a transaction-mode pooler such as PgBouncer is added later. |
@@ -1072,6 +1104,9 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 - Better Auth rate limits its own endpoints (OTP sending and verification), with the counters in the database so the limits hold across web containers.
   A second limit caps the codes sent to any one email address or phone number.
   Checkout, search, and every AI endpoint use the `rate_limits` table with an upsert per window.
+  Per-address limits read the visitor's address from the end of `X-Forwarded-For` that our own proxies wrote, counting `TRUSTED_PROXY_COUNT` entries from the right (1 behind the load balancer, 2 with CloudFront in front), because the visitor can put anything at the start of it.
+- Keyword search matches through two `SECURITY DEFINER` database functions, the same technique as the order policies' seller check, so that the search indexes work under row-level security.
+  They return only the ids of products visitors may see anyway, and the storefront query applies its own checks and row-level security on top.
 - Sign-in codes waiting to be sent are encrypted with `MESSAGE_ENCRYPTION_KEY` and removed once sent.
 - Razorpay webhooks are verified with the webhook secret before anything is read from the payload, and the checkout return is verified with the key secret. No card data is ever received by EcoKart.
 - All prices, totals, stock, and permissions are recomputed on the server; the browser is never trusted.
@@ -1128,6 +1163,7 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | Roles | Open | One role per account; a seller uses a separate seller account | One account can be both buyer and seller |
 | Commission base | Open | Applied to the seller's line total after the coupon discount share | Applied before discounts |
 | Delivery revenue | Open | Delivery charge belongs to the platform | Passed through to sellers |
+| Page caching | Decided 12 October 2026 | Next.js caches public pages in each web container and expires them by tag, with changed tags shared through PostgreSQL; CloudFront caches only static files and photos | CloudFront caching page HTML, purged on every change |
 | Invoice number format | Decided 12 October 2026; the chartered accountant confirms | `GRB/2627/000041`: a prefix of 1 to 4 characters, the financial year as four digits, and a six-digit sequence, within the 16 characters GST allows | `GREENB/26/000041`, keeping prefixes of up to 6 characters and writing only the year the financial year starts in |
 | Invoices of cancelled orders | Decided 12 October 2026; the chartered accountant confirms | Mark the invoice cancelled, keep its number used, and make its PDF again with "Cancelled" on it; GST credit notes stay deferred, as quotation 4.0 says | Leave the invoice as it is, and the seller handles the cancellation in their own accounts |
 | EcoKart's own invoices | Decided 12 October 2026: not part of the launch build; for the client's chartered accountant | An invoice from EcoKart for the delivery charge, if the delivery charge belongs to EcoKart, and for the commission it charges sellers, decided with the chartered accountant | Leave both to EcoKart's own accounting software |

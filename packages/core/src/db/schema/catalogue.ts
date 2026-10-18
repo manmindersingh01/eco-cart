@@ -105,6 +105,10 @@ const productVisible = (column: string) =>
 const productEditable = (column: string) =>
   sql`exists (select 1 from products p where p.id = ${sql.raw(column)} and (p.seller_id = ${currentSellerId} or ${fullAccess}))`
 
+// The condition of the partial storefront indexes; storefront queries repeat
+// it so the planner can use them.
+const onSale = sql`status = 'approved' and deleted_at is null`
+
 export const products = pgTable(
   'products',
   {
@@ -196,6 +200,18 @@ export const products = pgTable(
       'gin',
       t.searchText.op('gin_trgm_ops'),
     ),
+    // Storefront lists (backend spec step 9) read only products on sale, so
+    // their indexes leave everything else out.
+    index('products_public_category_published_idx')
+      .on(t.categoryId, t.publishedAt.desc(), t.id.desc())
+      .where(onSale),
+    index('products_public_category_price_idx')
+      .on(t.categoryId, t.minPricePaise, t.id)
+      .where(onSale),
+    index('products_public_published_idx')
+      .on(t.publishedAt.desc(), t.id.desc())
+      .where(onSale),
+    index('products_public_brand_idx').on(t.brandId).where(onSale),
     check(
       'products_status_check',
       sql`status in ('draft', 'pending_review', 'approved', 'rejected', 'archived')`,

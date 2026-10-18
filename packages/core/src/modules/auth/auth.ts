@@ -8,6 +8,7 @@ import {
 import { admin, emailOTP, phoneNumber } from 'better-auth/plugins'
 import { createAccessControl } from 'better-auth/plugins/access'
 import { defaultStatements } from 'better-auth/plugins/admin/access'
+import { clientAddress } from '../../lib/client-address.ts'
 import type { AuditEntry } from '../audit/service.ts'
 import type { EmailOtpPurpose } from '../notifications/types.ts'
 
@@ -141,12 +142,6 @@ export interface AuthDependencies {
 
 const otpExpiry = () => new Date(Date.now() + OTP_EXPIRES_IN_SECONDS * 1000)
 
-/** The visitor's address as the load balancer reports it. */
-function clientIp(headers: Headers | undefined): string | null {
-  const forwarded = headers?.get('x-forwarded-for')?.split(',')[0]?.trim()
-  return forwarded || headers?.get('x-real-ip') || null
-}
-
 function auditedBody(body: unknown): Record<string, unknown> {
   if (typeof body !== 'object' || body === null) return {}
   return Object.fromEntries(
@@ -272,7 +267,7 @@ export function createAuth(dependencies: AuthDependencies) {
           entityType: 'user',
           entityId: targetUserId ?? 'unknown',
           after: body,
-          ip: clientIp(ctx.request?.headers ?? ctx.headers),
+          ip: clientAddress(ctx.request?.headers ?? ctx.headers),
         })
       }),
     },

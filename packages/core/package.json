@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./worker": "./src/worker.ts",
+    "./cache": "./src/cache.ts",
     "./testing": "./src/testing/index.ts",
     "./states": "./src/lib/states.ts"
   },

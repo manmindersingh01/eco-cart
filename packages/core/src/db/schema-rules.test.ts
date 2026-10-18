@@ -22,6 +22,8 @@ const TABLES_WITHOUT_RLS = new Set([
   'platform_settings',
   'content_pages',
   'rate_limits',
+  // Tags naming public pages, for refreshing the page cache (step 9).
+  'cache_invalidations',
 ])
 const BETTER_AUTH_TABLES = new Set([
   'users',
@@ -203,7 +205,8 @@ describe('schema rules', () => {
 
   test('no table forces row-level security on its owner', async () => {
     // The owner runs migrations and test fixtures, and the SECURITY DEFINER
-    // helper app.is_order_seller relies on the owner not being filtered.
+    // helpers app.is_order_seller and the storefront search functions rely on
+    // the owner not being filtered.
     const forced = (await publicTables())
       .filter((table) => table.forced)
       .map((table) => table.name)

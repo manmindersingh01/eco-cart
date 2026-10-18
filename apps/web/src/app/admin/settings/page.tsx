@@ -12,8 +12,6 @@ export const metadata: Metadata = {
   title: 'Platform settings | EcoKart',
 }
 
-export const dynamic = 'force-dynamic'
-
 export default async function AdminSettingsPage() {
   const requestHeaders = await headers()
   const { context } = await requireAdmin(requestHeaders)

@@ -1,4 +1,15 @@
-import { and, desc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm'
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import type { Database, Transaction } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
 import { sellers } from '../../db/schema/index.ts'
@@ -20,6 +31,7 @@ import { uniqueViolation } from '../../lib/postgres.ts'
 import { firstFreeSlug, slugify } from '../../lib/slug.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
 import { recordAuditEntry, type AuditEntry } from '../audit/service.ts'
+import { invalidateStorefront } from '../catalogue/storefront-cache.ts'
 import type { Account, AccountDirectory } from '../auth/accounts.ts'
 import {
   businessUpdate,
@@ -259,6 +271,8 @@ export async function approveSeller(
       .set({ status: 'approved', approvedAt: sql`now()` })
       .where(eq(sellers.id, sellerId))
       .returning()
+    // Their approved products appear on the storefront.
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'seller.approve',
@@ -296,6 +310,8 @@ export async function suspendSeller(
       .set({ status: 'suspended', suspendedReason: reason })
       .where(eq(sellers.id, sellerId))
       .returning()
+    // Their products disappear from every storefront page.
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'seller.suspend',
@@ -329,6 +345,7 @@ export async function reinstateSeller(
       .set({ status: next, suspendedReason: null })
       .where(eq(sellers.id, sellerId))
       .returning()
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'seller.reinstate',
@@ -392,6 +409,13 @@ export async function updateSeller(
         .set(changes)
         .where(eq(sellers.id, sellerId))
         .returning()
+      // Product pages show the seller's display name.
+      if (
+        changes.displayName !== undefined &&
+        changes.displayName !== current.displayName
+      ) {
+        await invalidateStorefront(tx, { sellerId })
+      }
       const before = auditable(toView(current))
       await recordAuditEntry(tx, {
         ...administratorActor(context),
@@ -457,6 +481,12 @@ export async function updateOwnContacts(
       .set(changes)
       .where(eq(sellers.id, context.sellerId))
       .returning()
+    if (
+      changes.displayName !== undefined &&
+      changes.displayName !== current.displayName
+    ) {
+      await invalidateStorefront(tx, { sellerId: context.sellerId })
+    }
     await recordAuditEntry(tx, {
       actorUserId: context.userId,
       actorRole: 'seller',
@@ -707,3 +737,39 @@ export async function takeInvoiceNumber(
     `Invoice numbers have moved on to ${exists.year}; try again`,
   )
 }
+
+/* What the storefront shows of sellers (backend spec step 9). */
+
+/** A seller as visitors see them. */
+export interface PublicSeller {
+  id: string
+  slug: string
+  displayName: string
+}
+
+/** The approved sellers among `sellerIds`, by id; the others are left out. */
+export async function getPublicSellers(
+  tx: Transaction,
+  sellerIds: readonly string[],
+): Promise<Map<string, PublicSeller>> {
+  if (sellerIds.length === 0) return new Map()
+  const rows = await tx
+    .select({
+      id: sellers.id,
+      slug: sellers.slug,
+      displayName: sellers.displayName,
+    })
+    .from(sellers)
+    .where(
+      and(inArray(sellers.id, [...sellerIds]), eq(sellers.status, 'approved')),
+    )
+  return new Map(rows.map((row) => [row.id, row]))
+}
+
+/**
+ * A condition that the seller in `sellerId`, a column of another table, is
+ * approved. Storefront queries check it in their own SQL; row-level security
+ * repeats it only as a safety net.
+ */
+export const sellerIsApproved = (sellerId: AnyPgColumn): SQL =>
+  sql`exists (select 1 from ${sellers} where ${sellers.id} = ${sellerId} and ${sellers.status} = 'approved')`

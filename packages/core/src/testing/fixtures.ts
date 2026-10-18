@@ -117,6 +117,11 @@ export async function createTestProduct(
     categoryId: string
     brandId?: string
     status?: 'draft' | 'pending_review' | 'approved' | 'rejected' | 'archived'
+    /**
+     * When it was first approved (storefront lists show only published
+     * products); null for one that never was.
+     */
+    publishedAt?: Date | null
   },
 ) {
   const suffix = uniqueSuffix()
@@ -132,7 +137,11 @@ export async function createTestProduct(
       status,
       // An approved product has been published (backend spec step 7).
       publishedAt:
-        status === 'approved' || status === 'archived' ? new Date() : null,
+        options.publishedAt !== undefined
+          ? options.publishedAt
+          : status === 'approved' || status === 'archived'
+            ? new Date()
+            : null,
       hsnCode: '3924',
       gstRateBps: 1800,
       minPricePaise: 50_000,
