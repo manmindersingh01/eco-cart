@@ -5,6 +5,7 @@ import {
   loadNotificationConfig,
   QUEUES,
   registerCartJobs,
+  registerLedgerJobs,
   registerNotificationJobs,
   registerOrderJobs,
   registerRateLimitJobs,
@@ -101,6 +102,10 @@ export async function startWorker(
   })
   await registerOrderJobs(boss, { db })
   await registerReturnJobs(boss, {
+    db,
+    storage: createObjectStorage(options.storage),
+  })
+  await registerLedgerJobs(boss, {
     db,
     storage: createObjectStorage(options.storage),
   })
