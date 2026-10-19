@@ -1237,12 +1237,108 @@ const steps: Step[] = [
     },
   },
   {
-    name: 'The seller’s ledger shows the reversal',
-    skip: `${NOT_BUILT}: no API shows the seller’s ledger`,
+    name: 'The seller’s ledger shows the sale, the commission, and the return',
+    async run() {
+      const ledger = expectStatus(
+        await seller.get('/api/seller/ledger?limit=100'),
+        200,
+        'The seller’s ledger',
+      )
+      const ofOrder = list(ledger, 'items').filter(
+        (entry) => entry.orderId === story.orderId,
+      )
+      const amount = (type: string) =>
+        ofOrder
+          .filter((entry) => entry.entryType === type)
+          .reduce((sum, entry) => sum + Number(entry.amountPaise), 0)
+      const types = [
+        'sale',
+        'commission',
+        'refund_reversal',
+        'commission_reversal',
+      ]
+      const missing = types.filter(
+        (type) => !ofOrder.some((entry) => entry.entryType === type),
+      )
+      if (missing.length > 0)
+        fail(`the ledger has no ${missing.join(', ')} entry`)
+      story.balancePaise = text(ledger, 'balancePaise')
+      return `sale ${formatRupees(amount('sale'))}, commission ${formatRupees(amount('commission'))}, return ${formatRupees(amount('refund_reversal'))} with ${formatRupees(amount('commission_reversal'))} commission given back; balance ${formatRupees(Number(story.balancePaise))}`
+    },
   },
   {
-    name: 'The administrator records a payout to the seller',
-    skip: `${NOT_BUILT}: no API for payouts or the settlement file`,
+    name: 'The administrator pays the seller, and the seller’s statement shows it',
+    async run() {
+      expectStatus(
+        await admin.call(
+          'PUT',
+          `/api/admin/sellers/${story.sellerId}/bank-account`,
+          {
+            accountHolder: `Demo Steelworks ${tag} Private Limited`,
+            accountNumber: `50100${randomInt(10 ** 8, 10 ** 9)}`,
+            ifsc: 'HDFC0001234',
+          },
+        ),
+        200,
+        'Saving the seller’s bank account',
+      )
+      const balances = expectStatus(
+        await admin.get('/api/admin/seller-balances?limit=100'),
+        200,
+        'The sellers to pay',
+      )
+      const owed = list(balances, 'items').find(
+        (item) => item.sellerId === story.sellerId,
+      )
+      if (!owed) fail('the seller is not in the list of sellers to pay')
+      const amountPaise = Number(owed.balancePaise)
+      const reference = `UTR${randomInt(10 ** 9, 10 ** 10)}`
+      const paid = expectStatus(
+        await admin.post(`/api/admin/sellers/${story.sellerId}/payouts`, {
+          amountPaise,
+          reference,
+        }),
+        201,
+        'Recording the payout',
+      )
+      const after = Number(text(paid, 'balancePaise'))
+      if (after !== 0)
+        fail(`the balance after paying it all is ${formatRupees(after)}`)
+
+      // The seller asks for today's statement, in India dates.
+      const today = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+      }).format(new Date())
+      const asked = expectStatus(
+        await seller.post('/api/seller/settlement-statements', {
+          from: today,
+          to: today,
+        }),
+        202,
+        'Asking for a statement',
+      )
+      const statementId = text(asked, 'statement.id')
+      await waitFor('the worker to make the statement', async () => {
+        const answer = await seller.get(
+          `/api/settlement-statements/${statementId}`,
+        )
+        const status = pick(answer, 'statement.status')
+        if (status === 'failed') fail('the statement could not be made')
+        return status === 'ready' ? true : undefined
+      })
+      const link = await seller.call(
+        'GET',
+        `/api/settlement-statements/${statementId}/file`,
+        undefined,
+        { redirect: 'manual' },
+      )
+      if (link.status !== 302)
+        fail(`the statement link answered ${describe(link)}`)
+      const csv = await (await fetch(link.headers.get('location') ?? '')).text()
+      if (!csv.includes(reference))
+        fail('the statement does not show the payout')
+      return `paid ${formatRupees(amountPaise)} with reference ${reference}, balance now ₹0; the seller’s statement for ${today} lists it (${csv.trim().split('\n').length} lines)`
+    },
   },
 ]
 
