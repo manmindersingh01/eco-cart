@@ -321,6 +321,17 @@ export {
   type PhotoSearchDependencies,
   type SearchPhotoUpload,
 } from './modules/search/photos.ts'
+// The shopping assistant (backend spec step 20).
+export {
+  askAssistant,
+  ASSISTANT_LIMIT,
+  consumeAssistantAllowance,
+  type AssistantDependencies,
+} from './modules/assistant/service.ts'
+export type {
+  AssistantAnswer,
+  ComparisonPoint,
+} from './modules/assistant/types.ts'
 export {
   EMBED_MISSING_QUEUE,
   EMBED_PRODUCT_QUEUE,
