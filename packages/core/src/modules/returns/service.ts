@@ -27,6 +27,7 @@ import { isUuid, parseInput } from '../../lib/validation.ts'
 import { recordAuditEntry } from '../audit/service.ts'
 import type { PhotoAddresses } from '../catalogue/products.ts'
 import { giveBackStock, lockStock } from '../catalogue/stock.ts'
+import { recordReturnReversal } from '../ledger/service.ts'
 import { queueRefundRecordedEmail } from '../notifications/service.ts'
 import {
   changeLineStatus,
@@ -56,8 +57,9 @@ import {
  * to return a delivered line within the return window; an administrator
  * approves or rejects it; once the administrator has refunded the buyer in
  * the Razorpay dashboard (or by bank transfer for cash on delivery), they
- * record the refund here, which puts the item back in stock and marks the
- * line returned. The seller sees the returns of their own lines.
+ * record the refund here, which puts the item back in stock, marks the
+ * line returned, and takes the refund back from the seller's ledger. The
+ * seller sees the returns of their own lines.
  *
  * Every change takes the order's row lock first, like the other order
  * changes, then the return's own row.
@@ -429,9 +431,10 @@ export async function rejectReturn(
 
 /**
  * Records the refund of an approved return (design doc 6.5 step 4), in one
- * transaction: the refund, the return marked refunded, the line returned
- * (or delivered again when only part of it came back), the stock given
- * back, and the refund recorded email. `{ "method": "gateway",
+ * transaction: the refund, the return marked refunded, the seller's
+ * refund and commission reversals, the line returned (or delivered again
+ * when only part of it came back), the stock given back, and the refund
+ * recorded email. `{ "method": "gateway",
  * "amountPaise", "razorpayRefundId" }`, or `{ "method": "bank_transfer",
  * "amountPaise", "note": "<bank reference>" }`.
  */
@@ -484,6 +487,20 @@ export async function recordReturnRefund(
         .update(returnRequests)
         .set({ status: 'refunded', refundId: recorded.id })
         .where(eq(returnRequests.id, found.id))
+      await recordReturnReversal(tx, {
+        sellerId: line.sellerId,
+        orderId: order.id,
+        orderItemId: line.id,
+        returnRequestId: found.id,
+        orderNumber: order.orderNumber,
+        title: line.title,
+        returnedQuantity: found.quantity,
+        refundPaise: refund.amountPaise,
+        linePaidPaise: line.lineTotalPaise - line.discountSharePaise,
+        commissionBps: line.commissionBps,
+        lineCommissionPaise: line.commissionPaise,
+        createdBy: context.userId,
+      })
 
       const whole = before.quantity + found.quantity >= line.quantity
       const actor: OrderActor = { role: 'admin', userId: context.userId }

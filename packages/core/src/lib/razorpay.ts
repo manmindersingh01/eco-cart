@@ -171,7 +171,17 @@ const paymentShape = z.object({
 
 /** Turns Razorpay's answer to a payment into ours. */
 export function toRazorpayPayment(entity: unknown): RazorpayPayment {
-  const payment = paymentShape.parse(entity)
+  const payment = readRazorpayPayment(entity)
+  if (!payment)
+    throw new RazorpayError('Razorpay answered with an unreadable payment')
+  return payment
+}
+
+/** The payment in a webhook event, or null when it cannot be read. */
+export function readRazorpayPayment(entity: unknown): RazorpayPayment | null {
+  const parsed = paymentShape.safeParse(entity)
+  if (!parsed.success) return null
+  const payment = parsed.data
   return {
     id: payment.id,
     orderId: payment.order_id,

@@ -8,13 +8,15 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  UnavailableError,
   ValidationError,
 } from '../../errors.ts'
 import { formatRupees } from '../../lib/money.ts'
 import { uniqueViolation } from '../../lib/postgres.ts'
 import type { JobQueue } from '../../lib/queue.ts'
 import {
-  toRazorpayPayment,
+  RazorpayError,
+  readRazorpayPayment,
   type Razorpay,
   type RazorpayPayment,
 } from '../../lib/razorpay.ts'
@@ -214,13 +216,15 @@ export interface WebhookDelivery {
 }
 
 export type WebhookOutcome =
-  ConfirmationOutcome | 'replay' | 'ignored' | 'failure_recorded'
+  ConfirmationOutcome | 'replay' | 'ignored' | 'failure_recorded' | 'unreadable'
 
 /** Outcomes an administrator should look at, kept on the stored event. */
 const WEBHOOK_PROBLEMS: Partial<Record<WebhookOutcome, string>> = {
   unknown_order: 'No order has this Razorpay order',
   needs_refund: 'The payment needs a refund; see the order events',
   amount_mismatch: 'The amount is not the order total; see the order events',
+  // Signed by Razorpay, so trying again would not help; kept to look at.
+  unreadable: 'The payment in this event could not be read',
 }
 
 /**
@@ -276,18 +280,20 @@ export async function handleRazorpayWebhook(
 
     let outcome: WebhookOutcome = 'ignored'
     const entity = body.payload.payment?.entity
-    if (
-      (body.event === 'payment.captured' || body.event === 'order.paid') &&
-      entity !== undefined
-    ) {
-      outcome = await confirmOrderPayment(
-        tx,
-        deps.queue,
-        toRazorpayPayment(entity),
-      )
-    } else if (body.event === 'payment.failed' && entity !== undefined) {
-      await recordFailedAttempt(tx, toRazorpayPayment(entity))
-      outcome = 'failure_recorded'
+    const acted =
+      body.event === 'payment.captured' ||
+      body.event === 'order.paid' ||
+      body.event === 'payment.failed'
+    if (acted && entity !== undefined) {
+      const payment = readRazorpayPayment(entity)
+      if (!payment) {
+        outcome = 'unreadable'
+      } else if (body.event === 'payment.failed') {
+        await recordFailedAttempt(tx, payment)
+        outcome = 'failure_recorded'
+      } else {
+        outcome = await confirmOrderPayment(tx, deps.queue, payment)
+      }
     }
     await tx
       .update(paymentEvents)
@@ -382,7 +388,16 @@ export async function confirmCheckoutPayment(
   })
   if (!order) throw new NotFoundError('There is no order with that payment')
 
-  const payment = await razorpay.fetchPayment(given.razorpayPaymentId)
+  let payment: RazorpayPayment
+  try {
+    payment = await razorpay.fetchPayment(given.razorpayPaymentId)
+  } catch (error) {
+    if (!(error instanceof RazorpayError)) throw error
+    // The webhook confirms the payment anyway once Razorpay sends it.
+    throw new UnavailableError(
+      'We could not check your payment with Razorpay just now. If you paid, your order is confirmed as soon as Razorpay tells us.',
+    )
+  }
   if (payment.orderId !== given.razorpayOrderId) {
     throw new ValidationError('That payment is for a different order')
   }
