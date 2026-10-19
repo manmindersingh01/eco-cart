@@ -264,15 +264,36 @@
     {
       "idx": 37,
       "version": "7",
-      "when": 1792443384492,
-      "tag": "0037_seller_applications",
+      "when": 1792442579202,
+      "tag": "0037_import_mapping_suggestion",
       "breakpoints": true
     },
     {
       "idx": 38,
       "version": "7",
-      "when": 1792443915871,
-      "tag": "0038_buyer_seller_role",
+      "when": 1792443125201,
+      "tag": "0038_guest_cart_clean_up_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792443602847,
+      "tag": "0039_return_lists_and_one_refund",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792444493757,
+      "tag": "0040_seller_applications",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792444494988,
+      "tag": "0041_buyer_seller_role",
       "breakpoints": true
     }
   ]

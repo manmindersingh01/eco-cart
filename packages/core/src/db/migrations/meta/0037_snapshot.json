@@ -1,5 +1,5 @@
 {
-  "id": "207722bc-1480-446d-9229-bcdc0340f298",
+  "id": "8849ea35-e2ff-474d-bffb-529fdf2a4269",
   "prevId": "2097baea-67a6-4eee-a91a-f612240bdca2",
   "version": "7",
   "dialect": "postgresql",
@@ -3554,6 +3554,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "suggested_mapping": {
+          "name": "suggested_mapping",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "ai_request_id": {
           "name": "ai_request_id",
           "type": "uuid",
@@ -6891,7 +6897,7 @@
       "checkConstraints": {
         "email_outbox_template_check": {
           "name": "email_outbox_template_check",
-          "value": "template in ('otp', 'order_placed', 'payment_received', 'dispatched', 'cancelled', 'refund_recorded', 'seller_application')"
+          "value": "template in ('otp', 'order_placed', 'payment_received', 'dispatched', 'cancelled', 'refund_recorded')"
         },
         "email_outbox_status_check": {
           "name": "email_outbox_status_check",
@@ -7951,12 +7957,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "rejection_reason": {
-          "name": "rejection_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8078,7 +8078,7 @@
           "to": [
             "ecokart_web"
           ],
-          "withCheck": "(owner_user_id = app.user_id() and status = 'pending' and approved_at is null) or app.has_full_access()"
+          "withCheck": "app.has_full_access()"
         },
         "web_update": {
           "name": "web_update",
@@ -8104,7 +8104,7 @@
       "checkConstraints": {
         "sellers_status_check": {
           "name": "sellers_status_check",
-          "value": "status in ('pending', 'approved', 'suspended', 'rejected')"
+          "value": "status in ('pending', 'approved', 'suspended')"
         },
         "sellers_gstin_check": {
           "name": "sellers_gstin_check",

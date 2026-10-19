@@ -14,7 +14,7 @@ import { readImportFile, runImport } from '@ecokart/core/worker'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { z } from 'zod'
 import { closePool } from '@/lib/db'
-import { closeJobQueue } from '@/lib/queue'
+import { closeJobQueue, getJobQueue } from '@/lib/queue'
 import { apiRequest as request } from '@/testing/requests'
 import { signInWithEmail } from '@/testing/sign-in'
 import { GET as errorReport } from './[id]/error-report/route'
@@ -29,8 +29,14 @@ const ownerPool = createPool(
 )
 const owner = createDatabase(ownerPool)
 const storage = createObjectStorage(loadStorageConfig())
-// The worker's jobs, run here the way the worker would.
-const jobs = { db: owner, storage }
+// The worker's jobs, run here the way the worker would, with AI switched
+// off; the AI's part of the suggestion is tested in packages/core.
+const jobs = async () => ({
+  db: owner,
+  storage,
+  ai: null,
+  queue: await getJobQueue(),
+})
 
 let sellerCookie: string
 let otherSellerCookie: string
@@ -123,12 +129,18 @@ describe('an import through the API', () => {
     const { id } = importResponse.parse(await created.json()).import
 
     // What the worker does when it takes the job.
-    await readImportFile(jobs, id, upload.key)
+    await readImportFile(await jobs(), id, upload.key)
     const read = importResponse.parse(await (await show(id)).json()).import
     expect(read).toMatchObject({
-      status: 'uploaded',
+      status: 'mapping_suggested',
       headers: ['Name', 'Category', 'Code', 'Price', 'MRP', 'Stock'],
       totalRows: 2,
+      suggestionPending: false,
+      suggestedMapping: {
+        Name: { field: 'title', source: 'name' },
+        Code: { field: 'sku', source: 'name' },
+        Stock: { field: 'stock', source: 'name' },
+      },
     })
 
     const map = (columnMapping: Record<string, string>) =>
@@ -164,7 +176,7 @@ describe('an import through the API', () => {
     expect((await map(columnMapping)).status).toBe(409)
 
     // What the worker does when it takes the job.
-    await runImport(jobs, id)
+    await runImport(await jobs(), id)
     expect(
       importResponse.parse(await (await show(id)).json()).import,
     ).toMatchObject({

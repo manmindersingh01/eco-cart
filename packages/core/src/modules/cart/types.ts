@@ -11,6 +11,13 @@ export const MAX_LINE_QUANTITY = 1000
 /** Different items one cart can hold, so a cart stays quick to price. */
 export const MAX_CART_LINES = 50
 
+/**
+ * How long a guest's cart cookie lasts after their last change to the cart.
+ * A guest cart unchanged for longer can no longer be reached, so a nightly
+ * job removes it (cart/jobs.ts).
+ */
+export const GUEST_CART_DAYS = 30
+
 const quantity = wholeNumber(1, MAX_LINE_QUANTITY)
 
 /** What the buyer sends to add an item. */

@@ -11,6 +11,7 @@ export {
   readImportFile,
   registerImportJobs,
   runImport,
+  suggestImportMapping,
   type ImportJobDependencies,
 } from './modules/imports/jobs.ts'
 // Runs ffmpeg and ffprobe.

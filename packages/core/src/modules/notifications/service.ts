@@ -10,6 +10,7 @@ import {
   orderPlacedSubject,
   otpEmailSubject,
   paymentReceivedSubject,
+  refundRecordedSubject,
 } from './templates.ts'
 import type {
   CancelledPayload,
@@ -19,6 +20,7 @@ import type {
   OtpEmailPayload,
   OtpSmsJob,
   PaymentReceivedPayload,
+  RefundRecordedPayload,
   SendEmailJob,
 } from './types.ts'
 
@@ -177,5 +179,21 @@ export async function queueCancelledEmail(
     template: 'cancelled',
     subject: cancelledSubject(order.orderNumber),
     payload: order,
+  })
+}
+
+/** Queues the refund recorded email (backend spec step 15). */
+export async function queueRefundRecordedEmail(
+  tx: Transaction,
+  queue: JobQueue,
+  to: { userId: string; email: string },
+  refund: RefundRecordedPayload,
+): Promise<number | null> {
+  return queueEmail(tx, queue, {
+    userId: to.userId,
+    to: to.email,
+    template: 'refund_recorded',
+    subject: refundRecordedSubject(refund.orderNumber),
+    payload: refund,
   })
 }

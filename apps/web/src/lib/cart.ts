@@ -1,5 +1,10 @@
 import { randomBytes } from 'node:crypto'
-import { ForbiddenError, loadAuthConfig, type Shopper } from '@ecokart/core'
+import {
+  ForbiddenError,
+  GUEST_CART_DAYS,
+  loadAuthConfig,
+  type Shopper,
+} from '@ecokart/core'
 import { getRequestContext } from './request-context'
 
 /*
@@ -9,7 +14,8 @@ import { getRequestContext } from './request-context'
  */
 
 const TOKEN = /^[A-Za-z0-9_-]{43}$/
-const MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+// The nightly clean-up removes a guest cart once this cookie has run out.
+const MAX_AGE_SECONDS = GUEST_CART_DAYS * 24 * 60 * 60
 
 function cookieName(secure: boolean): string {
   // Like the session cookie: the __Secure- prefix only works on https.

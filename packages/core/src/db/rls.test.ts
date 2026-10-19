@@ -313,11 +313,13 @@ describe('catalogue', () => {
     expect(changed).toEqual([{ id: draftA.product.id }])
   })
 
-  test('only full access can create a seller', async () => {
-    const code = await errorCode(
+  // A buyer may add only their own pending application (design doc 5.4);
+  // an approved seller, or one for someone else, needs full access.
+  test('a buyer cannot create an approved seller or one for someone else', async () => {
+    const business = (ownerUserId: string, status: 'pending' | 'approved') =>
       withContext(web, as.buyer(buyer1), (tx) =>
         tx.insert(sellers).values({
-          ownerUserId: buyer1.id,
+          ownerUserId,
           slug: `self-made-${crypto.randomUUID()}`,
           displayName: 'Self made',
           legalName: 'Self made',
@@ -328,10 +330,16 @@ describe('catalogue', () => {
           supportEmail: 'self@example.test',
           supportPhone: '+919800000009',
           invoicePrefix: 'SELF',
+          status,
+          approvedAt: status === 'approved' ? new Date() : null,
         }),
-      ),
+      )
+    expect(await errorCode(business(buyer1.id, 'approved'))).toBe(
+      INSUFFICIENT_PRIVILEGE,
     )
-    expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(await errorCode(business(buyer2.id, 'pending'))).toBe(
+      INSUFFICIENT_PRIVILEGE,
+    )
   })
 })
 

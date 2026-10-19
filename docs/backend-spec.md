@@ -246,7 +246,7 @@ When she opens her orders, the database is asked as `ecokart_web` with `app.role
    - SMS: the callback writes a `notifications.send-sms` job.
    - The code is encrypted (AES-256-GCM, key `MESSAGE_ENCRYPTION_KEY`) before it is stored in either place.
      Better Auth stores its own copy of an email code hashed, so for email a copy of the database alone never reveals a working code.
-     Better Auth's phone plugin keeps its copy of a phone code in plain text for the code's five minutes; see the open points.
+     Better Auth's phone plugin has no option to hash its copy of a phone code, so our own hook stores a hash keyed with the auth secret instead, and our own check, with the plugin's rules (five minutes, three attempts, one use), compares it; a copy of the database alone never reveals a phone code either (done 20 October 2026).
    - The worker decrypts the code, sends the message, and then removes the code from the outbox row.
      A code that has already expired is not sent.
    - A failed email is retried with growing delays, up to five attempts, and then marked `failed`.
@@ -327,8 +327,8 @@ The example database passwords are not checked; production gets its own from the
 - The client needs to choose the email provider (Resend or Amazon SES) and supply its keys and a verified sending domain.
 - SMS needs a provider account and DLT approval in India, and the OTP message must match an approved DLT template word for word.
 - When the hosting is set up, Better Auth must be told which proxy headers carry the visitor's IP address, or every visitor will share one rate limit.
-- Before SMS goes live, phone codes should be stored hashed.
-  Better Auth's phone plugin has no option for this, so it needs its own `verifyOTP` that keeps a hash and counts attempts, or a fix in Better Auth.
+- Phone codes are now stored hashed (20 October 2026), through a database hook and the plugin's `verifyOTP`, because Better Auth's phone plugin has no option for it.
+  If a later Better Auth version adds one, our hook and check can be replaced by it.
 - Better Auth's verification "reservations" do not work with UUID ids (it replaces the reserved id with a random one).
   Only the unproven-account clean-up uses them in our setup, and it is avoided as described above; worth reporting to Better Auth.
 

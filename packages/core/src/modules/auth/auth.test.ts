@@ -1,9 +1,14 @@
 import { randomBytes } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { createDatabase } from '../../db/client.ts'
 import { createPool, type DatabasePool } from '../../db/pool.ts'
-import { auditLogs, emailOutbox, users } from '../../db/schema/index.ts'
+import {
+  auditLogs,
+  emailOutbox,
+  users,
+  verifications,
+} from '../../db/schema/index.ts'
 import { requireEnv } from '../../env.ts'
 import { startJobQueue, type JobQueue } from '../../lib/queue.ts'
 import {
@@ -330,6 +335,44 @@ async function addEmail(cookie: string, email: string) {
 const errorOf = async (response: Response) => ({
   status: response.status,
   body: await response.json(),
+})
+
+describe('used and expired codes', () => {
+  test('Better Auth removes them by itself, so they need no clean-up job', async () => {
+    const expired = `sign-in-otp-${newEmail()}`
+    await owner.insert(verifications).values({
+      identifier: expired,
+      value: 'a code nobody used',
+      expiresAt: new Date(Date.now() - 60_000),
+    })
+    const email = newEmail()
+    const pending = `sign-in-otp-${email}`
+    const waiting = () =>
+      owner
+        .select({ identifier: verifications.identifier })
+        .from(verifications)
+        .where(inArray(verifications.identifier, [expired, pending]))
+
+    const ip = nextIp()
+    await call(
+      auth,
+      '/email-otp/send-verification-otp',
+      { email, type: 'sign-in' },
+      { ip },
+    )
+    expect((await waiting()).map(({ identifier }) => identifier)).toContain(
+      pending,
+    )
+    const signedIn = await call(
+      auth,
+      '/sign-in/email-otp',
+      { email, otp: await lastEmailedCode(email) },
+      { ip },
+    )
+    expect(signedIn.status).toBe(200)
+    // The used code is gone, and checking it removed every expired code.
+    expect(await waiting()).toEqual([])
+  })
 })
 
 describe('a buyer adds a phone number or an email', () => {

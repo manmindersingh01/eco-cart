@@ -235,6 +235,31 @@ export function renderCancelledEmail(order: {
   return { text: lines.join('\n\n'), html: asHtml(lines) }
 }
 
+export function refundRecordedSubject(orderNumber: string): string {
+  return `Your refund for EcoKart order ${orderNumber}`
+}
+
+export function renderRefundRecordedEmail(refund: {
+  orderNumber: string
+  buyerName: string
+  amountPaise: number
+  method: 'gateway' | 'bank_transfer'
+  lines: { title: string; options: Record<string, string>; quantity: number }[]
+}): { text: string; html: string } {
+  const lines = [
+    `Hello ${refund.buyerName},`,
+    `We have refunded ${rupees(refund.amountPaise)} for order ${refund.orderNumber}.`,
+    ...(refund.lines.length > 0
+      ? [['For your return of:', ...refund.lines.map(lineName)].join('\n')]
+      : []),
+    refund.method === 'gateway'
+      ? 'It goes back the way you paid. Your bank may take a few working days to show it.'
+      : 'We sent it to your bank account by bank transfer.',
+    'Thank you for shopping with EcoKart.',
+  ]
+  return { text: lines.join('\n\n'), html: asHtml(lines) }
+}
+
 export function sellerApplicationSubject(
   decision: 'approved' | 'rejected',
 ): string {

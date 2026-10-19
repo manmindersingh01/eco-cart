@@ -334,6 +334,17 @@ export {
   type PhotoSearchDependencies,
   type SearchPhotoUpload,
 } from './modules/search/photos.ts'
+// The shopping assistant (backend spec step 20).
+export {
+  askAssistant,
+  ASSISTANT_LIMIT,
+  consumeAssistantAllowance,
+  type AssistantDependencies,
+} from './modules/assistant/service.ts'
+export type {
+  AssistantAnswer,
+  ComparisonPoint,
+} from './modules/assistant/types.ts'
 export {
   EMBED_MISSING_QUEUE,
   EMBED_PRODUCT_QUEUE,
@@ -435,6 +446,7 @@ export {
   updateCoupon,
 } from './modules/cart/coupons.ts'
 export {
+  GUEST_CART_DAYS,
   MAX_CART_LINES,
   MAX_LINE_QUANTITY,
   type CartCoupon,
@@ -464,6 +476,16 @@ export {
   expireUnpaidOrders,
   registerOrderJobs,
 } from './modules/orders/jobs.ts'
+export {
+  REMOVE_STALE_GUEST_CARTS_QUEUE,
+  registerCartJobs,
+  removeStaleGuestCarts,
+} from './modules/cart/jobs.ts'
+export {
+  REMOVE_EXPIRED_RATE_LIMITS_QUEUE,
+  registerRateLimitJobs,
+  removeExpiredRateLimits,
+} from './modules/rate-limits/jobs.ts'
 export {
   createRazorpay,
   loadRazorpayConfig,
@@ -512,6 +534,7 @@ export {
 export {
   cancelOrderAsAdmin,
   cancelOwnOrder,
+  recordCancellationRefund,
   dispatchLines,
   markShipmentDelivered,
 } from './modules/orders/fulfilment.ts'
@@ -539,3 +562,22 @@ export type {
   ShipmentView,
   VerifiedPurchase,
 } from './modules/orders/types.ts'
+// Returns and refunds (backend spec step 15).
+export {
+  approveReturn,
+  getReturn,
+  listOwnReturns,
+  listReturns,
+  listSellerReturns,
+  openReturn,
+  recordReturnRefund,
+  rejectReturn,
+} from './modules/returns/service.ts'
+export {
+  RETURN_REASONS,
+  RETURN_STATUSES,
+  type RefundRecord,
+  type ReturnReason,
+  type ReturnStatus,
+  type ReturnView,
+} from './modules/returns/types.ts'

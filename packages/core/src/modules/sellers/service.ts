@@ -29,6 +29,7 @@ import {
 } from '../../lib/pagination.ts'
 import { uniqueViolation } from '../../lib/postgres.ts'
 import { firstFreeSlug, slugify } from '../../lib/slug.ts'
+import { qualified } from '../../lib/sql.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
 import type { JobQueue } from '../../lib/queue.ts'
 import { recordAuditEntry, type AuditEntry } from '../audit/service.ts'
@@ -956,7 +957,7 @@ export async function getPublicSellers(
  * repeats it only as a safety net.
  */
 export const sellerIsApproved = (sellerId: AnyPgColumn): SQL =>
-  sql`exists (select 1 from ${sellers} where ${sellers.id} = ${sellerId} and ${sellers.status} = 'approved')`
+  sql`exists (select 1 from ${sellers} where ${sellers.id} = ${qualified(sellerId)} and ${sellers.status} = 'approved')`
 
 /* Checkout (backend spec step 12). */
 
