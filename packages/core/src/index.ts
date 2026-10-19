@@ -20,7 +20,7 @@ export {
   type QueueCounts,
   type QueueDefinition,
 } from './lib/queue.ts'
-export { type Auth } from './modules/auth/auth.ts'
+export { isPlaceholderEmail, type Auth } from './modules/auth/auth.ts'
 export { loadAuthConfig, type AuthConfig } from './modules/auth/config.ts'
 export {
   createAppAuth,
@@ -267,6 +267,7 @@ export type {
   PublicImage,
   PublicProduct,
   PublicVariant,
+  PublicVideo,
   StorefrontSort,
 } from './modules/catalogue/storefront-types.ts'
 export {
