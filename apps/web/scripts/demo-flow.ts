@@ -64,6 +64,13 @@ function fail(reason: string): never {
   throw new StepFailed(reason)
 }
 
+/** A step that finds the feature it shows is not there yet. */
+class StepSkipped extends Error {}
+
+function skip(reason: string): never {
+  throw new StepSkipped(reason)
+}
+
 /* ---------- HTTP ---------- */
 
 interface Answer {
@@ -351,6 +358,33 @@ interface Step {
 
 const NOT_BUILT = 'skipped: not built yet'
 
+const capitalLetter = () => String.fromCodePoint(65 + randomInt(26))
+
+/** The administrator creates the seller's business and sign-in account. */
+async function createSellerAsAdministrator(): Promise<string> {
+  const pan = `DEMO${capitalLetter()}${String(randomInt(10_000)).padStart(4, '0')}${capitalLetter()}`
+  const created = expectStatus(
+    await admin.post('/api/admin/sellers', {
+      displayName: `Demo Steelworks ${tag}`,
+      legalName: `Demo Steelworks ${tag} Private Limited`,
+      gstin: `27${pan}1Z5`,
+      pan,
+      line1: '12 MG Road',
+      city: 'Pune',
+      stateCode: '27',
+      pincode: '411001',
+      supportEmail: `support-${tag}@example.test`,
+      supportPhone: '+919800000000',
+      invoicePrefix: randomBytes(2).toString('hex').toUpperCase(),
+      owner: { email: emails.seller, name: 'Demo Seller Owner' },
+    }),
+    201,
+    'Creating the seller',
+  )
+  story.sellerId = text(created, 'seller.id')
+  return `${text(created, 'seller.displayName')} is ${text(created, 'seller.status')}, owned by ${emails.seller}`
+}
+
 const steps: Step[] = [
   {
     name: 'The administrator signs in',
@@ -452,29 +486,21 @@ const steps: Step[] = [
       return `${windowNote}; ${name} (GST ${Number(category.gstRateBps) / 100}%) and ${brandName} are ready`
     },
   },
+  // How the seller joins. Once seller applications land
+  // (backend/seller-applications), the skipped step below replaces the one
+  // after it: the seller signs in as a buyer and applies, and the rest of the
+  // story stays the same.
   {
-    name: 'The administrator creates a seller and asks for their GST certificate',
+    name: 'A buyer applies to become a seller',
+    skip: `${NOT_BUILT}: seller applications are on their way (backend/seller-applications), so the administrator creates the seller`,
+  },
+  {
+    name: 'The administrator creates a seller',
+    run: createSellerAsAdministrator,
+  },
+  {
+    name: 'The administrator asks for the seller’s GST certificate',
     async run() {
-      const pan = `DEMO${String.fromCodePoint(65 + randomInt(26))}${String(randomInt(10_000)).padStart(4, '0')}${String.fromCodePoint(65 + randomInt(26))}`
-      const created = expectStatus(
-        await admin.post('/api/admin/sellers', {
-          displayName: `Demo Steelworks ${tag}`,
-          legalName: `Demo Steelworks ${tag} Private Limited`,
-          gstin: `27${pan}1Z5`,
-          pan,
-          line1: '12 MG Road',
-          city: 'Pune',
-          stateCode: '27',
-          pincode: '411001',
-          supportEmail: `support-${tag}@example.test`,
-          supportPhone: '+919800000000',
-          invoicePrefix: randomBytes(2).toString('hex').toUpperCase(),
-          owner: { email: emails.seller, name: 'Demo Seller Owner' },
-        }),
-        201,
-        'Creating the seller',
-      )
-      story.sellerId = text(created, 'seller.id')
       const asked = expectStatus(
         await admin.post(`/api/admin/sellers/${story.sellerId}/documents`, {
           documents: [
@@ -496,7 +522,7 @@ const steps: Step[] = [
           `approval before the document was answered ${describe(early)}, expected 409`,
         )
       }
-      return `seller ${text(created, 'seller.displayName')} is pending, and approval waits for the document`
+      return 'asked, and approval waits for the document'
     },
   },
   {
@@ -707,6 +733,133 @@ const steps: Step[] = [
     },
   },
   {
+    name: 'The seller imports more products from a CSV file',
+    async run() {
+      const headings = [
+        'Product Name',
+        'Category',
+        'SKU',
+        'Price (Rs)',
+        'MRP (Rs)',
+        'Stock',
+        'Brand',
+        'Min Qty',
+      ]
+      const rows = [
+        [
+          `Steel Water Bottle ${word}`,
+          'Demo Kitchenware',
+          `WB-${tag}`,
+          '499',
+          '599',
+          '30',
+          'Demo Greenware',
+          '1',
+        ],
+        [
+          `Steel Tiffin Carrier ${word}`,
+          'Demo Kitchenware',
+          `TC-${tag}`,
+          '899',
+          '1,099',
+          '12',
+          'Demo Greenware',
+          '1',
+        ],
+        // No price, so this row is refused and listed in the error report.
+        [
+          `Copper Jug ${word}`,
+          'Demo Kitchenware',
+          `CJ-${tag}`,
+          '',
+          '999',
+          '10',
+          '',
+          '1',
+        ],
+      ]
+      const csv = Buffer.from(
+        [headings, ...rows]
+          .map((row) => row.join(',').replaceAll('1,099', '"1,099"'))
+          .join('\n'),
+      )
+      const form = expectStatus(
+        await seller.post('/api/seller/imports/uploads', {
+          fileName: 'more-products.csv',
+          size: csv.length,
+        }),
+        201,
+        'The import upload form',
+      )
+      const fields = pick(form, 'upload.fields')
+      const contentType =
+        isRecord(fields) && typeof fields['Content-Type'] === 'string'
+          ? fields['Content-Type']
+          : 'text/csv'
+      const uploadKey = await uploadWith(form, csv, contentType)
+      const started = expectStatus(
+        await seller.post('/api/seller/imports', {
+          uploadKey,
+          fileName: 'more-products.csv',
+        }),
+        202,
+        'Starting the import',
+      )
+      const importId = text(started, 'import.id')
+      const read = await waitFor('the worker to read the file', async () => {
+        const answer = await seller.get(`/api/seller/imports/${importId}`)
+        const status = pick(answer, 'import.status')
+        if (status === 'failed')
+          fail(`the import failed: ${String(pick(answer, 'import.error'))}`)
+        return status === 'mapping_suggested' ? answer : undefined
+      })
+      // The seller accepts the suggested columns, as the mapping screen shows them.
+      const suggested = object(read, 'import.suggestedMapping')
+      const columnMapping = Object.fromEntries(
+        Object.entries(suggested).flatMap(([heading, suggestion]) =>
+          isRecord(suggestion) ? [[heading, String(suggestion.field)]] : [],
+        ),
+      )
+      const unsettled = headings.filter(
+        (heading) => !(heading in columnMapping),
+      )
+      expectStatus(
+        await seller.call('PUT', `/api/seller/imports/${importId}/mapping`, {
+          columnMapping,
+        }),
+        202,
+        'Confirming the columns',
+      )
+      const done = await waitFor('the worker to make the drafts', async () => {
+        const answer = await seller.get(`/api/seller/imports/${importId}`)
+        const status = pick(answer, 'import.status')
+        if (status === 'failed')
+          fail(`the import failed: ${String(pick(answer, 'import.error'))}`)
+        return status === 'completed' ? answer : undefined
+      })
+      const ok = Number(text(done, 'import.okRows'))
+      const refused = Number(text(done, 'import.errorRows'))
+      if (
+        ok !== 2 ||
+        refused !== 1 ||
+        pick(done, 'import.hasErrorReport') !== true
+      ) {
+        fail(
+          `expected 2 drafts and 1 refused row with a report, got ${ok} and ${refused}`,
+        )
+      }
+      const drafts = expectStatus(
+        await seller.get('/api/seller/products?status=draft&limit=100'),
+        200,
+        'The seller’s drafts',
+      )
+      const made = list(drafts, 'items').filter((item) =>
+        String(item.title).endsWith(word),
+      )
+      return `the names matched ${headings.length - unsettled.length} of ${headings.length} columns${unsettled.length > 0 ? ` (not ${unsettled.join(', ')})` : ''}; ${made.length} drafts made, 1 row refused with an error report`
+    },
+  },
+  {
     name: 'A buyer signs up with an email code',
     async run() {
       const role = await signIn(buyer, emails.buyer)
@@ -752,6 +905,22 @@ const steps: Step[] = [
         'The product page',
       )
       return `found in ${story.categorySlug} and by searching "${word}"; the product page shows ${list(product, 'product.variants').length} variants`
+    },
+  },
+  {
+    name: 'The buyer asks the shopping assistant about the lunch box',
+    async run() {
+      const answer = await buyer.post('/api/assistant', {
+        question: 'Will this lunch box keep dal from leaking?',
+        history: [],
+        productIds: [story.productId],
+      })
+      if (answer.status === 503) {
+        skip(`the AI features are switched off here (${describe(answer)})`)
+      }
+      expectStatus(answer, 200, 'Asking the assistant')
+      const cards = list(answer, 'products')
+      return `${pick(answer, 'declined') === true ? 'declined' : 'answered'}, naming ${cards.length} product(s)`
     },
   },
   {
@@ -959,6 +1128,54 @@ const steps: Step[] = [
     },
   },
   {
+    name: 'The seller’s own login places an order as a buyer',
+    async run() {
+      // Another seller's product from the example data.
+      const found = expectStatus(
+        await seller.get('/api/search?q=toothbrush'),
+        200,
+        'Searching as the seller',
+      )
+      const slug = text(found, 'items.0.slug')
+      const product = expectStatus(
+        await seller.get(`/api/products/${slug}`),
+        200,
+        'The product page',
+      )
+      const added = await seller.post('/api/cart/items', {
+        variantId: text(product, 'product.variants.0.id'),
+      })
+      if (added.status === 403) {
+        skip(
+          `${NOT_BUILT}: one login cannot both buy and sell yet (backend/seller-applications); the cart answered ${describe(added)}`,
+        )
+      }
+      expectStatus(added, 200, 'Adding to the cart')
+      const address = expectStatus(
+        await seller.post('/api/account/addresses', {
+          fullName: 'Demo Seller Owner',
+          phone: '+919800000000',
+          line1: '12 MG Road',
+          city: 'Pune',
+          stateCode: '27',
+          pincode: '411001',
+        }),
+        201,
+        'Saving the seller’s delivery address',
+      )
+      const placed = expectStatus(
+        await seller.post('/api/checkout', {
+          addressId: text(address, 'address.id'),
+          paymentMethod: 'cod',
+          expectedTotalPaise: Number(text(added, 'cart.totalPaise')),
+        }),
+        201,
+        'Placing the order',
+      )
+      return `${emails.seller} bought ${text(product, 'product.title')} as order ${text(placed, 'order.orderNumber')}`
+    },
+  },
+  {
     name: 'The buyer asks to return one box, and the seller sees the request',
     async run() {
       const asked = expectStatus(
@@ -1043,6 +1260,10 @@ for (const step of steps) {
   try {
     report('pass', step.name, await step.run!())
   } catch (error) {
+    if (error instanceof StepSkipped) {
+      report('skip', step.name, error.message)
+      continue
+    }
     stopped = true
     report(
       'fail',
