@@ -8,6 +8,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../errors.ts'
+import { formatRupees } from '../../lib/money.ts'
 import type { JobQueue } from '../../lib/queue.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
 import { recordAuditEntry } from '../audit/service.ts'
@@ -17,12 +18,16 @@ import { reverseSales } from '../ledger/service.ts'
 import {
   queueCancelledEmail,
   queueDispatchedEmail,
+  queueRefundRecordedEmail,
 } from '../notifications/service.ts'
 import {
   captureCashPayment,
   failPayment,
   paymentsOfOrder,
+  recordRefund,
+  refundedSoFar,
 } from '../payments/service.ts'
+import { refundRecord } from '../returns/types.ts'
 import {
   lockOrder,
   markOrderCancelled,
@@ -496,6 +501,94 @@ export async function cancelOrderAsAdmin(
       entityId: orderId,
       before: { status: order.status },
       after: { status: 'cancelled', reason },
+      ip,
+    })
+  })
+  return withContext(db, context, (tx) =>
+    getAdminOrder(tx, context, deps.photos, orderId),
+  )
+}
+
+/* Refunds of cancelled orders (backend spec step 15). */
+
+/**
+ * The administrator records the refund of a paid online order that was
+ * cancelled before dispatch, once they have made it in the Razorpay
+ * dashboard: the whole payment, through the gateway or by bank transfer.
+ * The sellers' ledger was already reversed when the order was cancelled.
+ */
+export async function recordCancellationRefund(
+  db: Database,
+  deps: Deps,
+  context: RequestContext,
+  orderId: string,
+  input: unknown,
+  ip: string | null = null,
+): Promise<AdminOrderView> {
+  if (context.role !== 'admin') {
+    throw new ForbiddenError('Only administrators can record refunds')
+  }
+  const refund = parseInput(
+    refundRecord,
+    input,
+    'That refund cannot be recorded',
+  )
+  if (!isUuid(orderId)) throw missingOrder()
+  await withContext(db, systemFor(context), async (tx) => {
+    const order = await lockOrder(tx, orderId)
+    const paid = (await paymentsOfOrder(tx, order.id)).find(
+      (payment) =>
+        payment.provider === 'razorpay' && payment.status === 'captured',
+    )
+    if (order.status !== 'cancelled' || !paid) {
+      throw new ConflictError(
+        `Order ${order.orderNumber} has no refund due; refunds of returned items are recorded on the return`,
+      )
+    }
+    const due = paid.amountPaise - (await refundedSoFar(tx, order.id))
+    if (refund.amountPaise !== due) {
+      throw new ValidationError('That refund cannot be recorded', [
+        `amountPaise must be the ${formatRupees(due)} the buyer paid`,
+      ])
+    }
+    await recordRefund(tx, {
+      orderId: order.id,
+      returnRequestId: null,
+      amountPaise: refund.amountPaise,
+      method: refund.method,
+      providerRefundId:
+        refund.method === 'gateway' ? refund.razorpayRefundId : null,
+      note: refund.note ?? null,
+      recordedBy: context.userId,
+    })
+    await recordOrderEvent(tx, {
+      orderId: order.id,
+      actorUserId: context.userId,
+      actorRole: 'admin',
+      eventType: 'refund_recorded',
+      note: `${formatRupees(refund.amountPaise)} by ${refund.method === 'gateway' ? 'Razorpay' : 'bank transfer'}`,
+    })
+    if (order.buyerEmail) {
+      await queueRefundRecordedEmail(
+        tx,
+        deps.queue,
+        { userId: order.userId, email: order.buyerEmail },
+        {
+          orderNumber: order.orderNumber,
+          buyerName: order.buyerName,
+          amountPaise: refund.amountPaise,
+          method: refund.method,
+          lines: [],
+        },
+      )
+    }
+    await recordAuditEntry(tx, {
+      actorUserId: context.userId,
+      actorRole: 'admin',
+      action: 'order.refund',
+      entityType: 'order',
+      entityId: order.id,
+      after: { amountPaise: refund.amountPaise, method: refund.method },
       ip,
     })
   })

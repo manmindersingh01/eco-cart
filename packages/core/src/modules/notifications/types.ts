@@ -109,3 +109,13 @@ export const cancelledPayload = z.object({
   ]),
 })
 export type CancelledPayload = z.infer<typeof cancelledPayload>
+
+export const refundRecordedPayload = z.object({
+  orderNumber: z.string(),
+  buyerName: z.string(),
+  amountPaise: z.number().int(),
+  method: z.enum(['gateway', 'bank_transfer']),
+  /** The returned items; empty for the refund of a cancelled order. */
+  lines: z.array(shippedLine),
+})
+export type RefundRecordedPayload = z.infer<typeof refundRecordedPayload>

@@ -699,8 +699,9 @@ return_requests
   refund_id      uuid FK refunds, nullable
   created_at, updated_at
   INDEX (status, created_at, id)
-  INDEX (user_id)
-  INDEX (seller_id)
+  INDEX (user_id, created_at DESC, id DESC)     the buyer's returns
+  INDEX (seller_id, created_at DESC, id DESC)   the seller's returns
+  UNIQUE (order_item_id) WHERE status is requested or approved: one open return per line
 
 return_photos     a buyer's photo for a return: uploaded before the return is sent, checked and
                   re-encoded by the worker (processing | ready | failed), private, and attached
@@ -776,6 +777,7 @@ refunds
   recorded_at         timestamptz
   created_at
   INDEX (order_id)
+  UNIQUE (return_request_id) where it is set: a return is refunded once
 ```
 
 The unique constraint on `(provider, event_id)` is what makes webhook processing idempotent.

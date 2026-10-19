@@ -1,18 +1,22 @@
-import { and, asc, eq, sql, type SQL } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm'
 import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import type { Database, Transaction } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
-import { paymentEvents, payments } from '../../db/schema/index.ts'
+import { paymentEvents, payments, refunds } from '../../db/schema/index.ts'
 import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  UnavailableError,
   ValidationError,
 } from '../../errors.ts'
+import { formatRupees } from '../../lib/money.ts'
+import { uniqueViolation } from '../../lib/postgres.ts'
 import type { JobQueue } from '../../lib/queue.ts'
 import {
-  toRazorpayPayment,
+  RazorpayError,
+  readRazorpayPayment,
   type Razorpay,
   type RazorpayPayment,
 } from '../../lib/razorpay.ts'
@@ -212,13 +216,15 @@ export interface WebhookDelivery {
 }
 
 export type WebhookOutcome =
-  ConfirmationOutcome | 'replay' | 'ignored' | 'failure_recorded'
+  ConfirmationOutcome | 'replay' | 'ignored' | 'failure_recorded' | 'unreadable'
 
 /** Outcomes an administrator should look at, kept on the stored event. */
 const WEBHOOK_PROBLEMS: Partial<Record<WebhookOutcome, string>> = {
   unknown_order: 'No order has this Razorpay order',
   needs_refund: 'The payment needs a refund; see the order events',
   amount_mismatch: 'The amount is not the order total; see the order events',
+  // Signed by Razorpay, so trying again would not help; kept to look at.
+  unreadable: 'The payment in this event could not be read',
 }
 
 /**
@@ -274,18 +280,20 @@ export async function handleRazorpayWebhook(
 
     let outcome: WebhookOutcome = 'ignored'
     const entity = body.payload.payment?.entity
-    if (
-      (body.event === 'payment.captured' || body.event === 'order.paid') &&
-      entity !== undefined
-    ) {
-      outcome = await confirmOrderPayment(
-        tx,
-        deps.queue,
-        toRazorpayPayment(entity),
-      )
-    } else if (body.event === 'payment.failed' && entity !== undefined) {
-      await recordFailedAttempt(tx, toRazorpayPayment(entity))
-      outcome = 'failure_recorded'
+    const acted =
+      body.event === 'payment.captured' ||
+      body.event === 'order.paid' ||
+      body.event === 'payment.failed'
+    if (acted && entity !== undefined) {
+      const payment = readRazorpayPayment(entity)
+      if (!payment) {
+        outcome = 'unreadable'
+      } else if (body.event === 'payment.failed') {
+        await recordFailedAttempt(tx, payment)
+        outcome = 'failure_recorded'
+      } else {
+        outcome = await confirmOrderPayment(tx, deps.queue, payment)
+      }
     }
     await tx
       .update(paymentEvents)
@@ -380,7 +388,16 @@ export async function confirmCheckoutPayment(
   })
   if (!order) throw new NotFoundError('There is no order with that payment')
 
-  const payment = await razorpay.fetchPayment(given.razorpayPaymentId)
+  let payment: RazorpayPayment
+  try {
+    payment = await razorpay.fetchPayment(given.razorpayPaymentId)
+  } catch (error) {
+    if (!(error instanceof RazorpayError)) throw error
+    // The webhook confirms the payment anyway once Razorpay sends it.
+    throw new UnavailableError(
+      'We could not check your payment with Razorpay just now. If you paid, your order is confirmed as soon as Razorpay tells us.',
+    )
+  }
   if (payment.orderId !== given.razorpayOrderId) {
     throw new ValidationError('That payment is for a different order')
   }
@@ -456,3 +473,94 @@ export const latestPaymentStatus = (orderId: AnyPgColumn): SQL<string | null> =>
   sql<
     string | null
   >`(select ${payments.status} from ${payments} where ${payments.orderId} = ${qualified(orderId)} order by ${payments.createdAt} desc, ${payments.id} desc limit 1)`
+
+/* Refunds (backend spec step 15). The administrator refunds in the Razorpay
+ * dashboard, or by bank transfer for cash on delivery, and records it here;
+ * EcoKart never calls Razorpay to refund. */
+
+export type RefundRow = typeof refunds.$inferSelect
+
+export interface NewRefund {
+  orderId: string
+  returnRequestId: string | null
+  amountPaise: number
+  method: 'gateway' | 'bank_transfer'
+  /** The Razorpay refund id, for a refund through the gateway. */
+  providerRefundId: string | null
+  note: string | null
+  recordedBy: string
+}
+
+/**
+ * Records a refund the administrator has made, never more than is left of
+ * the order's payment, and marks the payment refunded once nothing is left.
+ * The caller holds the order's lock, so two refunds of one order take turns.
+ */
+export async function recordRefund(
+  tx: Transaction,
+  refund: NewRefund,
+): Promise<RefundRow> {
+  const paid = (await paymentsOfOrder(tx, refund.orderId)).find(
+    (payment) =>
+      payment.status === 'captured' ||
+      payment.status === 'partially_refunded' ||
+      // Cash on delivery for a parcel that arrived while another is on its
+      // way: the courier has collected it, though the order is not complete.
+      payment.provider === 'cod',
+  )
+  if (!paid) {
+    throw new ConflictError('This order has no payment to refund')
+  }
+  const left = paid.amountPaise - (await refundedSoFar(tx, refund.orderId))
+  if (refund.amountPaise > left) {
+    throw new ConflictError(
+      `Only ${formatRupees(left)} of this order's payment is left to refund`,
+    )
+  }
+  let row: RefundRow | undefined
+  try {
+    ;[row] = await tx
+      .insert(refunds)
+      .values({ ...refund, paymentId: paid.id })
+      .returning()
+  } catch (error) {
+    if (uniqueViolation(error) === 'refunds_provider_refund_id_unique') {
+      throw new ConflictError('That Razorpay refund is already recorded')
+    }
+    throw error
+  }
+  if (paid.status === 'captured' || paid.status === 'partially_refunded') {
+    await tx
+      .update(payments)
+      .set({
+        status: refund.amountPaise === left ? 'refunded' : 'partially_refunded',
+      })
+      .where(eq(payments.id, paid.id))
+  }
+  return row!
+}
+
+/** The refunds of these returns, by return id. */
+export async function refundsOfReturns(
+  tx: Transaction,
+  returnIds: readonly string[],
+): Promise<Map<string, RefundRow>> {
+  if (returnIds.length === 0) return new Map()
+  const rows = await tx
+    .select()
+    .from(refunds)
+    .where(inArray(refunds.returnRequestId, [...returnIds]))
+  return new Map(rows.map((row) => [row.returnRequestId!, row]))
+}
+
+/** What has been refunded of the order's payment so far. */
+export async function refundedSoFar(
+  tx: Transaction,
+  orderId: string,
+): Promise<number> {
+  const [{ total } = { total: '0' }] = await tx
+    .select({ total: sql<string>`coalesce(sum(${refunds.amountPaise}), 0)` })
+    .from(refunds)
+    .where(eq(refunds.orderId, orderId))
+  return Number(total)
+}

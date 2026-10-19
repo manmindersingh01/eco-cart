@@ -521,6 +521,7 @@ export {
 export {
   cancelOrderAsAdmin,
   cancelOwnOrder,
+  recordCancellationRefund,
   dispatchLines,
   markShipmentDelivered,
 } from './modules/orders/fulfilment.ts'
@@ -548,3 +549,22 @@ export type {
   ShipmentView,
   VerifiedPurchase,
 } from './modules/orders/types.ts'
+// Returns and refunds (backend spec step 15).
+export {
+  approveReturn,
+  getReturn,
+  listOwnReturns,
+  listReturns,
+  listSellerReturns,
+  openReturn,
+  recordReturnRefund,
+  rejectReturn,
+} from './modules/returns/service.ts'
+export {
+  RETURN_REASONS,
+  RETURN_STATUSES,
+  type RefundRecord,
+  type ReturnReason,
+  type ReturnStatus,
+  type ReturnView,
+} from './modules/returns/types.ts'
