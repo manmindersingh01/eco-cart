@@ -72,6 +72,8 @@ describe('GET /api/products/{slug}', () => {
       brand: { slug: brandSlug },
       category: { slug: categorySlug },
       variants: [{ id: made.variant.id, pricePaise: 50_000, inStock: true }],
+      minOrderQuantity: 1,
+      video: null,
     })
     expect(typeof body.product.publishedAt).toBe('string')
   })

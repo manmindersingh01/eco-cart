@@ -40,6 +40,7 @@ import {
   screenListing,
   screenListingJob,
 } from './screening.ts'
+import { invalidateStorefront } from './storefront-cache.ts'
 import { refreshProducts } from './summary.ts'
 import { PROCESS_VIDEO_QUEUE, processVideoJob } from './videos.ts'
 
@@ -283,12 +284,12 @@ export async function processUploadedVideo(
 
   await deps.db.transaction(async (tx) => {
     // The product first, like every other change to it.
-    await tx
-      .select({ id: products.id })
+    const [product] = await tx
+      .select({ id: products.id, publishedAt: products.publishedAt })
       .from(products)
       .where(eq(products.id, video.productId))
       .for('update')
-    await tx
+    const ready = await tx
       .update(productVideos)
       .set({
         status: 'ready',
@@ -302,6 +303,12 @@ export async function processUploadedVideo(
           eq(productVideos.status, 'processing'),
         ),
       )
+      .returning({ id: productVideos.id })
+    // Approval does not wait for the video, so a listing on sale can get
+    // its video now; its product page shows it (step 9).
+    if (ready.length > 0 && product?.publishedAt) {
+      await invalidateStorefront(tx, { productIds: [video.productId] })
+    }
   })
   await removeUpload(deps.storage, video.uploadKey)
 }

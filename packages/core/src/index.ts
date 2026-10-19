@@ -253,6 +253,7 @@ export type {
   PublicImage,
   PublicProduct,
   PublicVariant,
+  PublicVideo,
   StorefrontSort,
 } from './modules/catalogue/storefront-types.ts'
 export {
