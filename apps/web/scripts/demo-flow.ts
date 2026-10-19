@@ -377,8 +377,30 @@ const steps: Step[] = [
     },
   },
   {
-    name: 'The administrator makes sure there is a category with a GST rate, and a brand',
+    name: 'The administrator makes sure there is a return window, a category with a GST rate, and a brand',
     async run() {
+      // Only the client can decide the return window; `pnpm db:seed` saves
+      // an example, and an administrator saves it on a database seeded before.
+      const settings = expectStatus(
+        await admin.get('/api/admin/settings'),
+        200,
+        'The platform settings',
+      )
+      const window = list(settings, 'settings').find(
+        (setting) => setting.key === 'return_window_days',
+      )
+      let windowNote = `${String(window?.value)}-day return window`
+      if (!window || window.source === 'missing') {
+        expectStatus(
+          await admin.call('PUT', '/api/admin/settings/return_window_days', {
+            value: 7,
+          }),
+          200,
+          'Saving the return window',
+        )
+        windowNote = 'return window was not set, so it is now 7 days'
+      }
+
       const name = 'Demo Kitchenware'
       const tree = expectStatus(
         await admin.get('/api/admin/categories'),
@@ -427,7 +449,7 @@ const steps: Step[] = [
         brand = object(created, 'brand')
       }
       story.brandId = String(brand.id)
-      return `${name} (GST ${Number(category.gstRateBps) / 100}%) and ${brandName} are ready`
+      return `${windowNote}; ${name} (GST ${Number(category.gstRateBps) / 100}%) and ${brandName} are ready`
     },
   },
   {
@@ -857,6 +879,7 @@ const steps: Step[] = [
       )
       // Once every line is delivered, the order is complete.
       const status = text(order, 'order.status')
+      story.lineId = text(order, 'order.lines.0.id')
       const lines = list(order, 'order.lines').map((line) => line.status)
       if (
         status !== 'completed' ||
@@ -935,13 +958,75 @@ const steps: Step[] = [
       return `${story.orderNumber} is in the administrator’s list; every email went out`
     },
   },
-  { name: 'The buyer asks for a return', skip: NOT_BUILT },
+  {
+    name: 'The buyer asks to return one box, and the seller sees the request',
+    async run() {
+      const asked = expectStatus(
+        await buyer.post('/api/account/returns', {
+          orderItemId: story.lineId,
+          quantity: 1,
+          reasonCode: 'no_longer_needed',
+          reasonText: 'Ordered one more than we need',
+        }),
+        201,
+        'Asking for the return',
+      )
+      story.returnId = text(asked, 'return.id')
+      const sellerView = expectStatus(
+        await seller.get('/api/seller/returns?status=requested&limit=100'),
+        200,
+        'The seller’s returns',
+      )
+      if (
+        !list(sellerView, 'items').some((item) => item.id === story.returnId)
+      ) {
+        fail('the return is not in the seller’s list')
+      }
+      return `return of 1 box is ${text(asked, 'return.status')}, and the seller sees it`
+    },
+  },
   {
     name: 'The administrator approves the return and records the refund',
-    skip: NOT_BUILT,
+    async run() {
+      expectStatus(
+        await admin.post(`/api/admin/returns/${story.returnId}/approve`, {
+          note: 'Approved; the courier collects it this week',
+        }),
+        200,
+        'Approving the return',
+      )
+      const approved = expectStatus(
+        await admin.get(`/api/admin/returns/${story.returnId}`),
+        200,
+        'The approved return',
+      )
+      const amountPaise = Number(text(approved, 'return.maxRefundPaise'))
+      // Cash on delivery is refunded by bank transfer, with its reference.
+      expectStatus(
+        await admin.post(`/api/admin/returns/${story.returnId}/refund`, {
+          method: 'bank_transfer',
+          amountPaise,
+          note: `NEFT UTR ${randomInt(10 ** 9, 10 ** 10)}`,
+        }),
+        200,
+        'Recording the refund',
+      )
+      const mine = expectStatus(
+        await buyer.get(`/api/account/returns/${story.returnId}`),
+        200,
+        'The buyer’s return',
+      )
+      return `the buyer sees the return ${text(mine, 'return.status')} with ${formatRupees(amountPaise)} back`
+    },
   },
-  { name: 'The seller’s ledger shows the reversal', skip: NOT_BUILT },
-  { name: 'The administrator records a payout to the seller', skip: NOT_BUILT },
+  {
+    name: 'The seller’s ledger shows the reversal',
+    skip: `${NOT_BUILT}: no API shows the seller’s ledger`,
+  },
+  {
+    name: 'The administrator records a payout to the seller',
+    skip: `${NOT_BUILT}: no API for payouts or the settlement file`,
+  },
 ]
 
 console.info(`EcoKart demo flow against ${baseUrl} (run ${tag})\n`)
