@@ -1,5 +1,5 @@
 {
-  "id": "4697e9a5-94f2-4263-80ea-c73896f1d637",
+  "id": "8849ea35-e2ff-474d-bffb-529fdf2a4269",
   "prevId": "2097baea-67a6-4eee-a91a-f612240bdca2",
   "version": "7",
   "dialect": "postgresql",
@@ -3554,6 +3554,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "suggested_mapping": {
+          "name": "suggested_mapping",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "ai_request_id": {
           "name": "ai_request_id",
           "type": "uuid",
@@ -5569,26 +5575,14 @@
           "method": "btree",
           "with": {}
         },
-        "return_requests_user_id_created_at_idx": {
-          "name": "return_requests_user_id_created_at_idx",
+        "return_requests_user_id_idx": {
+          "name": "return_requests_user_id_idx",
           "columns": [
             {
               "expression": "user_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
             }
           ],
           "isUnique": false,
@@ -5596,45 +5590,17 @@
           "method": "btree",
           "with": {}
         },
-        "return_requests_seller_id_created_at_idx": {
-          "name": "return_requests_seller_id_created_at_idx",
+        "return_requests_seller_id_idx": {
+          "name": "return_requests_seller_id_idx",
           "columns": [
             {
               "expression": "seller_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "return_requests_open_line_key": {
-          "name": "return_requests_open_line_key",
-          "columns": [
-            {
-              "expression": "order_item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "status in ('requested', 'approved')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -6356,22 +6322,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "refunds_return_request_id_key": {
-          "name": "refunds_return_request_id_key",
-          "columns": [
-            {
-              "expression": "return_request_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "return_request_id is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

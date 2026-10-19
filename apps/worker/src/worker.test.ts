@@ -15,6 +15,8 @@ import {
   loadNotificationConfig,
   loadStorageConfig,
   QUEUES,
+  REMOVE_EXPIRED_RATE_LIMITS_QUEUE,
+  REMOVE_STALE_GUEST_CARTS_QUEUE,
   getProductForReview,
   requestListingDraft,
   requireEnv,
@@ -55,6 +57,30 @@ test('starts the job queue against the database and stops cleanly', async () => 
   const worker = await startWorker(options())
   try {
     expect(await worker.boss.isInstalled()).toBe(true)
+    // The nightly clean-ups run in India time.
+    const schedules = await worker.boss.getSchedules()
+    expect(
+      schedules
+        .filter(({ name }) =>
+          [
+            REMOVE_STALE_GUEST_CARTS_QUEUE,
+            REMOVE_EXPIRED_RATE_LIMITS_QUEUE,
+          ].includes(name),
+        )
+        .map(({ name, cron, timezone }) => ({ name, cron, timezone }))
+        .toSorted((a, b) => a.name.localeCompare(b.name)),
+    ).toEqual([
+      {
+        name: REMOVE_STALE_GUEST_CARTS_QUEUE,
+        cron: '30 3 * * *',
+        timezone: 'Asia/Kolkata',
+      },
+      {
+        name: REMOVE_EXPIRED_RATE_LIMITS_QUEUE,
+        cron: '0 4 * * *',
+        timezone: 'Asia/Kolkata',
+      },
+    ])
   } finally {
     await worker.stop()
   }

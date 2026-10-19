@@ -41,6 +41,12 @@ export const catalogueImports = pgTable(
     headers: text('headers').array(),
     // Seller column name to EcoKart field, e.g. {"Price (Rs)": "price"}.
     columnMapping: jsonb('column_mapping').$type<Record<string, string>>(),
+    // What the worker suggests before the seller chooses (step 19): each
+    // column's field, how sure it is, and whether the name or the AI chose.
+    suggestedMapping:
+      jsonb('suggested_mapping').$type<
+        Record<string, { field: string; confidence: number; source: string }>
+      >(),
     aiRequestId: uuid('ai_request_id').references(() => aiRequests.id),
     totalRows: integer('total_rows').notNull().default(0),
     okRows: integer('ok_rows').notNull().default(0),

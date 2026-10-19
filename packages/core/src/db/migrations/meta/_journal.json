@@ -264,8 +264,22 @@
     {
       "idx": 37,
       "version": "7",
-      "when": 1792442908067,
-      "tag": "0037_return_lists_and_one_refund",
+      "when": 1792442579202,
+      "tag": "0037_import_mapping_suggestion",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792443125201,
+      "tag": "0038_guest_cart_clean_up_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792443602847,
+      "tag": "0039_return_lists_and_one_refund",
       "breakpoints": true
     }
   ]

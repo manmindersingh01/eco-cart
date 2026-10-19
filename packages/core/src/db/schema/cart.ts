@@ -42,7 +42,11 @@ export const carts = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  () => [
+  (t) => [
+    // The nightly clean-up finds old guest carts without reading the rest.
+    index('carts_guest_updated_at_idx')
+      .on(t.updatedAt)
+      .where(sql`user_id is null`),
     check(
       'carts_owner_check',
       sql`user_id is not null or guest_token is not null`,
