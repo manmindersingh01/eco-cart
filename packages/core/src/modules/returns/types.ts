@@ -13,6 +13,19 @@ export const MAX_PHOTOS_PER_RETURN = 5
  */
 export const MAX_WAITING_PHOTOS_PER_DAY = 20
 
+/**
+ * Hours a photo can wait to be sent with a return. The return form is filled
+ * in one sitting, so a day is plenty.
+ */
+export const SEND_PHOTO_WITHIN_HOURS = 24
+
+/**
+ * Photos never sent with a return are deleted once they are this old
+ * (jobs.ts). It is longer than SEND_PHOTO_WITHIN_HOURS, so a photo the
+ * clean-up deletes can no longer be attached to a return.
+ */
+export const DELETE_UNSENT_PHOTO_AFTER_HOURS = 48
+
 export const returnPhotoUploadRequest = strictObject({
   contentType: z.enum(IMAGE_CONTENT_TYPES, {
     error: (issue) =>
