@@ -71,6 +71,34 @@ export function afterCursor(
 export const newestFirstCursor = (row: { cursorTime: string; id: string }) =>
   encodeCursor(row.cursorTime, row.id)
 
+/*
+ * Newest first by (created_at, id) for logs whose id is a bigserial number
+ * instead of a uuid, for example the email outbox. The cursor names its kind,
+ * so a uuid cursor is refused instead of returning a wrong page.
+ */
+
+const logCursorShape = z.tuple([
+  z.literal('log'),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/),
+  z.string().regex(/^\d{1,19}$/),
+])
+
+/** Rows that come after the cursor in newest-first order of a log. */
+export function afterLogCursor(
+  cursor: string,
+  createdAt: AnyPgColumn,
+  id: AnyPgColumn,
+): SQL {
+  const [, time, lastId] = decodeCursor(cursor, logCursorShape)
+  return sql`(${createdAt}, ${id}) < (${time}::timestamptz, ${lastId}::bigint)`
+}
+
+/** The newest-first cursor of a log row selected with `exactTime`. */
+export const logCursor = (row: { cursorTime: string; id: number }) =>
+  Buffer.from(JSON.stringify(['log', row.cursorTime, String(row.id)])).toString(
+    'base64url',
+  )
+
 /**
  * Rows that come after the cursor in oldest-first order, for queues such as
  * the seller documents waiting for review. The cursor has the same shape as
@@ -83,33 +111,6 @@ export function afterOldestFirstCursor(
 ): SQL {
   const [time, lastId] = decodeCursor(cursor, cursorShape)
   return sql`(${createdAt}, ${id}) > (${time}::timestamptz, ${lastId}::uuid)`
-}
-
-/*
- * Newest first by (created_at, id) for append-only logs whose id is a
- * bigserial rather than a UUID, such as the seller ledger.
- */
-
-const logCursorShape = z.tuple([
-  z.literal('log'),
-  z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/),
-  z.string().regex(/^\d{1,19}$/),
-])
-
-/** The newest-first cursor of a log row selected with `exactTime`. */
-export const logCursor = (row: { cursorTime: string; id: number }) =>
-  Buffer.from(JSON.stringify(['log', row.cursorTime, String(row.id)])).toString(
-    'base64url',
-  )
-
-/** Log rows that come after the cursor in newest-first order. */
-export function afterLogCursor(
-  cursor: string,
-  createdAt: AnyPgColumn,
-  id: AnyPgColumn,
-): SQL {
-  const [, time, lastId] = decodeCursor(cursor, logCursorShape)
-  return sql`(${createdAt}, ${id}) < (${time}::timestamptz, ${lastId}::bigint)`
 }
 
 const textCursorShape = z.tuple([z.literal('az'), z.string().max(1000)])

@@ -1,0 +1,1 @@
+CREATE POLICY "web_update" ON "email_outbox" AS PERMISSIVE FOR UPDATE TO "ecokart_web" USING (app.has_full_access()) WITH CHECK (app.has_full_access());

@@ -17,6 +17,7 @@ export { QUEUES } from './jobs.ts'
 export {
   startJobQueue,
   type JobQueue,
+  type QueueCounts,
   type QueueDefinition,
 } from './lib/queue.ts'
 export { isPlaceholderEmail, type Auth } from './modules/auth/auth.ts'
@@ -35,6 +36,19 @@ export {
 } from './modules/auth/accounts.ts'
 export { loadNotificationConfig } from './modules/notifications/config.ts'
 export { registerNotificationJobs } from './modules/notifications/jobs.ts'
+export {
+  listUndeliveredEmails,
+  retryEmail,
+  STUCK_EMAIL_MINUTES,
+  type EmailState,
+  type OutboxEmailView,
+} from './modules/notifications/outbox.ts'
+export {
+  listFailedJobs,
+  listJobQueues,
+  retryFailedJob,
+  type FailedJobView,
+} from './modules/background-jobs/service.ts'
 export {
   settingKeys,
   type CompanyDetails,
@@ -294,9 +308,14 @@ export {
   getPublicProduct,
   listingFilters,
   listPublicProducts,
+  listSimilarProducts,
   queryObject,
+  SIMILAR_PRODUCTS,
+  type ListMatch,
   type ListSort,
   type ProductListQuery,
+  type SimilarProducts,
+  type VectorMatch,
   type WordMatch,
 } from './modules/catalogue/storefront.ts'
 export type {
@@ -308,6 +327,7 @@ export type {
   PublicImage,
   PublicProduct,
   PublicVariant,
+  PublicVideo,
   StorefrontSort,
 } from './modules/catalogue/storefront-types.ts'
 export {
@@ -320,6 +340,37 @@ export {
   searchProducts,
 } from './modules/search/service.ts'
 export type { SearchGap, SearchResult } from './modules/search/types.ts'
+// Search by meaning and by photo, and product embeddings (backend spec step 18).
+export {
+  naturalSearch,
+  type NaturalSearchDependencies,
+  type NaturalSearchResult,
+  type UnderstoodQuery,
+} from './modules/search/natural.ts'
+export {
+  createSearchPhotoUpload,
+  MAX_SEARCH_PHOTO_BYTES,
+  searchByPhoto,
+  type PhotoSearchDependencies,
+  type SearchPhotoUpload,
+} from './modules/search/photos.ts'
+// The shopping assistant (backend spec step 20).
+export {
+  askAssistant,
+  ASSISTANT_LIMIT,
+  consumeAssistantAllowance,
+  type AssistantDependencies,
+} from './modules/assistant/service.ts'
+export type {
+  AssistantAnswer,
+  ComparisonPoint,
+} from './modules/assistant/types.ts'
+export {
+  EMBED_MISSING_QUEUE,
+  EMBED_PRODUCT_QUEUE,
+  embedProduct,
+  queueMissingEmbeddings,
+} from './modules/catalogue/embeddings.ts'
 export { clientAddress, trustedProxyCount } from './lib/client-address.ts'
 export { IMAGE_SIZES, type ImageSize } from './lib/images.ts'
 export {
@@ -415,6 +466,7 @@ export {
   updateCoupon,
 } from './modules/cart/coupons.ts'
 export {
+  GUEST_CART_DAYS,
   MAX_CART_LINES,
   MAX_LINE_QUANTITY,
   type CartCoupon,
@@ -444,6 +496,16 @@ export {
   expireUnpaidOrders,
   registerOrderJobs,
 } from './modules/orders/jobs.ts'
+export {
+  REMOVE_STALE_GUEST_CARTS_QUEUE,
+  registerCartJobs,
+  removeStaleGuestCarts,
+} from './modules/cart/jobs.ts'
+export {
+  REMOVE_EXPIRED_RATE_LIMITS_QUEUE,
+  registerRateLimitJobs,
+  removeExpiredRateLimits,
+} from './modules/rate-limits/jobs.ts'
 export {
   createRazorpay,
   loadRazorpayConfig,
@@ -488,3 +550,34 @@ export {
   getProductLabels,
   type ProductLabel,
 } from './modules/catalogue/storefront.ts'
+// Orders after checkout (backend spec step 13).
+export {
+  cancelOrderAsAdmin,
+  cancelOwnOrder,
+  dispatchLines,
+  markShipmentDelivered,
+} from './modules/orders/fulfilment.ts'
+export {
+  findVerifiedPurchase,
+  getAdminOrder,
+  getBuyerOrder,
+  getSellerOrder,
+  listAdminOrders,
+  listBuyerOrders,
+  listSellerOrders,
+} from './modules/orders/views.ts'
+export type {
+  AdminOrderSummary,
+  AdminOrderView,
+  BuyerOrderSummary,
+  BuyerOrderView,
+  DispatchRequest,
+  OrderLineView,
+  OrderProgress,
+  PaymentState,
+  SellerOrderSummary,
+  SellerOrderTab,
+  SellerOrderView,
+  ShipmentView,
+  VerifiedPurchase,
+} from './modules/orders/types.ts'

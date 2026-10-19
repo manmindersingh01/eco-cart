@@ -16,6 +16,7 @@ import {
   imageSizeKey,
   MAX_UPLOAD_BYTES,
 } from '../../lib/images.ts'
+import { jobQueueOf } from '../../lib/queue.ts'
 import type { ObjectStorage } from '../../lib/storage.ts'
 import type { AiModels } from '../../lib/ai/index.ts'
 import {
@@ -34,17 +35,25 @@ import {
   draftListingJob,
   writeListingDraft,
 } from './drafts.ts'
+import {
+  EMBED_MISSING_QUEUE,
+  EMBED_PRODUCT_QUEUE,
+  embedProduct,
+  embedProductJob,
+  queueMissingEmbeddings,
+} from './embeddings.ts'
 import { PROCESS_IMAGE_QUEUE, processImageJob } from './images.ts'
 import {
   SCREEN_LISTING_QUEUE,
   screenListing,
   screenListingJob,
 } from './screening.ts'
+import { invalidateStorefront } from './storefront-cache.ts'
 import { refreshProducts } from './summary.ts'
 import { PROCESS_VIDEO_QUEUE, processVideoJob } from './videos.ts'
 
 /*
- * The worker's catalogue jobs (backend spec steps 6, 7, 19, and 20, and
+ * The worker's catalogue jobs (backend spec steps 6, 7, and 18 to 20, and
  * product videos). Only the worker loads this file, because it loads the
  * image library and runs ffmpeg.
  */
@@ -283,12 +292,12 @@ export async function processUploadedVideo(
 
   await deps.db.transaction(async (tx) => {
     // The product first, like every other change to it.
-    await tx
-      .select({ id: products.id })
+    const [product] = await tx
+      .select({ id: products.id, publishedAt: products.publishedAt })
       .from(products)
       .where(eq(products.id, video.productId))
       .for('update')
-    await tx
+    const ready = await tx
       .update(productVideos)
       .set({
         status: 'ready',
@@ -302,6 +311,12 @@ export async function processUploadedVideo(
           eq(productVideos.status, 'processing'),
         ),
       )
+      .returning({ id: productVideos.id })
+    // Approval does not wait for the video, so a listing on sale can get
+    // its video now; its product page shows it (step 9).
+    if (ready.length > 0 && product?.publishedAt) {
+      await invalidateStorefront(tx, { productIds: [video.productId] })
+    }
   })
   await removeUpload(deps.storage, video.uploadKey)
 }
@@ -359,4 +374,24 @@ export async function registerCatalogueJobs(
       })
     },
   )
+  await boss.work(
+    EMBED_PRODUCT_QUEUE,
+    { includeMetadata: true },
+    async ([job]) => {
+      if (!job) return
+      await embedProduct(deps, embedProductJob.parse(job.data).productId, {
+        lastAttempt: job.retryCount >= job.retryLimit,
+      })
+    },
+  )
+  // Every 15 minutes: products approved while AI was off, or embedded with
+  // another model (backend spec step 18).
+  await boss.schedule(EMBED_MISSING_QUEUE, '*/15 * * * *', null, {
+    tz: 'Asia/Kolkata',
+  })
+  const { ai } = deps
+  await boss.work(EMBED_MISSING_QUEUE, async () => {
+    if (ai === null) return
+    await queueMissingEmbeddings(deps.db, jobQueueOf(boss), ai.embed.model)
+  })
 }

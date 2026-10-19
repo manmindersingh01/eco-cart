@@ -7,6 +7,7 @@ import { createPool } from '../../db/pool.ts'
 import {
   categories,
   productImages,
+  productVideos,
   productVariants,
   products,
   sellers,
@@ -80,6 +81,7 @@ interface ProductSpec {
   publishedAt?: Date
   deleted?: boolean
   optionNames?: string[]
+  minOrderQuantity?: number
   variants?: VariantSpec[]
 }
 
@@ -110,6 +112,7 @@ async function listed(spec: ProductSpec) {
       spec.publishedAt ??
       (status === 'approved' || status === 'archived' ? new Date() : null),
     optionNames: spec.optionNames ?? [],
+    minOrderQuantity: spec.minOrderQuantity ?? 1,
     deletedAt: spec.deleted ? new Date() : null,
     hsnCode: '7323',
     gstRateBps: 500,
@@ -249,6 +252,8 @@ describe('product page', () => {
       inStock: true,
       ratingAvg: 0,
       ratingCount: 0,
+      minOrderQuantity: 1,
+      video: null,
     })
     expect(page.variants).toEqual([
       {
@@ -281,6 +286,60 @@ describe('product page', () => {
     })
     // Private details never reach visitors.
     expect(JSON.stringify(page)).not.toMatch(/sku|SKU-|"stock"|hsn|gstRate/i)
+  })
+
+  test('shows the minimum order, and a variant with fewer left than it as out of stock', async () => {
+    const leaf = await category()
+    const { product, variants } = await listed({
+      categoryId: leaf.id,
+      minOrderQuantity: 3,
+      optionNames: ['Pack'],
+      variants: [
+        { pricePaise: 20_000, stock: 2, options: { Pack: 'Small' } },
+        { pricePaise: 30_000, stock: 3, options: { Pack: 'Large' } },
+      ],
+    })
+    const page = await productPage(product.slug)
+    expect(page.minOrderQuantity).toBe(3)
+    expect(
+      page.variants.map((variant) => [variant.id, variant.inStock]),
+    ).toEqual([
+      [variants[0]!.id, false],
+      [variants[1]!.id, true],
+    ])
+    expect(page.inStock).toBe(true)
+
+    await owner
+      .update(productVariants)
+      .set({ stock: 1 })
+      .where(eq(productVariants.id, variants[1]!.id))
+    await refresh(product.id)
+    expect((await productPage(product.slug)).inStock).toBe(false)
+  })
+
+  test('shows the video with its poster once the worker has converted it', async () => {
+    const leaf = await category()
+    const { product } = await listed({ categoryId: leaf.id })
+    const id = randomUUID()
+    await owner.insert(productVideos).values({
+      id,
+      productId: product.id,
+      storageKey: `videos/${id}`,
+      status: 'processing',
+    })
+    expect((await productPage(product.slug)).video).toBeNull()
+
+    await owner
+      .update(productVideos)
+      .set({ status: 'ready', durationMs: 12_500, width: 720, height: 1280 })
+      .where(eq(productVideos.id, id))
+    expect((await productPage(product.slug)).video).toEqual({
+      url: `https://images.test/videos/${id}/video.mp4`,
+      posterUrl: `https://images.test/videos/${id}/poster.jpg`,
+      width: 720,
+      height: 1280,
+      durationMs: 12_500,
+    })
   })
 
   test('is not found unless the product, its seller, and its categories are all on sale', async () => {
@@ -375,8 +434,11 @@ describe('product lists', () => {
         { pricePaise: 30_000, mrpPaise: 30_000 },
       ],
       optionNames: ['Size'],
+      minOrderQuantity: 2,
     })
-    const photo = await readyPhoto(product.id, { alt: 'Bottle' })
+    // The main photo is the first ready one in the seller's order.
+    const photo = await readyPhoto(product.id, { alt: 'Bottle', sortOrder: 0 })
+    await readyPhoto(product.id, { alt: 'Side', sortOrder: 1 })
     const { items } = await list({
       filters: { categoryIds: [leaf.id] },
       sort: 'newest',
@@ -393,6 +455,7 @@ describe('product lists', () => {
         inStock: true,
         ratingAvg: 0,
         ratingCount: 0,
+        minOrderQuantity: 2,
         image: {
           id: photo.id,
           alt: 'Bottle',

@@ -7,6 +7,7 @@ import {
   createObjectStorage,
   createVideoUpload,
   createPool,
+  EMBED_PRODUCT_QUEUE,
   createProduct,
   getListingDraft,
   getOwnProduct,
@@ -14,6 +15,8 @@ import {
   loadNotificationConfig,
   loadStorageConfig,
   QUEUES,
+  REMOVE_EXPIRED_RATE_LIMITS_QUEUE,
+  REMOVE_STALE_GUEST_CARTS_QUEUE,
   getProductForReview,
   requestListingDraft,
   requireEnv,
@@ -27,9 +30,12 @@ import { loadVideoTools } from '@ecokart/core/worker'
 import {
   createTestCategory,
   createTestPhoto,
+  createTestProduct,
   createTestSeller,
   createTestVideo,
   fakeChatReply,
+  fakeEmbeddingsReply,
+  fakeVector,
   startFakeAiServer,
   waitUntil,
 } from '@ecokart/core/testing'
@@ -51,6 +57,30 @@ test('starts the job queue against the database and stops cleanly', async () => 
   const worker = await startWorker(options())
   try {
     expect(await worker.boss.isInstalled()).toBe(true)
+    // The nightly clean-ups run in India time.
+    const schedules = await worker.boss.getSchedules()
+    expect(
+      schedules
+        .filter(({ name }) =>
+          [
+            REMOVE_STALE_GUEST_CARTS_QUEUE,
+            REMOVE_EXPIRED_RATE_LIMITS_QUEUE,
+          ].includes(name),
+        )
+        .map(({ name, cron, timezone }) => ({ name, cron, timezone }))
+        .toSorted((a, b) => a.name.localeCompare(b.name)),
+    ).toEqual([
+      {
+        name: REMOVE_STALE_GUEST_CARTS_QUEUE,
+        cron: '30 3 * * *',
+        timezone: 'Asia/Kolkata',
+      },
+      {
+        name: REMOVE_EXPIRED_RATE_LIMITS_QUEUE,
+        cron: '0 4 * * *',
+        timezone: 'Asia/Kolkata',
+      },
+    ])
   } finally {
     await worker.stop()
   }
@@ -496,6 +526,51 @@ test('the worker writes a listing draft a seller asked for', async () => {
   } finally {
     await queue.stop()
     await Promise.all([webPool.end(), ownerPool.end()])
+    await worker.stop()
+    await fake.close()
+  }
+  // The worker picks jobs up every two seconds, so allow for a slow runner.
+}, 30_000)
+
+test('the worker embeds an approved product for search', async () => {
+  const fake = await startFakeAiServer()
+  const worker = await startWorker({ ...options(), ai: fake.settings() })
+  const webUrl = requireEnv('WEB_DATABASE_URL')
+  const ownerPool = createPool(
+    requireEnv('MIGRATION_DATABASE_URL'),
+    'worker-e2e-embed-owner',
+  )
+  const queue = await startJobQueue(webUrl, 'worker-e2e-embed-queue')
+  const owner = createDatabase(ownerPool)
+  try {
+    const { seller } = await createTestSeller(owner)
+    const category = await createTestCategory(owner)
+    const { product } = await createTestProduct(owner, {
+      sellerId: seller.id,
+      categoryId: category.id,
+      status: 'approved',
+    })
+    await createTestPhoto(owner, product.id)
+    fake.queue(fakeEmbeddingsReply([fakeVector(1), fakeVector(2)]))
+    // As approval does, in a transaction of its own.
+    await owner.transaction((tx) =>
+      queue.send(tx, EMBED_PRODUCT_QUEUE, { productId: product.id }),
+    )
+    const rows = async () =>
+      (
+        await ownerPool.query<{ kind: string }>(
+          'select kind from product_embeddings where product_id = $1',
+          [product.id],
+        )
+      ).rows
+    await waitUntil(async () => (await rows()).length === 2, 15_000)
+    expect((await rows()).map((row) => row.kind).toSorted()).toEqual([
+      'image',
+      'text',
+    ])
+  } finally {
+    await queue.stop()
+    await ownerPool.end()
     await worker.stop()
     await fake.close()
   }

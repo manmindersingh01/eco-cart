@@ -73,3 +73,39 @@ export const paymentReceivedPayload = z.object({
   paidAt: z.iso.datetime(),
 })
 export type PaymentReceivedPayload = z.infer<typeof paymentReceivedPayload>
+
+const shippedLine = z.object({
+  title: z.string(),
+  options: z.record(z.string(), z.string()),
+  quantity: z.number().int(),
+})
+
+export const dispatchedPayload = z.object({
+  orderNumber: z.string(),
+  buyerName: z.string(),
+  lines: z.array(shippedLine).min(1),
+  courierName: z.string(),
+  trackingNumber: z.string(),
+  trackingUrl: z.string().nullable(),
+  /** False while other lines of the order still wait to be dispatched. */
+  wholeOrder: z.boolean(),
+  /** False when an earlier parcel of the order has already gone. */
+  firstParcel: z.boolean(),
+})
+export type DispatchedPayload = z.infer<typeof dispatchedPayload>
+
+export const cancelledPayload = z.object({
+  orderNumber: z.string(),
+  buyerName: z.string(),
+  placedAt: z.iso.datetime(),
+  /** Who cancelled it: the buyer, or EcoKart (an administrator). */
+  cancelledBy: z.enum(['buyer', 'ecokart']),
+  reason: z.string(),
+  lines: z.array(shippedLine).min(1),
+  /** What happens to the money. */
+  money: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('refund'), amountPaise: z.number().int() }),
+    z.object({ kind: z.literal('nothing_charged') }),
+  ]),
+})
+export type CancelledPayload = z.infer<typeof cancelledPayload>

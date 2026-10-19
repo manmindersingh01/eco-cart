@@ -94,6 +94,8 @@ export const orders = pgTable(
       t.id.desc(),
     ),
     index('orders_status_created_at_idx').on(t.status, t.createdAt, t.id),
+    // The administrators' list of every order, newest first.
+    index('orders_created_at_idx').on(t.createdAt.desc(), t.id.desc()),
     check(
       'orders_status_check',
       sql`status in ('pending_payment', 'confirmed', 'cancelled', 'completed')`,

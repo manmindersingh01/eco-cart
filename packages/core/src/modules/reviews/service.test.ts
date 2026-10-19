@@ -18,6 +18,7 @@ import {
 } from '../../errors.ts'
 import {
   createTestCategory,
+  createTestOrderWithLines,
   createTestProduct,
   createTestSeller,
   createTestUser,
@@ -100,6 +101,36 @@ const issuesOf = (promise: Promise<unknown>) =>
   )
 
 describe('writing a review', () => {
+  test('is a verified purchase from a buyer who received the product', async () => {
+    const { product, variant } = await createTestProduct(owner, {
+      sellerId,
+      categoryId,
+    })
+    const buyer = await newBuyer()
+    const { items } = await createTestOrderWithLines(owner, {
+      buyerId: buyer.userId,
+      status: 'completed',
+      lines: [
+        {
+          sellerId,
+          productId: product.id,
+          variantId: variant.id,
+          status: 'delivered',
+        },
+      ],
+    })
+    const written = await review(buyer, product.slug, {
+      rating: 4,
+      authorName: 'Meera',
+    })
+    expect(written).toMatchObject({ verifiedPurchase: true })
+    const [row] = await owner
+      .select({ orderItemId: reviews.orderItemId })
+      .from(reviews)
+      .where(eq(reviews.id, written.id))
+    expect(row?.orderItemId).toBe(items[0]!.id)
+  })
+
   test('a buyer reviews a product on sale once, and its rating follows', async () => {
     const product = await onSale()
     const [first, second] = [await newBuyer(), await newBuyer()]
@@ -119,7 +150,7 @@ describe('writing a review', () => {
       title: 'Lasts for months',
       body: null,
       status: 'published',
-      // Until step 13's order lookup merges.
+      // Neither buyer has received the product.
       verifiedPurchase: false,
     })
     expect(await rating(product.id)).toEqual({ avg: '5.00', count: 1 })

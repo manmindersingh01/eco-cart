@@ -38,19 +38,23 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | 5 | Category tree with GST rates, and brands | 5.5 | Done |
 | 6 | Products, variants, stock, and image upload | 5.5, 6.2 | Done |
 | 7 | Listing moderation: submit, deterministic screening, approve, reject | 6.2 | Done |
-| 8 | Catalogue import from CSV and Excel with a row-level error report | 5.11, 6.7 | Planned |
+| 8 | Catalogue import from CSV and Excel with a row-level error report | 5.11, 6.7 | Done |
 | 9 | Storefront reads: home, category, product, keyword search, filters, sorting, keyset pagination | 6.8 | Done |
 | 10 | Buyer addresses | 5.3 | Done |
-| 11 | Cart (guest and logged in) and coupons | 5.6 | Planned |
-| 12 | Checkout, Razorpay, webhook, payment confirmation, cash on delivery, order expiry | 6.3 | Planned |
-| 13 | Orders: buyer view, seller dispatch, delivery, cancellation | 6.4 | Planned |
+| 11 | Cart (guest and logged in) and coupons | 5.6 | Done |
+| 12 | Checkout, Razorpay, webhook, payment confirmation, cash on delivery, order expiry | 6.3 | Done |
+| 13 | Orders: buyer view, seller dispatch, delivery, cancellation | 6.4 | In progress |
 | 14 | GST invoices and PDFs | 6.6 | Done |
-| 15 | Returns, refunds, seller ledger, and settlement CSV | 5.9, 6.5 | Planned |
+| 15 | Returns, refunds, seller ledger, and settlement CSV | 5.9, 6.5 | In progress: seller bank details, the return window, and return photos are done |
 | 16 | Reviews and content pages | 5.10, 5.13 | Done |
 | 17 | AI client, request log, cache, and daily limits | 3.2, 5.12 | Done |
-| 18 | Embeddings, natural-language search, image search, similar products | 6.8 | Planned |
-| 19 | AI listing builder from photos and AI-assisted import mapping | 6.2, 6.7 | Planned |
-| 20 | AI screening and the shopping assistant | 6.2, 6.9 | Planned |
+| 18 | Embeddings, natural-language search, image search, similar products | 6.8 | In progress |
+| 19 | AI listing builder from photos and AI-assisted import mapping | 6.2, 6.7 | In progress: the listing builder is done |
+| 20 | AI screening and the shopping assistant | 6.2, 6.9 | In progress: screening is done |
+
+From 18 October 2026, at the user's request, the remaining steps are built straight from the design doc, without writing their sections here first.
+Three client requests from the same day were built alongside them: a minimum order quantity on each product, one product video next to the photos, and an administrator asking a seller for more verification documents before approval.
+The design doc describes all three (sections 5.4 and 5.5).
 
 Rate limiting with the `rate_limits` table is built inside the steps that need it: the per-address sign-in code limit (step 2), and later checkout, search, and AI.
 
@@ -142,7 +146,7 @@ Checkout, payment confirmation, order expiry, cancellation, and refunds run as `
 | `catalogue_imports`, `catalogue_import_rows` | The seller; full access | Seller adds imports; the worker processes rows |
 | `ai_requests` | Shared cache rows (no user, no seller) for anyone; otherwise the owning user or seller; full access | The same, but only rows still `queued` or `running` (step 17); full access |
 | `search_queries` | Full access | Anyone, for themselves or with no user (append only) |
-| `email_outbox` | Full access | Anyone may add a row; only the worker changes rows, to record sending |
+| `email_outbox` | Full access | Anyone may add a row; the worker changes rows to record sending, and full access may put a failed or stuck email back in the queue (its status and attempts only) |
 | `audit_logs` | Full access | Full access, or a signed-in user recording their own action (append only) |
 
 Tables with no buyer or seller data have no row-level security, and the application checks permissions for them: `categories`, `brands`, `coupons`, `platform_settings`, `content_pages`, and `rate_limits`.
@@ -1603,3 +1607,5 @@ Green Basket's 101st call of the day is refused with 429, "You have used todayâ€
   Its migrations were generated again on top of the product media migrations as `0023_storefront_lists_and_cache` and `0024_storefront_search_functions_and_grants`, with the same SQL.
   Step 7's archiving, moving back to draft, and take-downs now refresh the storefront, and step 7's `products_approved_check` replaces the `published_at` rule this step had left open.
   The end-to-end check after the merge found that every 404 and 400 from the cached readers answered 500; they are now cached as answers, with a product address tag so a cached "not found" ends when the product is approved.
+- 20 October 2026: The build order table now shows where each step really stands.
+  Steps 8, 11, and 12 were finished without their sections, and steps 13, 15, 18, 19, and 20 are being built; the note under the table says why.

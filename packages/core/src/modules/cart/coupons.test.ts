@@ -67,7 +67,8 @@ const auditFor = (couponId: string) =>
     )
     .orderBy(auditLogs.id)
 
-// Far in the future, so no case depends on today's date.
+// Far in the future, so the test never runs after the sale has ended: with
+// the real 2026 dates it began failing on 19 October 2026.
 const diwali = (code: string) => ({
   code,
   description: 'Diwali sale',

@@ -4,14 +4,18 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { eq, sql } from 'drizzle-orm'
+import { eq, gt, sql } from 'drizzle-orm'
 import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { z } from 'zod'
 import { createDatabase } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
 import { createPool, type DatabasePool } from '../../db/pool.ts'
-import { products, productVideos } from '../../db/schema/index.ts'
+import {
+  cacheInvalidations,
+  products,
+  productVideos,
+} from '../../db/schema/index.ts'
 import { requireEnv } from '../../env.ts'
 import { ConflictError, NotFoundError } from '../../errors.ts'
 import { startJobQueue, type JobQueue } from '../../lib/queue.ts'
@@ -463,6 +467,51 @@ describe('the video job', () => {
       failureReason: 'The video could not be processed; add it again',
     })
   })
+
+  test(
+    'refreshes the storefront when the video of a listing on sale becomes ready',
+    async () => {
+      const tagsAfter = async (since: number) =>
+        (
+          await owner
+            .select({ tag: cacheInvalidations.tag })
+            .from(cacheInvalidations)
+            .where(gt(cacheInvalidations.id, since))
+        ).map((row) => row.tag)
+      const mark = async () =>
+        (
+          await owner
+            .select({ id: sql<number>`coalesce(max(id), 0)::int` })
+            .from(cacheInvalidations)
+        )[0]!.id
+
+      // A draft's video is not on the storefront, so nothing is refreshed.
+      const draft = await newProduct()
+      const quiet = await addVideoFile(draft, await createTestVideo())
+      let since = await mark()
+      await processUploadedVideo(jobs, quiet.id)
+      expect(await tagsAfter(since)).not.toContain(`product:${draft.id}`)
+
+      // Approval does not wait for the video, so it can finish on sale.
+      const product = await newProduct()
+      const { id } = await addVideoFile(product, await createTestVideo())
+      await owner
+        .update(products)
+        .set({
+          status: 'approved',
+          hsnCode: '5705',
+          gstRateBps: 500,
+          publishedAt: new Date(),
+        })
+        .where(eq(products.id, product.id))
+      since = await mark()
+      await processUploadedVideo(jobs, id)
+      expect(await tagsAfter(since)).toEqual(
+        expect.arrayContaining([`product:${product.id}`, 'home']),
+      )
+    },
+    VIDEO_TEST_MS,
+  )
 
   test('leaves a video alone that was removed while it waited', async () => {
     const product = await newProduct()
