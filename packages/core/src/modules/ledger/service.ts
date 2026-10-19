@@ -1,6 +1,8 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { Transaction } from '../../db/client.ts'
 import { sellerLedgerEntries } from '../../db/schema/index.ts'
+import { ConflictError } from '../../errors.ts'
+import { formatRupees } from '../../lib/money.ts'
 
 /*
  * The seller ledger (design doc 5.9): append only, so a seller's balance is
@@ -144,24 +146,30 @@ export interface ReturnedLine {
   returnedQuantity: number
   /** What the buyer got back for this return. */
   refundPaise: number
-  /** What the buyer paid for the whole line, after its coupon share. */
-  linePaidPaise: number
-  /** The commission rate frozen on the line, and what it came to. */
-  commissionBps: number
-  lineCommissionPaise: number
   /** The administrator who recorded the refund. */
   createdBy: string
 }
 
+/** The sum of one kind of entry, as exact text. */
+const totalOf = (entryType: string) =>
+  sql<string>`coalesce(sum(${sellerLedgerEntries.amountPaise}) filter (where ${eq(sellerLedgerEntries.entryType, entryType)}), 0)`
+
+/** `numerator / denominator`, rounded half up, in exact whole numbers. */
+function roundedShare(numerator: bigint, denominator: bigint): number {
+  return Number((numerator * 2n + denominator) / (denominator * 2n))
+}
+
 /**
  * Takes back what a refunded return earned its seller (design doc 6.5 step
- * 4): a `refund_reversal` of the refund, and a `commission_reversal` of the
- * commission on it at the rate frozen on the line, rounded down as checkout
- * rounded it. Once the line's refunds reach what was paid for it, the
- * commission reversals add up to exactly its commission. For example on a
- * ₹1,500 line at 10%, refunds of ₹500 and then ₹1,000 give back ₹50 and
- * then the remaining ₹100. Calling it again for the same return writes
- * nothing.
+ * 4): a `refund_reversal` of the refund, and a `commission_reversal` of
+ * the commission on it, worked out from the line's own sale and commission
+ * entries, which used the rate frozen on the line. The share is counted
+ * over everything refunded on the line so far, so partial returns never
+ * drift, and the refund that empties the line gives back exactly its
+ * commission. For example on a ₹1,500 line whose commission was ₹150,
+ * refunds of ₹500 and then ₹1,000 give back ₹50 and then ₹100. Calling it
+ * again for the same return writes nothing; the caller holds the order's
+ * lock, which keeps that check safe.
  */
 export async function recordReturnReversal(
   tx: Transaction,
@@ -174,23 +182,27 @@ export async function recordReturnReversal(
     .limit(1)
   if (done) return
 
-  const [before] = await tx
+  const [entries] = await tx
     .select({
-      refundedPaise: sql<string>`coalesce(-sum(${sellerLedgerEntries.amountPaise}) filter (where ${sellerLedgerEntries.entryType} = 'refund_reversal'), 0)`,
-      commissionBackPaise: sql<string>`coalesce(sum(${sellerLedgerEntries.amountPaise}) filter (where ${sellerLedgerEntries.entryType} = 'commission_reversal'), 0)`,
+      sale: totalOf('sale'),
+      refunded: totalOf('refund_reversal'),
+      commission: totalOf('commission'),
+      commissionBack: totalOf('commission_reversal'),
     })
     .from(sellerLedgerEntries)
     .where(eq(sellerLedgerEntries.orderItemId, line.orderItemId))
-  const refundedBefore = Number(before?.refundedPaise ?? 0)
-  const commissionLeft =
-    line.lineCommissionPaise - Number(before?.commissionBackPaise ?? 0)
+  const sale = BigInt(entries?.sale ?? '0')
+  const refundedBefore = -BigInt(entries?.refunded ?? '0')
+  const refundedNow = refundedBefore + BigInt(line.refundPaise)
+  if (refundedNow > sale) {
+    throw new ConflictError(
+      `Only ${formatRupees(Number(sale - refundedBefore))} of ${line.title} on order ${line.orderNumber} is left to refund`,
+    )
+  }
+  const commission = -BigInt(entries?.commission ?? '0')
   const commissionBack =
-    refundedBefore + line.refundPaise >= line.linePaidPaise
-      ? commissionLeft
-      : Math.min(
-          commissionLeft,
-          Math.floor((line.refundPaise * line.commissionBps) / 10_000),
-        )
+    roundedShare(commission * refundedNow, sale) -
+    Number(entries?.commissionBack ?? '0')
 
   const common = {
     sellerId: line.sellerId,
