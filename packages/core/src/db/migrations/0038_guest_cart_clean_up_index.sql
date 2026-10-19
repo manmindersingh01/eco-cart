@@ -1,0 +1,1 @@
+CREATE INDEX "carts_guest_updated_at_idx" ON "carts" USING btree ("updated_at") WHERE user_id is null;

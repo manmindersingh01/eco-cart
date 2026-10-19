@@ -267,6 +267,13 @@
       "when": 1792442579202,
       "tag": "0037_import_mapping_suggestion",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792443125201,
+      "tag": "0038_guest_cart_clean_up_index",
+      "breakpoints": true
     }
   ]
 }

@@ -578,8 +578,9 @@ carts
   user_id      uuid FK users, UNIQUE, nullable
   guest_token  text UNIQUE, nullable   cookie token for guests, merged on login
   coupon_code  text, nullable
-  created_at, updated_at
+  created_at, updated_at   every change to the cart or its items moves updated_at
   CHECK (user_id IS NOT NULL OR guest_token IS NOT NULL)
+  INDEX (updated_at) WHERE user_id IS NULL   a nightly job removes guest carts unchanged for 31 days, after their 30-day cookie has run out
 
 cart_items
   id          uuid PK
@@ -963,7 +964,7 @@ rate_limits
   key           text PK   e.g. otp:phone:+91..., checkout:user:<id>, ip:1.2.3.4:search
   window_start  timestamptz
   count         int
-  INDEX (window_start)   for clearing old windows
+  INDEX (window_start)   a nightly job removes windows that started over a day ago; no rule may count over a longer window
 
 cache_invalidations                     append only; no row-level security: only tags of public pages
   id            bigserial PK
@@ -996,6 +997,7 @@ Login is handled by Better Auth, mounted in the web app at `/api/auth/*`.
    The callback queues the email through `email_outbox`, or the SMS as a job, with the code encrypted; the worker decrypts it, sends the message, and then removes the code.
 4. The user enters the code.
    Better Auth verifies it, allows three attempts, creates the user on first sign-in (with the `buyer` role by default; a phone-only account gets a placeholder email under the reserved `.invalid` domain), and writes a `sessions` row.
+   It deletes the code once used, and every expired code whenever it checks one, so `verifications` needs no clean-up job.
 5. The browser receives the `ecokart.session_token` cookie: HttpOnly, SameSite Lax, and Secure on https.
 6. On every request the app reads the session through Better Auth, looks up the seller id for a seller account, and runs the request's queries through `withContext`, which sets the user id, role, and seller id with `SET LOCAL` for row-level security.
 
