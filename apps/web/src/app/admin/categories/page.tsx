@@ -8,7 +8,7 @@ import { getDatabase } from '@/lib/db'
 import { requireAdmin } from '@/lib/request-context'
 
 export const metadata: Metadata = {
-  title: 'Categories | EcoKart',
+  title: 'Categories',
 }
 
 function serialiseCategory(

@@ -87,6 +87,11 @@ const definitions = {
     schema: z.boolean(),
     default: true,
   }),
+  return_window_days: define({
+    description:
+      'Days after delivery during which a buyer may ask to return an item. Returns cannot be asked for until this is set.',
+    schema: wholeNumber(1, 90),
+  }),
   payment_timeout_minutes: define({
     description:
       'Minutes an unpaid online order waits before it is cancelled and its stock released.',
