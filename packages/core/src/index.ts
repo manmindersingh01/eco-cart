@@ -15,6 +15,7 @@ export {
 } from './errors.ts'
 export { QUEUES } from './jobs.ts'
 export {
+  sendingWith,
   startJobQueue,
   type JobQueue,
   type QueueDefinition,

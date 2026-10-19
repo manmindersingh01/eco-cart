@@ -51,10 +51,20 @@ export async function startJobQueue(
     console.error('Job queue error', error)
   })
   await boss.start()
+  return { ...sendingWith(boss), stop: () => boss.stop() }
+}
+
+/**
+ * Lets a worker job add jobs inside its own transaction, with the worker's
+ * pg-boss client, which the worker itself stops. For example, reading an
+ * import queues the AI's look at its columns (step 19).
+ */
+export function sendingWith(boss: PgBoss): JobQueue {
   return {
     async send(tx, queue, data) {
       await boss.send(queue, data, { db: fromDrizzle(tx, sql) })
     },
-    stop: () => boss.stop(),
+    // The worker stops its client itself.
+    stop: async () => {},
   }
 }
