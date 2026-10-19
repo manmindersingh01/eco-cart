@@ -234,3 +234,30 @@ export function renderCancelledEmail(order: {
   ]
   return { text: lines.join('\n\n'), html: asHtml(lines) }
 }
+
+export function sellerApplicationSubject(
+  decision: 'approved' | 'rejected',
+): string {
+  return decision === 'approved'
+    ? 'You can now sell on EcoKart'
+    : 'Your EcoKart seller application needs changes'
+}
+
+export function renderSellerApplicationEmail(application: {
+  displayName: string
+  decision: 'approved' | 'rejected'
+  reason: string | null
+}): { text: string; html: string } {
+  const lines =
+    application.decision === 'approved'
+      ? [
+          `Your application to sell as ${application.displayName} is approved.`,
+          'Sign in with the same account to open the seller portal and add your products. You can still shop on EcoKart as before.',
+        ]
+      : [
+          `Your application to sell as ${application.displayName} was not approved.`,
+          `Reason: ${application.reason ?? 'not given'}`,
+          'You can change your application and apply again from your account.',
+        ]
+  return { text: lines.join('\n\n'), html: asHtml(lines) }
+}

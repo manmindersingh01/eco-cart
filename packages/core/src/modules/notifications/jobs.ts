@@ -13,6 +13,7 @@ import {
   renderOtpEmail,
   renderOtpSms,
   renderPaymentReceivedEmail,
+  renderSellerApplicationEmail,
 } from './templates.ts'
 import {
   cancelledPayload,
@@ -21,6 +22,7 @@ import {
   otpEmailPayload,
   otpSmsJob,
   paymentReceivedPayload,
+  sellerApplicationPayload,
   sendEmailJob,
 } from './types.ts'
 
@@ -89,6 +91,10 @@ const RENDERERS: Partial<
   cancelled: (payload) => {
     const parsed = cancelledPayload.safeParse(payload)
     return parsed.success ? renderCancelledEmail(parsed.data) : null
+  },
+  seller_application: (payload) => {
+    const parsed = sellerApplicationPayload.safeParse(payload)
+    return parsed.success ? renderSellerApplicationEmail(parsed.data) : null
   },
 }
 

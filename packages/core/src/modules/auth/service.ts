@@ -6,7 +6,7 @@ import { recordAuditEntry } from '../audit/service.ts'
 import { queueOtpEmail, queueOtpSms } from '../notifications/service.ts'
 import { consumeRateLimit, hashedRateLimitKey } from '../rate-limits/service.ts'
 import { findSellerForOwner } from '../sellers/service.ts'
-import { createAuth, type AccountRole, type Auth } from './auth.ts'
+import { createAuth, rolesOf, type Auth } from './auth.ts'
 import type { AuthConfig } from './config.ts'
 
 /**
@@ -94,8 +94,8 @@ export class SellerAccountNotReadyError extends ForbiddenError {
 }
 
 /**
- * A suspended seller. Suspension also bans the account and ends its sessions,
- * so this only matters if that second step failed.
+ * A suspended seller. The seller portal refuses them; an account that is
+ * also a buyer still shops, and a seller-only account is banned as well.
  */
 export class SellerSuspendedError extends ForbiddenError {
   override name = 'SellerSuspendedError'
@@ -105,30 +105,53 @@ export class SellerSuspendedError extends ForbiddenError {
 }
 
 /**
+ * The part of the app a request is for. One account may be both a buyer and
+ * a seller, but a request acts as one of them: seller routes as the seller,
+ * everything else as the buyer. So each transaction keeps one `app.role`,
+ * and row-level security needs no policy for an account with two roles.
+ */
+export type RequestArea = 'buyer' | 'seller'
+
+/**
  * Turns a signed-in user (or nobody) into the row-level security context for
- * their requests (design doc 6.1 step 5).
+ * their requests in `area` (design doc 6.1 step 5).
  *
- * For example, a seller account owned by Ravi becomes
- * `{ role: 'seller', userId: <Ravi>, sellerId: <Ravi's shop> }`, so every query
- * in his requests can only reach his own products and order lines.
+ * For example, Ravi, who buys and sells, gets
+ * `{ role: 'seller', userId: <Ravi>, sellerId: <Ravi's shop> }` in the
+ * seller portal, so every query there can only reach his own products and
+ * order lines, and `{ role: 'buyer', userId: <Ravi> }` at the checkout. An
+ * account that is only a seller acts as the seller everywhere.
+ *
+ * With `applicants`, a buyer whose seller application is pending or was
+ * rejected acts for that business too, in the few seller routes an
+ * application needs, such as uploading the documents an administrator asked
+ * for. Anywhere else in the seller area they act as the buyer they are, and
+ * the seller routes refuse them.
  */
 export async function resolveRequestContext(
   db: Database,
   user: { id: string; role?: string | null | undefined } | null,
+  area: RequestArea = 'buyer',
+  { applicants = false }: { applicants?: boolean } = {},
 ): Promise<RequestContext> {
   if (!user) return { role: 'anonymous' }
-  const role: AccountRole =
-    user.role === 'admin' || user.role === 'seller' ? user.role : 'buyer'
-  if (role === 'admin') return { role: 'admin', userId: user.id }
-  if (role === 'buyer') return { role: 'buyer', userId: user.id }
+  const roles = rolesOf(user.role)
+  if (roles.includes('admin')) return { role: 'admin', userId: user.id }
+  const buyer: RequestContext = { role: 'buyer', userId: user.id }
+  if (area === 'buyer' && roles.includes('buyer')) return buyer
+  if (!roles.includes('seller') && !applicants) return buyer
 
   // An ordinary signed-in context is enough: the sellers policy lets a user
   // read the seller business they own.
-  const seller = await withContext(
-    db,
-    { role: 'buyer', userId: user.id },
-    (tx) => findSellerForOwner(tx, user.id),
+  const seller = await withContext(db, buyer, (tx) =>
+    findSellerForOwner(tx, user.id),
   )
+  if (!roles.includes('seller')) {
+    return seller &&
+      (seller.status === 'pending' || seller.status === 'rejected')
+      ? { role: 'seller', userId: user.id, sellerId: seller.id }
+      : buyer
+  }
   if (!seller) throw new SellerAccountNotReadyError()
   if (seller.status === 'suspended') throw new SellerSuspendedError()
   return { role: 'seller', userId: user.id, sellerId: seller.id }
@@ -169,8 +192,9 @@ export async function ensureAdministrator(
   }
   const { user } = existing
   if ('role' in user && user.role === 'admin') return 'unchanged'
-  // One account has one role, and a seller account always has its business
-  // (backend spec step 4), so its owner cannot become an administrator.
+  // An administrator has only the admin role, and a seller account always
+  // has its business (backend spec step 4), so its owner cannot become an
+  // administrator.
   const business = await withContext(db, { role: 'system' }, (tx) =>
     findSellerForOwner(tx, user.id),
   )

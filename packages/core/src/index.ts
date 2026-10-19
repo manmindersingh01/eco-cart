@@ -20,7 +20,12 @@ export {
   type QueueCounts,
   type QueueDefinition,
 } from './lib/queue.ts'
-export { isPlaceholderEmail, type Auth } from './modules/auth/auth.ts'
+export {
+  isPlaceholderEmail,
+  rolesOf,
+  type AccountRole,
+  type Auth,
+} from './modules/auth/auth.ts'
 export { loadAuthConfig, type AuthConfig } from './modules/auth/config.ts'
 export {
   createAppAuth,
@@ -28,6 +33,7 @@ export {
   resolveRequestContext,
   SellerAccountNotReadyError,
   SellerSuspendedError,
+  type RequestArea,
 } from './modules/auth/service.ts'
 export {
   createAccountDirectory,
@@ -68,6 +74,7 @@ export {
   getSeller,
   listSellers,
   reinstateSeller,
+  rejectSeller,
   suspendSeller,
   updateOwnContacts,
   updateSeller,
@@ -76,6 +83,12 @@ export {
   type SellerSummary,
 } from './modules/sellers/service.ts'
 export type { SellerStatus, SellerView } from './modules/sellers/types.ts'
+// A buyer applies to sell (decided 20 October 2026).
+export {
+  applyToSell,
+  getOwnApplication,
+  updateOwnApplication,
+} from './modules/sellers/applications.ts'
 export {
   acceptSellerDocument,
   addDocumentFile,

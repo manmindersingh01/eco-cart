@@ -260,6 +260,20 @@
       "when": 1792442169007,
       "tag": "0036_product_embeddings_image_cascade",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792443384492,
+      "tag": "0037_seller_applications",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792443915871,
+      "tag": "0038_buyer_seller_role",
+      "breakpoints": true
     }
   ]
 }

@@ -642,7 +642,7 @@ describe('administration', () => {
     expect(viaSetRole.status).toBe(400)
     expect(await viaSetRole.json()).toMatchObject({
       message:
-        'Seller accounts are created together with their business in the seller onboarding',
+        'The seller role comes only with a seller business: create the seller, or approve the account’s seller application',
     })
 
     const viaCreateUser = await call(

@@ -1,4 +1,4 @@
-import type { Auth } from './auth.ts'
+import { rolesOf, type AccountRole, type Auth } from './auth.ts'
 
 /** A sign-in account, as other modules need to see it. */
 export interface Account {
@@ -32,6 +32,12 @@ export interface AccountDirectory {
   }): Promise<Account>
   /** Only for undoing an account whose business could not be saved. */
   remove(id: string): Promise<void>
+  /**
+   * Adds a role and keeps the others, for example `seller` for a buyer
+   * whose seller application was approved. Better Auth's admin endpoints
+   * refuse to give the seller role, so approval is the only way to it.
+   */
+  addRole(id: string, role: AccountRole): Promise<void>
   /** Blocks sign-in and ends every session, like Better Auth's banUser. */
   ban(id: string, reason: string): Promise<void>
   unban(id: string): Promise<void>
@@ -84,6 +90,18 @@ export function createAccountDirectory(auth: Auth): AccountDirectory {
     },
     async remove(id) {
       await (await adapter()).deleteUser(id)
+    },
+    async addRole(id, role) {
+      const internal = await adapter()
+      const user = await internal.findUserById(id)
+      if (!user) throw new Error(`There is no account ${id}`)
+      const roles = rolesOf(toAccount(user).role)
+      if (roles.includes(role)) return
+      // rolesOf lists roles in one fixed order, buyer before seller, the
+      // order the users_role_check constraint allows.
+      await internal.updateUser(id, {
+        role: rolesOf([...roles, role].join(',')).join(','),
+      })
     },
     async ban(id, reason) {
       const internal = await adapter()

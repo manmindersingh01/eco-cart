@@ -41,7 +41,7 @@ const idleFeedback: MutationFeedback = {
 function statusTone(status: SellerStatus) {
   return status === 'approved'
     ? ('success' as const)
-    : status === 'suspended'
+    : status === 'suspended' || status === 'rejected'
       ? ('danger' as const)
       : ('warning' as const)
 }
@@ -202,10 +202,10 @@ export function SellerDetailManager({
           <StatusBadge tone={statusTone(seller.status)} className="mt-2">
             {formatStatusLabel(seller.status)}
           </StatusBadge>
-          {seller.suspendedReason ? (
+          {seller.suspendedReason || seller.rejectionReason ? (
             <p className="mt-3 text-sm">
               <span className="font-semibold">Reason:</span>{' '}
-              {seller.suspendedReason}
+              {seller.suspendedReason ?? seller.rejectionReason}
             </p>
           ) : null}
           <dl className="mt-4 grid gap-3 text-sm">

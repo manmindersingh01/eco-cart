@@ -3,7 +3,10 @@ import { handleErrors, readJsonBody } from '@/lib/api'
 import { requireAdmin } from '@/lib/request-context'
 import { getSellerServices } from '@/lib/sellers'
 
-/** `{ "reason": "..." }`; also signs the owner out everywhere. */
+/**
+ * `{ "reason": "..." }`. An owner who only sells is also signed out
+ * everywhere; one who also buys keeps shopping.
+ */
 export const POST = handleErrors(
   async (
     request: Request,

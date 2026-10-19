@@ -109,3 +109,12 @@ export const cancelledPayload = z.object({
   ]),
 })
 export type CancelledPayload = z.infer<typeof cancelledPayload>
+
+/** An administrator's decision on a seller application (design doc 5.4). */
+export const sellerApplicationPayload = z.object({
+  displayName: z.string(),
+  decision: z.enum(['approved', 'rejected']),
+  /** Why it was rejected; null when it was approved. */
+  reason: z.string().nullable(),
+})
+export type SellerApplicationPayload = z.infer<typeof sellerApplicationPayload>

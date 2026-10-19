@@ -33,6 +33,7 @@ export interface OutboxEmail {
     | 'dispatched'
     | 'cancelled'
     | 'refund_recorded'
+    | 'seller_application'
   subject: string
   payload: Record<string, unknown>
 }

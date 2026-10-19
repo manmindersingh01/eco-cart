@@ -142,9 +142,10 @@ apps/
       admin/                   admin console
       api/health/route.ts      health check for the load balancer and smoke tests
       api/auth/[...all]/route.ts   Better Auth: sign-in codes, sessions, administrator account endpoints
-      api/me/route.ts          the signed-in account, its role, and its seller id
+      api/me/route.ts          the signed-in account, its roles, and its seller id
+      api/account/seller-application/  a buyer applies to sell, reads the application, and changes it
       api/admin/settings/      administrators read and change platform settings
-      api/admin/sellers/       administrators create, approve, suspend, and reinstate sellers,
+      api/admin/sellers/       administrators create, approve, reject, suspend, and reinstate sellers,
                                ask a seller for verification documents, and enter their bank account
       api/admin/seller-documents/  administrators' queue of documents to review; one request's
                                history, file downloads, accepting, rejecting, and cancelling
@@ -315,7 +316,7 @@ They use UUID ids (`advanced.database.generateId: "uuid"`) and plural snake_case
 They carry no row-level security policies, because Better Auth is the only code that touches them.
 Better Auth also creates `auth_rate_limits` for its rate-limit counters.
 Their time columns are `timestamp` without a time zone holding UTC, because that is what the Better Auth CLI generates; every other table uses `timestamptz`.
-A CHECK constraint on `users.role` allows only `buyer`, `seller`, and `admin`.
+A CHECK constraint on `users.role` allows only `buyer`, `seller`, `admin`, and `buyer,seller`.
 
 ```
 users                                   core + phone number plugin + admin plugin
@@ -326,7 +327,7 @@ users                                   core + phone number plugin + admin plugi
   image                   text, nullable
   phone_number            text UNIQUE, nullable, E.164 format
   phone_number_verified   boolean
-  role                    text   buyer | seller | admin
+  role                    text   buyer | seller | admin | buyer,seller (the admin plugin's comma-separated roles)
   banned                  boolean       our "suspended"
   ban_reason              text
   ban_expires             timestamp (UTC)
@@ -386,11 +387,16 @@ A buyer keeps up to 20 addresses, and always has exactly one default while they 
 The delivery phone must be an Indian mobile number, and the state code must be one of the 36 GST state codes; the database checks only the broader formats.
 Deleting an address sets `deleted_at`, and nothing refers to an address by foreign key, because an order copies the address into `orders.shipping_address` at checkout (backend spec, step 10).
 
-One account has one role.
-A seller account is created by an administrator through the seller onboarding, which creates the owner's account with the `seller` role through Better Auth (its internal `createUser`) and the linked `sellers` row together.
-If the business cannot be saved, the new account is removed again, and Better Auth's own administrator endpoints refuse to hand out the `seller` role, so a seller account always has a business.
-Suspending a buyer or seller is Better Auth's ban (its `banUser` endpoint, or the same calls through its internal adapter for sellers), which also revokes every session; the reason is kept in `ban_reason`.
-If a person needs to be both a buyer and a seller they use two accounts at launch; the admin plugin can hold several roles on one account, so this can be relaxed later without a schema change.
+One account can be both buyer and seller (decided 20 October 2026); an administrator has only the `admin` role.
+A seller account comes about in one of two ways.
+An administrator creates it through the seller onboarding, which creates the owner's account with the `seller` role through Better Auth (its internal `createUser`) and the linked `sellers` row together; if the business cannot be saved, the new account is removed again.
+Or a signed-in buyer applies to sell (section 5.4), and approving the application adds the `seller` role to their account through Better Auth's internal adapter, keeping `buyer`.
+Better Auth's own administrator endpoints refuse to hand out the `seller` role, so an account with that role always has a business.
+An account that both buys and sells picks the role it acts in by the area of each request: the seller portal and its APIs act as the seller, everything else as the buyer, and routes both use (an order's invoices, return photos) take `?as=seller` from the seller portal.
+Each request still runs with one role in its row-level security context, so the policies are the same as for two separate accounts.
+Suspending a buyer is Better Auth's ban (its `banUser` endpoint), which also revokes every session; the reason is kept in `ban_reason`.
+Suspending a seller suspends the business (section 5.4): its listings leave the storefront and the seller portal refuses it.
+An account that only sells, which an administrator created, is banned as well, as before; an account that also buys keeps signing in and shopping, and banning that login stays a separate administrator action.
 
 ### 5.4 Sellers
 
@@ -409,8 +415,9 @@ sellers
   invoice_prefix    text UNIQUE     1 to 4 capital letters or digits, used in GST invoice numbers
   invoice_seq       int default 0
   invoice_seq_fy    text            financial year the sequence belongs to, e.g. 2026-27
-  status            text   pending | approved | suspended
+  status            text   pending | approved | suspended | rejected
   approved_at, suspended_reason
+  rejection_reason  text, nullable   why an administrator rejected the application, shown to the applicant
   created_at, updated_at
   INDEX (status, created_at DESC, id DESC)     the administrators' seller list
   INDEX (created_at DESC, id DESC)
@@ -423,6 +430,13 @@ seller_document_files           each file the seller uploads for a request (PDF,
                                 with the worker's check (photos re-encoded) and the administrator's
                                 acceptance or rejection reason, kept as the request's history
 ```
+
+A signed-in buyer applies to sell with the business details: display name, legal name, GSTIN, PAN, address, support email, and support phone.
+The application is their own `sellers` row, `pending`, with `owner_user_id` set to their account, so each account has at most one; an invoice prefix is suggested from the display name when they leave it out, and an administrator can change it until the first invoice.
+While it waits, the applicant reads its status, changes the details, and uploads the documents an administrator asks for through the same document flow as any seller, and keeps shopping as a buyer.
+Administrators see applications in the seller list filtered to `pending`, and approve them with the same rules as any seller.
+Or they reject one with a reason: the status becomes `rejected`, and the applicant may change the details and apply again, which makes it `pending` once more.
+Each decision is written to `audit_logs` and emailed to the applicant through `email_outbox`.
 
 ### 5.5 Catalogue
 
@@ -934,7 +948,7 @@ email_outbox
   id                   bigserial PK
   user_id              uuid, nullable
   to_email             text
-  template             text   otp | order_placed | payment_received | dispatched | cancelled | refund_recorded
+  template             text   otp | order_placed | payment_received | dispatched | cancelled | refund_recorded | seller_application
   subject              text
   payload              jsonb
   status               text   queued | sent | failed
@@ -999,7 +1013,7 @@ Login is handled by Better Auth, mounted in the web app at `/api/auth/*`.
 
 A signed-in buyer can add the way of signing in they do not have yet, each confirmed with a code: a phone number to an email account (Better Auth's phone verification with `updatePhoneNumber`), or an email to a phone account (its email-change endpoints, with the code sent to the new address).
 Changing an email or number that is already there is not offered yet.
-A buyer can never remove the phone number that is their only way to sign in, and sellers and administrators cannot use these endpoints.
+A buyer can never remove the phone number that is their only way to sign in, and accounts that only sell, and administrators, cannot use these endpoints.
 
 The first administrator is created with `pnpm admin:create`.
 Administrators manage accounts through Better Auth's admin endpoints: create accounts, set roles, ban and unban, and revoke sessions, each written to `audit_logs`.
@@ -1146,7 +1160,7 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 - The full list of row-level security rules is in `docs/backend-spec.md`, step 1.
 - Application code still checks permissions explicitly; row-level security is the safety net that makes a missed check a bug rather than a data leak.
   In the same spirit, a database trigger refuses any change by the web app without full access that approves or rejects a product or sets its GST rate, so a seller can never approve their own listing.
-- Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, email codes stored hashed (phone codes get the same before SMS goes live), three attempts per code, and suspension through Better Auth's ban, which revokes every session of that user.
+- Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, email codes stored hashed (phone codes get the same before SMS goes live), three attempts per code, and suspending an account through Better Auth's ban, which revokes every session of that user.
 - Better Auth rate limits its own endpoints (OTP sending and verification), with the counters in the database so the limits hold across web containers.
   A second limit caps the codes sent to any one email address or phone number.
   Checkout, search, and every AI endpoint use the `rate_limits` table with an upsert per window.
@@ -1206,7 +1220,7 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | ORM | Open | Drizzle (Better Auth ships a Drizzle adapter; the schema, migrations, and services of steps 1 to 6 are built on it, so changing now means rewriting them) | Prisma |
 | Auth | Decided 2 October 2026 | Better Auth with the email OTP, phone number, and admin plugins, Drizzle adapter, UUID ids | Own OTP tables and sessions, or Auth.js |
 | Guest cart | Open | Yes, cookie-based, merged into the account on login | Require login before adding to cart |
-| Roles | Open | One role per account; a seller uses a separate seller account | One account can be both buyer and seller |
+| Roles | Decided 20 October 2026 | One account can be both buyer and seller: a buyer applies to sell, and approval adds the seller role (section 5.3) | One role per account, with a separate seller account |
 | Commission base | Open | Applied to the seller's line total after the coupon discount share | Applied before discounts |
 | Delivery revenue | Open | Delivery charge belongs to the platform | Passed through to sellers |
 | Page caching | Decided 12 October 2026 | Next.js caches public pages in each web container and expires them by tag, with changed tags shared through PostgreSQL; CloudFront caches only static files and photos | CloudFront caching page HTML, purged on every change |

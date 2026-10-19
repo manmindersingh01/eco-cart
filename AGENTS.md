@@ -23,7 +23,7 @@ One developer builds it, and production launch is Saturday 31 October 2026.
 - `EcoKart_One_Month_Delivery_Timeline.pdf` has the milestones, the client inputs, and the launch priorities.
   It is kept out of the repository (`.gitignore`), so ask the project lead for a copy.
 - The decisions in section 11 of the design doc are recommendations until the client confirms them.
-  Build with the recommended option in each Open row of section 11 (for example Drizzle, guest cart, one role per account) unless told otherwise.
+  Build with the recommended option in each Open row of section 11 (for example Drizzle, guest cart, commission after discounts) unless told otherwise.
   Already decided by the client: AWS for hosting only, OpenRouter for AI, Better Auth for authentication.
   Decided 5 October 2026: the database is PostgreSQL in Docker (the `compose.yaml` image), not Amazon RDS, for now.
 - If a change would contradict the design doc, stop and ask first.
@@ -160,9 +160,14 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   Its configuration lives in `packages/core/src/modules/auth/`, and it is mounted at `apps/web/src/app/api/auth/[...all]/route.ts`.
 - The tables `users`, `sessions`, `accounts`, `verifications`, and `auth_rate_limits` belong to Better Auth.
   Generate their schema with its CLI, never hand-edit them, and read or change users and sessions only through Better Auth: its API in requests (`getSession`, the admin endpoints), and `AccountDirectory` (its internal adapter) in services.
-  Suspending an account is `banUser`.
+  Suspending an account is `banUser`; suspending a seller suspends the business, and bans the login only of an account that sells and does not buy.
 - Accounts that an administrator creates (administrators and sellers) are created with `emailVerified: true`, because Better Auth's clean-up for unverified accounts does not work with UUID ids (see the backend spec, step 2).
-- Seller accounts are made only by `createSeller`, together with their business; Better Auth's administrator endpoints refuse the `seller` role and refuse to change the role of an account that owns a business.
+- One account can be both buyer and seller (decided 20 October 2026); Better Auth's admin plugin stores the roles comma-separated, such as `buyer,seller`.
+  Check roles with `rolesOf(user.role).includes(...)`, never `user.role === ...`.
+- The seller role comes only with a seller business: `createSeller` makes a seller account together with its business, and `approveSeller` adds the role to a buyer whose application (`applyToSell`) it approves, through `AccountDirectory.addRole`.
+  Better Auth's administrator endpoints refuse the `seller` role and refuse to change the role of an account that owns a business.
+- Each request acts in one role, picked by area: seller routes call `requireSeller` and act as the seller, everything else acts as the buyer, and routes both portals use read `areaOf(request)` (`?as=seller`).
+  `withContext` gets that one role, so the row-level security policies stay the same.
 - Email codes are stored hashed (`storeOTP: "hashed"`); phone codes are not yet, and must be before SMS goes live (backend spec step 2).
   The OTP delivery callbacks only queue the email or SMS; they never send inline.
 - Object storage buckets are private, and every download of a private file (originals, imports, invoices, return photos, seller verification documents) is a short-lived signed URL.

@@ -30,10 +30,15 @@ import {
 import { uniqueViolation } from '../../lib/postgres.ts'
 import { firstFreeSlug, slugify } from '../../lib/slug.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
+import type { JobQueue } from '../../lib/queue.ts'
 import { recordAuditEntry, type AuditEntry } from '../audit/service.ts'
 import { invalidateStorefront } from '../catalogue/storefront-cache.ts'
 import type { Account, AccountDirectory } from '../auth/accounts.ts'
+import { isPlaceholderEmail, rolesOf } from '../auth/auth.ts'
+import { queueEmail } from '../notifications/service.ts'
+import { sellerApplicationSubject } from '../notifications/templates.ts'
 import {
+  applicationRejection,
   businessUpdate,
   contactsUpdate,
   DOCUMENT_TYPES,
@@ -48,7 +53,9 @@ import {
 
 /*
  * The seller lifecycle (backend spec step 4, design doc 5.3 and 5.4):
- * created as pending, approved, suspended, and reinstated by administrators.
+ * created as pending by an administrator or by a buyer's application
+ * (applications.ts), then approved or rejected, suspended, and reinstated by
+ * administrators.
  *
  * Creating, suspending, and reinstating also change the owner's Better Auth
  * account, which Better Auth saves in its own database calls. These functions
@@ -69,11 +76,16 @@ export type Administrator = Extract<
   { role: 'admin' | 'system' }
 >
 
-const STATUSES: readonly SellerStatus[] = ['pending', 'approved', 'suspended']
+const STATUSES: readonly SellerStatus[] = [
+  'pending',
+  'approved',
+  'suspended',
+  'rejected',
+]
 const isStatus = (value: string): value is SellerStatus =>
   STATUSES.some((status) => status === value)
 
-function toView(row: SellerRow): SellerView {
+export function toView(row: SellerRow): SellerView {
   if (!isStatus(row.status)) {
     throw new Error(`Seller ${row.id} has an unknown status ${row.status}`)
   }
@@ -96,6 +108,7 @@ function toView(row: SellerRow): SellerView {
     commissionBps: row.commissionBps,
     approvedAt: row.approvedAt,
     suspendedReason: row.suspendedReason,
+    rejectionReason: row.rejectionReason,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
@@ -135,7 +148,7 @@ async function lockSeller(tx: Transaction, id: string): Promise<SellerRow> {
 }
 
 /** Turns a unique-constraint race into the message the pre-check gives. */
-function explainUniqueViolation(error: unknown): unknown {
+export function explainUniqueViolation(error: unknown): unknown {
   const constraint = uniqueViolation(error)
   if (constraint === 'sellers_invoice_prefix_unique') {
     return new ValidationError('Those seller details are not valid', [
@@ -150,7 +163,10 @@ function explainUniqueViolation(error: unknown): unknown {
   return error
 }
 
-async function freeSlug(tx: Transaction, displayName: string): Promise<string> {
+export async function freeSlug(
+  tx: Transaction,
+  displayName: string,
+): Promise<string> {
   const base = slugify(displayName, 'seller')
   // A slug holds only a-z, 0-9, and hyphens, so it is safe inside the pattern.
   const taken = await tx
@@ -294,20 +310,56 @@ async function outstandingDocuments(
 }
 
 /**
+ * Emails the owner an administrator's decision on their seller application,
+ * in the transaction of the decision: to the account's email, or to the
+ * business's support email for an account that signs in by phone.
+ */
+async function queueDecisionEmail(
+  tx: Transaction,
+  { accounts, queue }: { accounts: AccountDirectory; queue: JobQueue },
+  seller: SellerRow,
+  decision: 'approved' | 'rejected',
+  reason: string | null,
+): Promise<void> {
+  const owner = await accounts.findById(seller.ownerUserId)
+  await queueEmail(tx, queue, {
+    userId: seller.ownerUserId,
+    to:
+      owner && !isPlaceholderEmail(owner.email)
+        ? owner.email
+        : seller.supportEmail,
+    template: 'seller_application',
+    subject: sellerApplicationSubject(decision),
+    payload: { displayName: seller.displayName, decision, reason },
+  })
+}
+
+/**
  * pending to approved. Needs a GSTIN and a PAN for the seller's invoices,
  * and every document an administrator asked for accepted or cancelled.
+ *
+ * With `notify` (the admin console passes it), the owner's account also
+ * gets the seller role, keeping any other, so a buyer who applied now both
+ * buys and sells, and the owner is emailed the decision. Approving again
+ * adds the role again, which repairs an approval whose role change failed.
  */
 export async function approveSeller(
   db: Database,
   context: RequestContext,
   sellerId: string,
+  notify?: { accounts: AccountDirectory; queue: JobQueue },
 ): Promise<SellerView> {
   assertAdministrator(context)
-  return withContext(db, context, async (tx) => {
+  const view = await withContext(db, context, async (tx) => {
     const current = await lockSeller(tx, sellerId)
     if (current.status === 'approved') return toView(current)
     if (current.status === 'suspended') {
       throw new ConflictError('A suspended seller is reinstated, not approved')
+    }
+    if (current.status === 'rejected') {
+      throw new ConflictError(
+        'This application was rejected; it can be approved once the seller applies again',
+      )
     }
     const missing = [
       ...(current.gstin ? [] : ['gstin is needed before approval']),
@@ -339,14 +391,76 @@ export async function approveSeller(
       before: { status: current.status },
       after: { status: 'approved' },
     })
+    if (notify) await queueDecisionEmail(tx, notify, row!, 'approved', null)
+    return toView(row!)
+  })
+  // After the approval has committed: the role without an approved business
+  // would let the account into the seller portal of a pending one.
+  if (notify) await notify.accounts.addRole(view.ownerUserId, 'seller')
+  return view
+}
+
+/**
+ * pending to rejected, with a reason the applicant reads in the email and
+ * on their application, which they may change and send again.
+ */
+export async function rejectSeller(
+  services: SellerServices & { queue: JobQueue },
+  context: RequestContext,
+  sellerId: string,
+  input: unknown,
+): Promise<SellerView> {
+  assertAdministrator(context)
+  const { reason } = parseInput(
+    applicationRejection,
+    input,
+    'A reason is needed to reject an application',
+  )
+  return withContext(services.db, context, async (tx) => {
+    const current = await lockSeller(tx, sellerId)
+    if (current.status !== 'pending') {
+      throw new ConflictError(
+        'Only an application waiting for review can be rejected',
+      )
+    }
+    const [row] = await tx
+      .update(sellers)
+      .set({ status: 'rejected', rejectionReason: reason })
+      .where(eq(sellers.id, sellerId))
+      .returning()
+    await recordAuditEntry(tx, {
+      ...administratorActor(context),
+      action: 'seller.reject',
+      entityType: 'seller',
+      entityId: sellerId,
+      before: { status: current.status },
+      after: { status: 'rejected', reason },
+    })
+    await queueDecisionEmail(tx, services, row!, 'rejected', reason)
     return toView(row!)
   })
 }
 
 /**
- * Suspends a seller with a reason, then bans the owner's account, which ends
- * their sessions. The business is suspended first: if the ban then failed,
- * the request context would still refuse the seller.
+ * Whether the owner signs in only to sell, as an account an administrator
+ * made for the seller. Suspension bans such an account; one that also buys
+ * keeps shopping.
+ */
+async function sellsOnly(
+  accounts: AccountDirectory,
+  ownerUserId: string,
+): Promise<boolean> {
+  const owner = await accounts.findById(ownerUserId)
+  return owner === null || !rolesOf(owner.role).includes('buyer')
+}
+
+/**
+ * Suspends a seller with a reason: their listings leave the storefront and
+ * the seller portal refuses them. An owner who only sells is banned too,
+ * which ends their sessions; an owner who also buys keeps shopping, and
+ * banning that login stays a separate administrator action. The business is
+ * suspended first: if the ban then failed, the request context would still
+ * refuse the seller.
  */
 export async function suspendSeller(
   { db, accounts }: SellerServices,
@@ -363,6 +477,11 @@ export async function suspendSeller(
   const view = await withContext(db, context, async (tx) => {
     const current = await lockSeller(tx, sellerId)
     if (current.status === 'suspended') return toView(current)
+    if (current.status === 'rejected') {
+      throw new ConflictError(
+        'This application was rejected, so there is no business to suspend',
+      )
+    }
     const [row] = await tx
       .update(sellers)
       .set({ status: 'suspended', suspendedReason: reason })
@@ -380,13 +499,16 @@ export async function suspendSeller(
     })
     return toView(row!)
   })
-  await accounts.ban(view.ownerUserId, `Seller suspended: ${reason}`)
+  if (await sellsOnly(accounts, view.ownerUserId)) {
+    await accounts.ban(view.ownerUserId, `Seller suspended: ${reason}`)
+  }
   return view
 }
 
 /**
  * Lifts a suspension: back to approved, or to pending for a seller who was
- * never approved. Then lifts the ban on the owner's account.
+ * never approved. Then lifts the ban on an owner who only sells; a ban on an
+ * owner who also buys was an administrator's own decision, and stays.
  */
 export async function reinstateSeller(
   { db, accounts }: SellerServices,
@@ -415,7 +537,9 @@ export async function reinstateSeller(
     return toView(row!)
   })
   // Also repairs a ban that outlived an earlier reinstatement.
-  await accounts.unban(view.ownerUserId)
+  if (await sellsOnly(accounts, view.ownerUserId)) {
+    await accounts.unban(view.ownerUserId)
+  }
   return view
 }
 
@@ -617,7 +741,9 @@ export async function listSellers(
   assertAdministrator(context)
   const { status } = options
   if (status !== undefined && !isStatus(status)) {
-    throw new ValidationError('status must be pending, approved, or suspended')
+    throw new ValidationError(
+      'status must be pending, approved, suspended, or rejected',
+    )
   }
   const limit = pageSize(options.limit)
   const rows = await withContext(db, context, (tx) =>

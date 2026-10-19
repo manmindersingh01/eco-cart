@@ -12,7 +12,8 @@ import {
   wholeNumber,
 } from '../../lib/validation.ts'
 
-export type SellerStatus = 'pending' | 'approved' | 'suspended'
+/** `rejected` is an application an administrator turned down (design doc 5.4). */
+export type SellerStatus = 'pending' | 'approved' | 'suspended' | 'rejected'
 
 /** Details an administrator manages; they print on the seller's invoices. */
 export const businessDetails = strictObject({
@@ -59,6 +60,29 @@ export const contactsUpdate = businessDetails
 
 export const suspension = strictObject({ reason: text(500) })
 
+/** Why an application is rejected; the applicant reads it. */
+export const applicationRejection = strictObject({ reason: text(500) })
+
+/**
+ * What a buyer sends to apply to sell. The invoice prefix is chosen for
+ * them when they leave it out, and an administrator can change it until
+ * the first invoice; the commission is the platform's until an
+ * administrator sets one.
+ */
+export const sellerApplication = businessDetails
+  .omit({ commissionBps: true })
+  .extend({
+    gstin: gstin.nullable().default(null),
+    pan: pan.nullable().default(null),
+    invoicePrefix: businessDetails.shape.invoicePrefix.optional(),
+  })
+export type SellerApplication = z.infer<typeof sellerApplication>
+
+/** The details an applicant may change while the application is open. */
+export const applicationUpdate = businessDetails
+  .omit({ commissionBps: true })
+  .partial()
+
 /**
  * Rules that span fields: the PAN sits inside the GSTIN, and a GSTIN starts
  * with the state code of the business it belongs to.
@@ -104,6 +128,8 @@ export interface SellerView {
   commissionBps: number | null
   approvedAt: Date | null
   suspendedReason: string | null
+  /** Why the application was rejected, while it is. */
+  rejectionReason: string | null
   createdAt: Date
   updatedAt: Date
 }

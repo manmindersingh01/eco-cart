@@ -8,7 +8,10 @@ import { requireSeller } from '@/lib/request-context'
  * `?show=open` (the default) or `?show=all`, with `cursor` and `limit`.
  */
 export const GET = handleErrors(async (request: Request) => {
-  const { context } = await requireSeller(request.headers)
+  const { context } = await requireSeller(request.headers, {
+    // An applicant sends the documents an administrator asked for.
+    applicants: true,
+  })
   const show = new URL(request.url).searchParams.get('show')
   const page = await withContext(getDatabase(), context, (tx) =>
     listOwnDocumentRequests(tx, context, {
