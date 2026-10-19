@@ -23,3 +23,13 @@ export function formatRupees(paise: number): string {
     ? `${sign}${rupees}`
     : `${sign}${rupees}.${String(rest).padStart(2, '0')}`
 }
+
+/**
+ * Rupees as a plain number with two decimals and no grouping, for files that
+ * spreadsheets add up: 1234.50 from 123450 paise, -0.05 from -5.
+ */
+export function plainRupees(paise: number): string {
+  const sign = paise < 0 ? '-' : ''
+  const amount = Math.abs(paise)
+  return `${sign}${Math.floor(amount / 100)}.${String(amount % 100).padStart(2, '0')}`
+}

@@ -496,9 +496,6 @@ export async function recordReturnRefund(
         title: line.title,
         returnedQuantity: found.quantity,
         refundPaise: refund.amountPaise,
-        linePaidPaise: line.lineTotalPaise - line.discountSharePaise,
-        commissionBps: line.commissionBps,
-        lineCommissionPaise: line.commissionPaise,
         createdBy: context.userId,
       })
 
