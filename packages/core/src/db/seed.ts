@@ -13,6 +13,7 @@ import {
 } from '../modules/auth/accounts.ts'
 import { createAppAuth } from '../modules/auth/service.ts'
 import { createBrand, listAllBrands } from '../modules/catalogue/brands.ts'
+import { EMBED_PRODUCT_QUEUE } from '../modules/catalogue/embeddings.ts'
 import {
   createCategory,
   loadCategoryTree,
@@ -682,6 +683,9 @@ async function seedProduct(
           { db: worker, storage, ai: null },
           screenListingJob.parse(data).reviewId,
         )
+      } else if (name === EMBED_PRODUCT_QUEUE) {
+        // Never embedded here: once AI is on, the worker's catch-up job
+        // embeds every product on sale that has no embeddings.
       } else {
         throw new Error(`The seed cannot run ${name} jobs`)
       }
@@ -745,7 +749,7 @@ async function seedProduct(
   )
   await runJobs()
   await withContext(db, { role: 'system' }, (tx) =>
-    approveProduct(tx, storage, { role: 'system' }, product.id, {}),
+    approveProduct(tx, storage, queue, { role: 'system' }, product.id, {}),
   )
 }
 
