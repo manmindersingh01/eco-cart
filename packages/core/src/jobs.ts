@@ -1,5 +1,6 @@
 import type { QueueDefinition } from './lib/queue.ts'
 import { draftQueues } from './modules/catalogue/drafts.ts'
+import { embeddingQueues } from './modules/catalogue/embeddings.ts'
 import { catalogueQueues } from './modules/catalogue/images.ts'
 import { screeningQueues } from './modules/catalogue/screening.ts'
 import { storefrontCacheQueues } from './modules/catalogue/storefront-cache.ts'
@@ -21,6 +22,7 @@ export const QUEUES: QueueDefinition[] = [
   ...videoQueues,
   ...screeningQueues,
   ...draftQueues,
+  ...embeddingQueues,
   ...importQueues,
   ...invoiceQueues,
   ...storefrontCacheQueues,

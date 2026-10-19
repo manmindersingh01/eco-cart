@@ -6,6 +6,7 @@ import {
   getPublicProduct,
   getPublishedContentPage,
   listProductReviews,
+  listSimilarProducts,
   NotConfiguredError,
   NotFoundError,
   storefrontTags,
@@ -18,6 +19,7 @@ import {
   type PublicContentPage,
   type PublicProduct,
   type PublicReview,
+  type SimilarProducts,
 } from '@ecokart/core'
 import { cacheLife, cacheTag } from 'next/cache'
 import { getDatabase } from './db'
@@ -91,6 +93,36 @@ async function cachedProductPage(slug: string): Promise<Answer<PublicProduct>> {
 
 export async function readProductPage(slug: string): Promise<PublicProduct> {
   return found(await cachedProductPage(slug))
+}
+
+async function cachedSimilarProducts(
+  slug: string,
+): Promise<Answer<SimilarProducts>> {
+  'use cache'
+  cacheLife('storefront')
+  cacheTag(storefrontTags.catalogue)
+  const similar = await answer(() =>
+    withContext(getDatabase(), { role: 'anonymous' }, (tx) =>
+      listSimilarProducts(tx, getStorage(), slug),
+    ),
+  )
+  if (similar.kind === 'found') {
+    // Every change to a product records its category's tag, so the list
+    // follows the products in it; the product's own tag covers its embedding.
+    cacheTag(
+      storefrontTags.product(similar.value.productId),
+      storefrontTags.category(similar.value.categoryId),
+    )
+  }
+  if (slug.length <= 100) cacheTag(storefrontTags.productSlug(slug))
+  return similar
+}
+
+/** A product page's similar products (backend spec step 18). */
+export async function readSimilarProducts(
+  slug: string,
+): Promise<SimilarProducts> {
+  return found(await cachedSimilarProducts(slug))
 }
 
 async function cachedCategoryPage(

@@ -243,8 +243,29 @@
     {
       "idx": 34,
       "version": "7",
-      "when": 1792442240449,
-      "tag": "0034_return_lists_and_one_refund",
+      "when": 1792442010108,
+      "tag": "0034_email_outbox_admin_retry",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792442015234,
+      "tag": "0035_email_outbox_update_grant",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792442169007,
+      "tag": "0036_product_embeddings_image_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792442908067,
+      "tag": "0037_return_lists_and_one_refund",
       "breakpoints": true
     }
   ]

@@ -44,6 +44,7 @@ import {
   updateProduct,
   type SellerContext,
 } from './products.ts'
+import { EMBED_PRODUCT_QUEUE } from './embeddings.ts'
 import { SCREEN_LISTING_QUEUE, screenListing } from './screening.ts'
 import type { ProductView, ReviewQueueItem } from './types.ts'
 
@@ -177,7 +178,9 @@ const approve = (
   input: unknown = {},
   context: RequestContext = admin,
 ) =>
-  as(context, (tx) => approveProduct(tx, photos, context, productId, input, IP))
+  as(context, (tx) =>
+    approveProduct(tx, photos, queue, context, productId, input, IP),
+  )
 
 const reject = (
   productId: string,
@@ -413,6 +416,12 @@ describe('approveProduct', () => {
     const product = await waiting()
     const review = await openReview(product.id)
     const decided = await approve(product.id)
+
+    // Its embeddings for search are queued with it (step 18).
+    const jobs = await owner.execute<{ count: number }>(
+      sql`select count(*)::int as count from pgboss.job where name = ${EMBED_PRODUCT_QUEUE} and data->>'productId' = ${product.id}`,
+    )
+    expect(jobs.rows[0]!.count).toBe(1)
 
     expect(decided.product).toMatchObject({
       status: 'approved',

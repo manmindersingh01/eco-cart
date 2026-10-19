@@ -1,5 +1,5 @@
 {
-  "id": "db089873-a96e-4587-870b-e781317a7e33",
+  "id": "f4391c3f-4c0f-4f51-acf9-2cdc3aac385d",
   "prevId": "04ae65ca-2f91-45d2-b9eb-15a72b4d0f10",
   "version": "7",
   "dialect": "postgresql",
@@ -5569,26 +5569,14 @@
           "method": "btree",
           "with": {}
         },
-        "return_requests_user_id_created_at_idx": {
-          "name": "return_requests_user_id_created_at_idx",
+        "return_requests_user_id_idx": {
+          "name": "return_requests_user_id_idx",
           "columns": [
             {
               "expression": "user_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
             }
           ],
           "isUnique": false,
@@ -5596,45 +5584,17 @@
           "method": "btree",
           "with": {}
         },
-        "return_requests_seller_id_created_at_idx": {
-          "name": "return_requests_seller_id_created_at_idx",
+        "return_requests_seller_id_idx": {
+          "name": "return_requests_seller_id_idx",
           "columns": [
             {
               "expression": "seller_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "return_requests_open_line_key": {
-          "name": "return_requests_open_line_key",
-          "columns": [
-            {
-              "expression": "order_item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "status in ('requested', 'approved')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -6359,22 +6319,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "refunds_return_request_id_key": {
-          "name": "refunds_return_request_id_key",
-          "columns": [
-            {
-              "expression": "return_request_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "return_request_id is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -6922,6 +6866,16 @@
             "ecokart_web"
           ],
           "withCheck": "true"
+        },
+        "web_update": {
+          "name": "web_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "ecokart_web"
+          ],
+          "using": "app.has_full_access()",
+          "withCheck": "app.has_full_access()"
         },
         "worker_all": {
           "name": "worker_all",

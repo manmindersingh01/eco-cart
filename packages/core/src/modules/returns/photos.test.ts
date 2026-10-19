@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { createDatabase } from '../../db/client.ts'
@@ -25,7 +25,7 @@ import {
   createTestSeller,
   createTestUser,
 } from '../../testing/fixtures.ts'
-import { checkUploadedReturnPhoto } from './jobs.ts'
+import { checkUploadedReturnPhoto, deleteUnsentReturnPhotos } from './jobs.ts'
 import {
   addReturnPhoto,
   attachReturnPhotos,
@@ -110,6 +110,14 @@ const attach = (buyer: Buyer, returnRequestId: string, photoIds: unknown) =>
   withContext(web, buyer, (tx) =>
     attachReturnPhotos(tx, buyer, returnRequestId, photoIds),
   )
+
+/** Makes photos look as if they were added `hours` ago. */
+async function addedHoursAgo(hours: number, ids: string[]): Promise<void> {
+  await owner
+    .update(returnPhotos)
+    .set({ createdAt: sql`now() - make_interval(hours => ${hours})` })
+    .where(inArray(returnPhotos.id, ids))
+}
 
 describe('uploading a return photo', () => {
   test('signs a private upload form for the buyer', async () => {
@@ -355,6 +363,25 @@ describe('sending photos with a return', () => {
     expect((await read(buyer, waiting.id)).returnRequestId).toBeNull()
   })
 
+  test('refuses a photo added more than 24 hours ago', async () => {
+    const buyer = await newBuyer()
+    const { seller } = await createTestSeller(owner)
+    const { returnRequest } = await createTestReturnRequest(owner, {
+      buyerId: buyer.userId,
+      sellerId: seller.id,
+    })
+    const stale = await readyPhoto(buyer)
+    const fresh = await readyPhoto(buyer)
+    await addedHoursAgo(25, [stale])
+    await addedHoursAgo(23, [fresh])
+    expect(
+      await validationIssues(attach(buyer, returnRequest.id, [stale, fresh])),
+    ).toEqual([`photo ${stale} was added more than 24 hours ago; add it again`])
+    expect(await attach(buyer, returnRequest.id, [fresh])).toEqual([
+      `returns/${fresh}`,
+    ])
+  })
+
   test('only to the buyer’s own return', async () => {
     const buyer = await newBuyer()
     const other = await newBuyer()
@@ -367,6 +394,59 @@ describe('sending photos with a return', () => {
     await expect(attach(buyer, returnRequest.id, [photo])).rejects.toThrow(
       NotFoundError,
     )
+  })
+})
+
+describe('deleting photos never sent', () => {
+  test('deletes unsent photos after 48 hours and keeps the rest', async () => {
+    const buyer = await newBuyer()
+    const { seller } = await createTestSeller(owner)
+    const { returnRequest } = await createTestReturnRequest(owner, {
+      buyerId: buyer.userId,
+      sellerId: seller.id,
+    })
+    const ready = await readyPhoto(buyer)
+    const failed = await upload(buyer, Buffer.from('not a photo'))
+    await checkUploadedReturnPhoto(deps, failed.id)
+    // Never checked, for example while the worker was down.
+    const unchecked = await upload(buyer, null)
+    const recent = await readyPhoto(buyer)
+    const sent = await readyPhoto(buyer)
+    await attach(buyer, returnRequest.id, [sent])
+    const old = [ready, failed.id, unchecked.id]
+    await addedHoursAgo(49, [...old, sent])
+    await addedHoursAgo(47, [recent])
+
+    expect(await deleteUnsentReturnPhotos(deps)).toBeGreaterThanOrEqual(3)
+    for (const id of old) {
+      await expect(read(buyer, id)).rejects.toThrow(NotFoundError)
+      expect(await storage.read(`returns/${id}`)).toBeNull()
+    }
+    for (const id of [recent, sent]) {
+      expect((await read(buyer, id)).status).toBe('ready')
+      expect(await storage.read(`returns/${id}`)).not.toBeNull()
+    }
+    // Nothing is left for a second run.
+    await deleteUnsentReturnPhotos(deps)
+    expect((await read(buyer, sent)).returnRequestId).toBe(returnRequest.id)
+  })
+
+  test('keeps the row while its file cannot be deleted, so a later run tries again', async () => {
+    const buyer = await newBuyer()
+    const photo = await readyPhoto(buyer)
+    await addedHoursAgo(49, [photo])
+    const failing: ObjectStorage = {
+      ...storage,
+      remove: () => Promise.reject(new Error('Storage is unavailable')),
+    }
+    await expect(
+      deleteUnsentReturnPhotos({ db: worker, storage: failing }),
+    ).rejects.toThrow('Storage is unavailable')
+    expect((await read(buyer, photo)).status).toBe('ready')
+
+    await deleteUnsentReturnPhotos(deps)
+    await expect(read(buyer, photo)).rejects.toThrow(NotFoundError)
+    expect(await storage.read(`returns/${photo}`)).toBeNull()
   })
 })
 

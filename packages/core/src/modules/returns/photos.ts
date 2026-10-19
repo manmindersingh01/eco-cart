@@ -1,5 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm'
+import {
+  and,
+  eq,
+  getTableColumns,
+  gt,
+  inArray,
+  isNull,
+  ne,
+  sql,
+} from 'drizzle-orm'
 import { z } from 'zod'
 import type { Database, Transaction } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
@@ -22,6 +31,7 @@ import {
   newReturnPhoto,
   returnPhotoIds,
   returnPhotoUploadRequest,
+  SEND_PHOTO_WITHIN_HOURS,
   type ReturnPhotoDownload,
   type ReturnPhotoStatus,
   type ReturnPhotoUpload,
@@ -34,10 +44,12 @@ import {
  * is open; the worker checks it and keeps a re-encoded private copy
  * (jobs.ts); sending the return request attaches the ready photos to it.
  * The buyer, the seller of the returned item, and administrators open a
- * photo through a short-lived signed link.
+ * photo through a short-lived signed link. A nightly job deletes the photos
+ * that were never sent with a return.
  */
 
 export const CHECK_RETURN_PHOTO_QUEUE = 'returns.check-photo'
+export const DELETE_UNSENT_PHOTOS_QUEUE = 'returns.delete-unsent-photos'
 
 export const returnQueues: QueueDefinition[] = [
   {
@@ -47,6 +59,16 @@ export const returnQueues: QueueDefinition[] = [
       retryDelay: 30,
       retryBackoff: true,
       expireInSeconds: 300,
+      deleteAfterSeconds: 7 * 24 * 60 * 60,
+    },
+  },
+  {
+    name: DELETE_UNSENT_PHOTOS_QUEUE,
+    options: {
+      retryLimit: 3,
+      retryDelay: 300,
+      retryBackoff: true,
+      expireInSeconds: 900,
       deleteAfterSeconds: 7 * 24 * 60 * 60,
     },
   },
@@ -231,7 +253,11 @@ export async function attachReturnPhotos(
   if (!request) throw new NotFoundError('There is no return with that id')
 
   const rows = await tx
-    .select()
+    .select({
+      ...getTableColumns(returnPhotos),
+      // The database's clock, which the clean-up job also uses.
+      tooOld: sql<boolean>`${returnPhotos.createdAt} < now() - make_interval(hours => ${SEND_PHOTO_WITHIN_HOURS})`,
+    })
     .from(returnPhotos)
     .where(
       and(
@@ -249,6 +275,10 @@ export async function attachReturnPhotos(
       issues.push(`photo ${id} failed the check: ${row.failureReason}`)
     } else if (row.returnRequestId) {
       issues.push(`photo ${id} was already sent with a return`)
+    } else if (row.tooOld) {
+      issues.push(
+        `photo ${id} was added more than ${SEND_PHOTO_WITHIN_HOURS} hours ago; add it again`,
+      )
     }
   }
   if (issues.length > 0) {

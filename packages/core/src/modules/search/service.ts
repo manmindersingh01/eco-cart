@@ -21,9 +21,15 @@ import {
   listingParameters,
   listPublicProducts,
   wholeNumberText,
+  type ListSort,
   type WordMatch,
 } from '../catalogue/storefront.ts'
-import { STOREFRONT_SORTS } from '../catalogue/storefront-types.ts'
+import {
+  STOREFRONT_SORTS,
+  type ProductFilters,
+} from '../catalogue/storefront-types.ts'
+import type { CategoryTree } from '../catalogue/tree.ts'
+import type { CategoryView } from '../catalogue/types.ts'
 import { consumeRateLimit, hashedRateLimitKey } from '../rate-limits/service.ts'
 import type { SearchGap, SearchResult } from './types.ts'
 
@@ -33,7 +39,8 @@ import type { SearchGap, SearchResult } from './types.ts'
  * logs each search for the gap report, and limits searches per address. The
  * products themselves come from the catalogue's one product list, so if
  * search ever moves to a dedicated engine (design doc 9) only this module
- * changes. Step 18 adds natural-language and image search on top.
+ * changes. Natural-language and photo search (step 18) are in natural.ts
+ * and photos.ts.
  */
 
 const INVALID = 'Those search details are not valid'
@@ -90,41 +97,45 @@ export async function consumeSearchAllowance(
   }
 }
 
+/** The category filter of a search: the category and everything below it. */
+export function categoryFilter(
+  tree: CategoryTree<CategoryView>,
+  slug: string | undefined,
+): string[] | undefined {
+  if (!slug) return undefined
+  const category = tree.bySlug(slug)
+  if (!category || !tree.isVisible(category.id)) {
+    throw new ValidationError(INVALID, [
+      `category ${slug} is not a category on sale`,
+    ])
+  }
+  return tree.subtreeIds(category.id)
+}
+
+/** Whether a cursor continues a keyword list rather than another kind. */
+export const isWordCursor = (cursor: string): boolean => {
+  const order = cursorOrder(cursor)
+  return order.startsWith('exact-') || order.startsWith('similar-')
+}
+
 /**
- * One page of keyword results. `query` is the request's query string: `q`
- * plus the storefront list parameters, `category`, and `sort` (relevance by
- * default). When the words match nothing, similar words are tried, for
- * typos; the answer's `match` says which kind it is, and its cursor
- * continues the same kind.
- *
- * A new search (no cursor) is logged for the gap report; later pages are not.
- * Run it as the anonymous context: the log is anonymous by design.
+ * One page of products matching the words `q` with `filters`. When the words
+ * match nothing, similar words are tried, for typos; the answer's `match`
+ * says which kind it is, and its cursor continues the same kind.
  */
-export async function searchProducts(
+export async function findByWords(
   tx: Transaction,
   photos: PhotoAddresses,
-  query: Record<string, string>,
+  tree: CategoryTree<CategoryView>,
+  search: {
+    q: string
+    filters: ProductFilters
+    sort: ListSort
+    cursor?: string | undefined
+    limit?: number | undefined
+  },
 ): Promise<SearchResult> {
-  const started = performance.now()
-  const parameters = parseInput(searchParameters, query, INVALID)
-  const tree = await loadCategoryTree(tx)
-
-  let categoryIds: string[] | undefined
-  if (parameters.category) {
-    const category = tree.bySlug(parameters.category)
-    if (!category || !tree.isVisible(category.id)) {
-      throw new ValidationError(INVALID, [
-        `category ${parameters.category} is not a category on sale`,
-      ])
-    }
-    categoryIds = tree.subtreeIds(category.id)
-  }
-  const filters = {
-    ...(await listingFilters(tx, parameters)),
-    ...(categoryIds ? { categoryIds } : {}),
-  }
-  const { q, cursor, limit } = parameters
-  const sort = parameters.sort ?? 'relevance'
+  const { q, filters, sort, cursor, limit } = search
   const page = (match: WordMatch) =>
     listPublicProducts(
       tx,
@@ -157,17 +168,68 @@ export async function searchProducts(
       result = similar
     }
   }
+  return { ...result, match: kind }
+}
 
+/**
+ * One page of keyword results. `query` is the request's query string: `q`
+ * plus the storefront list parameters, `category`, and `sort` (relevance by
+ * default).
+ *
+ * A new search (no cursor) is logged for the gap report; later pages are not.
+ * Run it as the anonymous context: the log is anonymous by design.
+ */
+export async function searchProducts(
+  tx: Transaction,
+  photos: PhotoAddresses,
+  query: Record<string, string>,
+): Promise<SearchResult> {
+  const started = performance.now()
+  const parameters = parseInput(searchParameters, query, INVALID)
+  const tree = await loadCategoryTree(tx)
+  const categoryIds = categoryFilter(tree, parameters.category)
+  const filters = {
+    ...(await listingFilters(tx, parameters)),
+    ...(categoryIds ? { categoryIds } : {}),
+  }
+  const { q, cursor } = parameters
+  const result = await findByWords(tx, photos, tree, {
+    q,
+    filters,
+    sort: parameters.sort ?? 'relevance',
+    cursor,
+    limit: parameters.limit,
+  })
   if (!cursor) {
-    // No RETURNING: visitors may add log rows but not read them.
-    await tx.insert(searchQueries).values({
+    await logSearch(tx, {
       kind: 'keyword',
       queryText: q,
       resultCount: result.items.length,
-      latencyMs: Math.round(performance.now() - started),
+      started,
     })
   }
-  return { ...result, match: kind }
+  return result
+}
+
+/** Writes one search to the log for the gap report (design doc 6.8). */
+export async function logSearch(
+  tx: Transaction,
+  search: {
+    kind: 'keyword' | 'natural' | 'image'
+    queryText: string | null
+    parsed?: unknown
+    resultCount: number
+    started: number
+  },
+): Promise<void> {
+  // No RETURNING: visitors may add log rows but not read them.
+  await tx.insert(searchQueries).values({
+    kind: search.kind,
+    queryText: search.queryText,
+    parsed: search.parsed ?? null,
+    resultCount: search.resultCount,
+    latencyMs: Math.round(performance.now() - search.started),
+  })
 }
 
 const gapParameters = strictObject({
