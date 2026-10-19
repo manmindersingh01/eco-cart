@@ -141,6 +141,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - `INSERT ... RETURNING` must also pass the table's read policy, so a context that may add rows but not read them (for example a visitor queueing an email in `email_outbox`) reserves the id with `nextval` and inserts without `RETURNING`.
 - Background jobs are sent with `JobQueue.send(tx, ...)` inside the business transaction, and every queue is listed in `packages/core/src/jobs.ts` so `pnpm db:migrate` creates it.
 - Short secrets that wait in the database, such as sign-in codes, are sealed with `sealSecret` (`MESSAGE_ENCRYPTION_KEY`) and removed once used.
+- Sellers' bank account numbers are sealed with `sealSecret` too, and only their last 4 digits are ever shown, returned by the API, or written to the audit log.
 - Status columns are `text` with a `CHECK` constraint listing allowed values.
   Adding a state means a new migration.
 - Every table has `created_at`, and mutable tables also have `updated_at`.

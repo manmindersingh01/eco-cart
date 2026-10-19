@@ -23,7 +23,7 @@ import { formatIndianDate, formatState } from '@/lib/format'
 import { requireAdmin } from '@/lib/request-context'
 
 export const metadata: Metadata = {
-  title: 'Sellers | EcoKart',
+  title: 'Sellers',
 }
 
 const filters: Array<{ label: string; status?: SellerStatus }> = [

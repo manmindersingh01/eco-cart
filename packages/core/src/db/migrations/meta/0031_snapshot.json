@@ -1,5 +1,5 @@
 {
-  "id": "7347c9da-f1a4-46e6-b3f1-5baed4b0b6e6",
+  "id": "c82862a0-4097-428f-9aa7-06a8c5c472d2",
   "prevId": "d2e4f482-f787-442b-a0d1-7659b493f6f5",
   "version": "7",
   "dialect": "postgresql",
@@ -3724,6 +3724,167 @@
       },
       "isRLSEnabled": true
     },
+    "public.seller_bank_accounts": {
+      "name": "seller_bank_accounts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "seller_id": {
+          "name": "seller_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_holder": {
+          "name": "account_holder",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_number_sealed": {
+          "name": "account_number_sealed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_number_last4": {
+          "name": "account_number_last4",
+          "type": "char(4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ifsc": {
+          "name": "ifsc",
+          "type": "char(11)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "seller_bank_accounts_seller_id_sellers_id_fk": {
+          "name": "seller_bank_accounts_seller_id_sellers_id_fk",
+          "tableFrom": "seller_bank_accounts",
+          "tableTo": "sellers",
+          "columnsFrom": [
+            "seller_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "seller_bank_accounts_updated_by_users_id_fk": {
+          "name": "seller_bank_accounts_updated_by_users_id_fk",
+          "tableFrom": "seller_bank_accounts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "seller_bank_accounts_seller_id_unique": {
+          "name": "seller_bank_accounts_seller_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "seller_id"
+          ]
+        }
+      },
+      "policies": {
+        "web_select": {
+          "name": "web_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ecokart_web"
+          ],
+          "using": "seller_id = app.seller_id() or app.has_full_access()"
+        },
+        "web_insert": {
+          "name": "web_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "ecokart_web"
+          ],
+          "withCheck": "app.has_full_access()"
+        },
+        "web_update": {
+          "name": "web_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "ecokart_web"
+          ],
+          "using": "app.has_full_access()",
+          "withCheck": "app.has_full_access()"
+        },
+        "worker_all": {
+          "name": "worker_all",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "ecokart_worker"
+          ],
+          "using": "true",
+          "withCheck": "true"
+        }
+      },
+      "checkConstraints": {
+        "seller_bank_accounts_account_holder_check": {
+          "name": "seller_bank_accounts_account_holder_check",
+          "value": "char_length(account_holder) between 1 and 100"
+        },
+        "seller_bank_accounts_account_number_sealed_check": {
+          "name": "seller_bank_accounts_account_number_sealed_check",
+          "value": "account_number_sealed like 'v1.%'"
+        },
+        "seller_bank_accounts_account_number_last4_check": {
+          "name": "seller_bank_accounts_account_number_last4_check",
+          "value": "account_number_last4 ~ '^[0-9]{4}$'"
+        },
+        "seller_bank_accounts_ifsc_check": {
+          "name": "seller_bank_accounts_ifsc_check",
+          "value": "ifsc ~ '^[A-Z]{4}0[A-Z0-9]{6}$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
     "public.seller_ledger_entries": {
       "name": "seller_ledger_entries",
       "schema": "",
@@ -5026,6 +5187,229 @@
         "orders_total_check": {
           "name": "orders_total_check",
           "value": "total_paise = subtotal_paise - discount_paise + delivery_paise"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.return_photos": {
+      "name": "return_photos",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "return_request_id": {
+          "name": "return_request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "upload_key": {
+          "name": "upload_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'processing'"
+        },
+        "failure_reason": {
+          "name": "failure_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "width": {
+          "name": "width",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "height": {
+          "name": "height",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "return_photos_user_id_created_at_idx": {
+          "name": "return_photos_user_id_created_at_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "return_photos_return_request_id_idx": {
+          "name": "return_photos_return_request_id_idx",
+          "columns": [
+            {
+              "expression": "return_request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "return_photos_user_id_users_id_fk": {
+          "name": "return_photos_user_id_users_id_fk",
+          "tableFrom": "return_photos",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "return_photos_return_request_id_return_requests_id_fk": {
+          "name": "return_photos_return_request_id_return_requests_id_fk",
+          "tableFrom": "return_photos",
+          "tableTo": "return_requests",
+          "columnsFrom": [
+            "return_request_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "return_photos_upload_key_unique": {
+          "name": "return_photos_upload_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "upload_key"
+          ]
+        }
+      },
+      "policies": {
+        "web_select": {
+          "name": "web_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ecokart_web"
+          ],
+          "using": "user_id = app.user_id() or app.has_full_access() or exists (select 1 from return_requests r where r.id = return_photos.return_request_id and r.seller_id = app.seller_id())"
+        },
+        "web_insert": {
+          "name": "web_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "ecokart_web"
+          ],
+          "withCheck": "app.has_full_access() or (user_id = app.user_id() and status = 'processing' and return_request_id is null)"
+        },
+        "web_update": {
+          "name": "web_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "ecokart_web"
+          ],
+          "using": "user_id = app.user_id() or app.has_full_access()",
+          "withCheck": "app.has_full_access() or (user_id = app.user_id() and exists (select 1 from return_requests r where r.id = return_photos.return_request_id and r.user_id = app.user_id()))"
+        },
+        "worker_all": {
+          "name": "worker_all",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "ecokart_worker"
+          ],
+          "using": "true",
+          "withCheck": "true"
+        }
+      },
+      "checkConstraints": {
+        "return_photos_status_check": {
+          "name": "return_photos_status_check",
+          "value": "status in ('processing', 'ready', 'failed')"
+        },
+        "return_photos_ready_check": {
+          "name": "return_photos_ready_check",
+          "value": "(status = 'ready') = (storage_key is not null and content_hash is not null and width is not null and height is not null)"
+        },
+        "return_photos_failure_check": {
+          "name": "return_photos_failure_check",
+          "value": "(status = 'failed') = (failure_reason is not null)"
+        },
+        "return_photos_attached_check": {
+          "name": "return_photos_attached_check",
+          "value": "return_request_id is null or status = 'ready'"
         }
       },
       "isRLSEnabled": true
@@ -6461,16 +6845,6 @@
             "ecokart_web"
           ],
           "withCheck": "true"
-        },
-        "web_update": {
-          "name": "web_update",
-          "as": "PERMISSIVE",
-          "for": "UPDATE",
-          "to": [
-            "ecokart_web"
-          ],
-          "using": "app.has_full_access()",
-          "withCheck": "app.has_full_access()"
         },
         "worker_all": {
           "name": "worker_all",
