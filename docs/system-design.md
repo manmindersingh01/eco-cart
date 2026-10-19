@@ -976,6 +976,9 @@ Every change is written to `audit_logs`, and `pnpm db:seed` fills in obvious exa
 
 Emails go through an outbox table rather than being sent inline.
 The row is written in the same transaction as the business change, so an email is never lost or sent for a change that was rolled back, and the worker retries failures.
+Administrators see the emails that failed and the ones that are stuck (still queued but unchanged for 30 minutes), and the background jobs that failed in each queue, newest first.
+They can retry one, which gives an email fresh attempts or a job one more attempt, and each retry is written to `audit_logs`.
+A sign-in code is never sent again, because it has expired by then; the person asks for a new one.
 
 ## 6. Main flows
 

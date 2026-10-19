@@ -239,6 +239,20 @@
       "when": 1792441784795,
       "tag": "0033_order_list_index",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792442010108,
+      "tag": "0034_email_outbox_admin_retry",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792442015234,
+      "tag": "0035_email_outbox_update_grant",
+      "breakpoints": true
     }
   ]
 }
