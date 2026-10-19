@@ -25,7 +25,11 @@ import {
 } from '../../testing/fixtures.ts'
 import { createTestWorkbook } from '../../testing/spreadsheets.ts'
 import { createProduct, type SellerContext } from '../catalogue/products.ts'
-import { readImportFile, runImport } from './jobs.ts'
+import {
+  readImportFile,
+  runImport,
+  type ImportJobDependencies,
+} from './jobs.ts'
 import {
   createImport,
   createImportUpload,
@@ -47,7 +51,9 @@ const web = connect(requireEnv('DATABASE_URL'))
 const worker = connect(requireEnv('WORKER_DATABASE_URL'))
 const owner = connect(requireEnv('MIGRATION_DATABASE_URL'))
 const storage = createObjectStorage(loadStorageConfig())
-const jobs = { db: worker, storage }
+// The worker's import jobs with AI switched off; ai-mapping.test.ts covers
+// the AI's suggestion.
+let jobs: ImportJobDependencies
 let queue: JobQueue
 let seller: SellerContext
 let other: SellerContext
@@ -62,6 +68,7 @@ async function newSeller(): Promise<SellerContext> {
 
 beforeAll(async () => {
   queue = await startJobQueue(requireEnv('DATABASE_URL'), 'imports-test')
+  jobs = { db: worker, storage, ai: null, queue }
   seller = await newSeller()
   other = await newSeller()
   category = await createTestCategory(owner)
@@ -246,11 +253,22 @@ describe('reading the file', () => {
     await readImportFile(jobs, created.id, key)
     const read = await view(created.id)
     expect(read).toMatchObject({
-      status: 'uploaded',
+      // Every heading names its field, so the suggestion is complete.
+      status: 'mapping_suggested',
       headers: HEADINGS,
       totalRows: 7,
       error: null,
       hasErrorReport: false,
+      columnMapping: null,
+      suggestionPending: false,
+    })
+    expect(read.suggestedMapping).toEqual({
+      'Product Name': { field: 'title', confidence: 0.9, source: 'name' },
+      Category: { field: 'category', confidence: 1, source: 'name' },
+      'Item Code': { field: 'sku', confidence: 0.9, source: 'name' },
+      'Price (Rs)': { field: 'price', confidence: 1, source: 'name' },
+      MRP: { field: 'mrp', confidence: 1, source: 'name' },
+      Qty: { field: 'stock', confidence: 0.9, source: 'name' },
     })
     expect(read.sampleRows).toHaveLength(5)
     expect(read.sampleRows[0]).toEqual([
@@ -420,7 +438,7 @@ describe('running the import', () => {
       ],
     ])
     const read = await readFile(book, 'catalogue.xlsx')
-    expect(read).toMatchObject({ status: 'uploaded', totalRows: 7 })
+    expect(read).toMatchObject({ status: 'mapping_suggested', totalRows: 7 })
     await mapColumns(read.id, {
       ...MAPPING,
       Brand: 'brand',
@@ -562,7 +580,7 @@ describe('running the import', () => {
       }),
     )
     await expect(
-      runImport({ db: worker, storage: broken }, read.id, {
+      runImport({ ...jobs, storage: broken }, read.id, {
         lastAttempt: false,
       }),
     ).rejects.toThrow('Storage is down')
@@ -599,7 +617,7 @@ describe('running the import', () => {
       ...storage,
       write: () => Promise.reject(new Error('Storage is down')),
     }
-    await runImport({ db: worker, storage: broken }, read.id)
+    await runImport({ ...jobs, storage: broken }, read.id)
     expect(await view(read.id)).toMatchObject({
       status: 'failed',
       error:

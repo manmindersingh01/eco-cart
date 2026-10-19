@@ -321,6 +321,17 @@ export {
   type PhotoSearchDependencies,
   type SearchPhotoUpload,
 } from './modules/search/photos.ts'
+// The shopping assistant (backend spec step 20).
+export {
+  askAssistant,
+  ASSISTANT_LIMIT,
+  consumeAssistantAllowance,
+  type AssistantDependencies,
+} from './modules/assistant/service.ts'
+export type {
+  AssistantAnswer,
+  ComparisonPoint,
+} from './modules/assistant/types.ts'
 export {
   EMBED_MISSING_QUEUE,
   EMBED_PRODUCT_QUEUE,
@@ -422,6 +433,7 @@ export {
   updateCoupon,
 } from './modules/cart/coupons.ts'
 export {
+  GUEST_CART_DAYS,
   MAX_CART_LINES,
   MAX_LINE_QUANTITY,
   type CartCoupon,
@@ -451,6 +463,16 @@ export {
   expireUnpaidOrders,
   registerOrderJobs,
 } from './modules/orders/jobs.ts'
+export {
+  REMOVE_STALE_GUEST_CARTS_QUEUE,
+  registerCartJobs,
+  removeStaleGuestCarts,
+} from './modules/cart/jobs.ts'
+export {
+  REMOVE_EXPIRED_RATE_LIMITS_QUEUE,
+  registerRateLimitJobs,
+  removeExpiredRateLimits,
+} from './modules/rate-limits/jobs.ts'
 export {
   createRazorpay,
   loadRazorpayConfig,

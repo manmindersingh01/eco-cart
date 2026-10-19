@@ -107,6 +107,8 @@ export interface PublicProduct {
 
 /** Filters of a storefront list, checked and with slugs turned into ids. */
 export interface ProductFilters {
+  /** Only these products, for example the ones a shopper asks about. */
+  productIds?: string[]
   /** Only these categories; a category page passes its whole subtree. */
   categoryIds?: string[]
   brandIds?: string[]
