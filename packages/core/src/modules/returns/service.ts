@@ -570,80 +570,85 @@ async function returnViews(
 ): Promise<ReturnView[]> {
   if (rows.length === 0) return []
   const ids = rows.map((row) => row.id)
-  const [lines, sellerNames, refunds, photoRows] = await Promise.all([
-    linesWithOrders(
-      tx,
-      rows.map((row) => row.orderItemId),
-    ),
-    getSellerNames(
-      tx,
-      rows.map((row) => row.sellerId),
-    ),
-    // Sellers see refunds in their ledger, not here.
-    context.role === 'seller'
-      ? Promise.resolve(new Map())
-      : refundsOfReturns(tx, ids),
-    tx
-      .select({
-        id: returnPhotos.id,
-        returnRequestId: returnPhotos.returnRequestId,
-      })
-      .from(returnPhotos)
-      .where(inArray(returnPhotos.returnRequestId, ids))
-      .orderBy(asc(returnPhotos.createdAt), asc(returnPhotos.id)),
-  ])
-  const photosOf = Map.groupBy(photoRows, (photo) => photo.returnRequestId)
-  return Promise.all(
-    rows.map(async (row) => {
-      const found = lines.get(row.orderItemId)
-      if (!found) throw new Error(`Return ${row.id} has no visible order line`)
-      const { line, order } = found
-      const refund = refunds.get(row.id)
-      return {
-        id: row.id,
-        status: known(RETURN_STATUSES, row.status),
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        orderItemId: line.id,
-        item: {
-          title: line.title,
-          options: line.options,
-          sku: line.sku,
-          imageUrl: line.imageKey
-            ? photos.publicUrl(imageSizeKey(line.imageKey, 'thumb'))
-            : null,
-          unitPricePaise: line.unitPricePaise,
-          lineQuantity: line.quantity,
-        },
-        sellerId: row.sellerId,
-        sellerName: sellerNames.get(row.sellerId) ?? null,
-        buyerName: order.buyerName,
-        quantity: row.quantity,
-        reasonCode: known(RETURN_REASONS, row.reasonCode),
-        reasonText: row.reasonText,
-        photoIds: (photosOf.get(row.id) ?? []).map((photo) => photo.id),
-        adminNote: row.adminNote,
-        decidedAt: row.decidedAt,
-        maxRefundPaise: refund
-          ? refund.amountPaise
-          : maxRefund(
-              line,
-              row.quantity,
-              await returnedBefore(tx, line.id, row.id),
-            ),
-        refund:
-          refund &&
-          (refund.method === 'gateway' || refund.method === 'bank_transfer')
-            ? {
-                amountPaise: refund.amountPaise,
-                method: refund.method,
-                recordedAt: refund.recordedAt,
-              }
-            : null,
-        createdAt: row.createdAt,
-      }
-    }),
+  // One after the other: a transaction is one connection, which runs one
+  // query at a time anyway.
+  const lines = await linesWithOrders(
+    tx,
+    rows.map((row) => row.orderItemId),
   )
+  const sellerNames = await getSellerNames(
+    tx,
+    rows.map((row) => row.sellerId),
+  )
+  // Sellers see refunds in their ledger, not here.
+  const refunds =
+    context.role === 'seller'
+      ? new Map<string, never>()
+      : await refundsOfReturns(tx, ids)
+  const photoRows = await tx
+    .select({
+      id: returnPhotos.id,
+      returnRequestId: returnPhotos.returnRequestId,
+    })
+    .from(returnPhotos)
+    .where(inArray(returnPhotos.returnRequestId, ids))
+    .orderBy(asc(returnPhotos.createdAt), asc(returnPhotos.id))
+  const photosOf = Map.groupBy(photoRows, (photo) => photo.returnRequestId)
+  const views: ReturnView[] = []
+  for (const row of rows) {
+    views.push(await viewOf(row))
+  }
+  return views
+
+  async function viewOf(row: ReturnRow): Promise<ReturnView> {
+    const found = lines.get(row.orderItemId)
+    if (!found) throw new Error(`Return ${row.id} has no visible order line`)
+    const { line, order } = found
+    const refund = refunds.get(row.id)
+    return {
+      id: row.id,
+      status: known(RETURN_STATUSES, row.status),
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      orderItemId: line.id,
+      item: {
+        title: line.title,
+        options: line.options,
+        sku: line.sku,
+        imageUrl: line.imageKey
+          ? photos.publicUrl(imageSizeKey(line.imageKey, 'thumb'))
+          : null,
+        unitPricePaise: line.unitPricePaise,
+        lineQuantity: line.quantity,
+      },
+      sellerId: row.sellerId,
+      sellerName: sellerNames.get(row.sellerId) ?? null,
+      buyerName: order.buyerName,
+      quantity: row.quantity,
+      reasonCode: known(RETURN_REASONS, row.reasonCode),
+      reasonText: row.reasonText,
+      photoIds: (photosOf.get(row.id) ?? []).map((photo) => photo.id),
+      adminNote: row.adminNote,
+      decidedAt: row.decidedAt,
+      maxRefundPaise: refund
+        ? refund.amountPaise
+        : maxRefund(
+            line,
+            row.quantity,
+            await returnedBefore(tx, line.id, row.id),
+          ),
+      refund:
+        refund &&
+        (refund.method === 'gateway' || refund.method === 'bank_transfer')
+          ? {
+              amountPaise: refund.amountPaise,
+              method: refund.method,
+              recordedAt: refund.recordedAt,
+            }
+          : null,
+      createdAt: row.createdAt,
+    }
+  }
 }
 
 /** One return its buyer, its seller, or an administrator may see; else 404. */
