@@ -15,6 +15,7 @@ const realValues = {
   STORAGE_BUCKET: 'ecokart-prod',
   STORAGE_REGION: 'ap-south-1',
   STORAGE_PUBLIC_URL: 'https://images.ecokart.example',
+  AI_ENABLED: 'false',
 }
 
 describe('checkWebSettings', () => {
@@ -42,5 +43,45 @@ describe('checkWebSettings', () => {
     ).toThrow(
       /BETTER_AUTH_SECRET is the development example value[\s\S]*SMS_PROVIDER is the local Mailpit catcher/,
     )
+  })
+
+  test('passes with AI switched on and pointed at OpenRouter', () => {
+    expect(() =>
+      checkWebSettings({
+        NODE_ENV: 'production',
+        ...realValues,
+        AI_ENABLED: 'true',
+        AI_BASE_URL: 'https://openrouter.ai/api/v1',
+        AI_API_KEY: `sk-or-v1-${'c'.repeat(64)}`,
+        AI_CHAT_MODEL: 'deepseek/deepseek-v4.1-flash',
+        AI_VISION_MODEL: 'deepseek/deepseek-v4.1-flash',
+        AI_EMBED_MODEL: 'voyageai/voyage-multimodal-3.5',
+        AI_EMBED_DIMENSIONS: '1024',
+      }),
+    ).not.toThrow()
+  })
+
+  test('stops when AI is switched on without its key', () => {
+    const { AI_ENABLED: _enabled, ...withoutSwitch } = realValues
+    expect(() =>
+      checkWebSettings({ NODE_ENV: 'production', ...withoutSwitch }),
+    ).toThrow('AI_ENABLED must be true or false')
+    expect(() =>
+      checkWebSettings({
+        NODE_ENV: 'production',
+        ...realValues,
+        AI_ENABLED: 'true',
+      }),
+    ).toThrow('AI_API_KEY is required when AI_ENABLED is true')
+  })
+
+  test('stops when only some Razorpay keys are set', () => {
+    expect(() =>
+      checkWebSettings({
+        NODE_ENV: 'production',
+        ...realValues,
+        RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456',
+      }),
+    ).toThrow('must be set together, or none of them')
   })
 })

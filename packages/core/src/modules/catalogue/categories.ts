@@ -12,6 +12,7 @@ import { foreignKeyViolation, uniqueViolation } from '../../lib/postgres.ts'
 import { firstFreeSlug, slugify } from '../../lib/slug.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
 import { recordAuditEntry, type AuditEntry } from '../audit/service.ts'
+import { invalidateStorefront } from './storefront-cache.ts'
 import { refreshProducts } from './summary.ts'
 import {
   buildCategoryTree,
@@ -223,6 +224,32 @@ async function parentHasProductsIssue(
     : null
 }
 
+/**
+ * Gives the category's new GST rate to its approved products that still have
+ * the old one; a product whose rate an administrator overrode at approval
+ * keeps its own (backend spec step 7). The rows are locked in id order, like
+ * every other change to many products. Returns how many changed.
+ */
+async function moveApprovedProductsToRate(
+  tx: Transaction,
+  categoryId: string,
+  from: number,
+  to: number,
+): Promise<number> {
+  const result = await tx.execute(sql`
+    update products set gst_rate_bps = ${to}
+    where id in (
+      select id from products
+      where category_id = ${categoryId}
+        and status = 'approved'
+        and gst_rate_bps = ${from}
+      order by id
+      for update
+    )
+  `)
+  return result.rowCount ?? 0
+}
+
 /** Creates a category. Administrators only. */
 export async function createCategory(
   tx: Transaction,
@@ -254,6 +281,8 @@ export async function createCategory(
       .values({ ...details, parentId, depth, slug })
       .returning()
     const view = toView(row!)
+    // Cached storefront pages show the tree: menus, breadcrumbs, and lists.
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'category.create',
@@ -360,6 +389,8 @@ export async function updateCategory(
         Object.entries(auditable(view)).filter(([key]) => touched.has(key)),
       )
     const view = toView(row!)
+    // Cached storefront pages show the tree: menus, breadcrumbs, and lists.
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'category.update',
@@ -369,6 +400,27 @@ export async function updateCategory(
       after: only(view),
       ip,
     })
+    // Approved products follow their category's GST rate (backend spec
+    // step 7).
+    if (view.gstRateBps !== current.gstRateBps) {
+      const moved = await moveApprovedProductsToRate(
+        tx,
+        categoryId,
+        current.gstRateBps,
+        view.gstRateBps,
+      )
+      if (moved > 0) {
+        await recordAuditEntry(tx, {
+          ...administratorActor(context),
+          action: 'category.update_product_rates',
+          entityType: 'category',
+          entityId: categoryId,
+          before: { gstRateBps: current.gstRateBps },
+          after: { gstRateBps: view.gstRateBps, products: moved },
+          ip,
+        })
+      }
+    }
     return view
   } catch (error) {
     throw explainUniqueViolation(error)
@@ -415,6 +467,7 @@ export async function deleteCategory(
     if (foreignKeyViolation(error)) throw new ConflictError(IN_USE)
     throw error
   }
+  await invalidateStorefront(tx, 'everything')
   await recordAuditEntry(tx, {
     ...administratorActor(context),
     action: 'category.delete',

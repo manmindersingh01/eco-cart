@@ -5,6 +5,11 @@ const database = testDatabase('worker')
 
 export default defineConfig({
   test: {
+    // These tests talk to a real PostgreSQL, Mailpit, and object storage.
+    // On a busy laptop or a small CI runner a few take several seconds, so
+    // Vitest's 5-second default made them fail at random; a real hang still
+    // fails at 20 seconds.
+    testTimeout: 20_000,
     // Rebuilds ecokart_test_worker from the real migrations before every run.
     globalSetup: ['./vitest.global-setup.ts'],
     env: {

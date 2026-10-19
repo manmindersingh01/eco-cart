@@ -166,7 +166,21 @@ if (import.meta.main) {
       log: (message) => console.info(message),
     })
   } catch (error) {
-    console.error('Migration failed', error)
+    // Drizzle's error starts with the migration's whole SQL, so the database's
+    // own message comes first, such as a migration explaining what to fix.
+    const reason = databaseMessage(error)
+    console.error(reason ? `Migration failed: ${reason}` : 'Migration failed')
+    console.error(error)
     process.exitCode = 1
   }
+}
+
+/** The message PostgreSQL gave, looking through Drizzle's wrapping error. */
+function databaseMessage(error: unknown): string | null {
+  let current: unknown = error
+  while (typeof current === 'object' && current !== null) {
+    if ('code' in current && current instanceof Error) return current.message
+    current = 'cause' in current ? current.cause : null
+  }
+  return null
 }

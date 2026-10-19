@@ -128,11 +128,20 @@ const searchText = async (id: string) =>
       .where(eq(products.id, id))
   )[0]!.text
 
-/** Sets a status directly, for states that later steps reach. */
+/**
+ * Sets a status directly, for states that other functions reach. An approved
+ * product has a GST rate, an HSN code, and a publication time.
+ */
 const setStatus = (id: string, status: string, publishedAt?: Date) =>
   owner
     .update(products)
-    .set({ status, ...(publishedAt ? { publishedAt } : {}) })
+    .set({
+      status,
+      ...(status === 'approved'
+        ? { gstRateBps: 1800, hsnCode: '3924', publishedAt: new Date() }
+        : {}),
+      ...(publishedAt ? { publishedAt } : {}),
+    })
     .where(eq(products.id, id))
 
 describe('createProduct', () => {
@@ -850,6 +859,60 @@ describe('variants', () => {
       .from(productVariants)
       .where(eq(productVariants.productId, product.id))
     expect(sum).toEqual({ stock: 30 })
+  })
+})
+
+describe('minimum buying quantity', () => {
+  test('is 1 unless the seller sets one from 1 to 1000', async () => {
+    expect((await create(toothbrush())).minOrderQuantity).toBe(1)
+    expect(
+      (await create(toothbrush({ minOrderQuantity: 5 }))).minOrderQuantity,
+    ).toBe(5)
+    for (const [value, issue] of [
+      [0, 'minOrderQuantity must be at least 1'],
+      [1001, 'minOrderQuantity must be at most 1000'],
+      [2.5, 'minOrderQuantity must be a whole number'],
+      ['5', 'minOrderQuantity must be a number'],
+    ] as const) {
+      expect(
+        await validationIssues(create(toothbrush({ minOrderQuantity: value }))),
+      ).toEqual([issue])
+    }
+  })
+
+  test('changes at any time, like a price, and shows in the seller’s list', async () => {
+    const product = await create(toothbrush())
+    await setStatus(product.id, 'approved')
+    expect(
+      (await update(product.id, { minOrderQuantity: 5 })).minOrderQuantity,
+    ).toBe(5)
+    // Listing details still wait for a draft, even next to it.
+    await expect(
+      update(product.id, { minOrderQuantity: 6, title: 'Bamboo straws' }),
+    ).rejects.toThrow(ConflictError)
+
+    const page = await as(seller, (tx) =>
+      listOwnProducts(tx, photos, seller, { status: 'approved', limit: 100 }),
+    )
+    expect(
+      page.items.find((item) => item.id === product.id)?.minOrderQuantity,
+    ).toBe(5)
+  })
+
+  test('the database keeps it between 1 and 1000', async () => {
+    const product = await create(toothbrush())
+    for (const value of [0, 1001]) {
+      await expect(
+        owner
+          .update(products)
+          .set({ minOrderQuantity: value })
+          .where(eq(products.id, product.id)),
+      ).rejects.toMatchObject({
+        cause: expect.objectContaining({
+          constraint: 'products_min_order_quantity_check',
+        }),
+      })
+    }
   })
 })
 

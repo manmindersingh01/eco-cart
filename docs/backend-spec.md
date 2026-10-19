@@ -37,17 +37,17 @@ The order follows the delivery timeline and the launch priorities in `CLAUDE.md`
 | 4 | Seller accounts: create, approve, suspend | 5.3, 5.4 | Done |
 | 5 | Category tree with GST rates, and brands | 5.5 | Done |
 | 6 | Products, variants, stock, and image upload | 5.5, 6.2 | Done |
-| 7 | Listing moderation: submit, deterministic screening, approve, reject | 6.2 | Planned |
+| 7 | Listing moderation: submit, deterministic screening, approve, reject | 6.2 | Done |
 | 8 | Catalogue import from CSV and Excel with a row-level error report | 5.11, 6.7 | Planned |
-| 9 | Storefront reads: home, category, product, keyword search, filters, sorting, keyset pagination | 6.8 | Planned |
-| 10 | Buyer addresses | 5.3 | Planned |
+| 9 | Storefront reads: home, category, product, keyword search, filters, sorting, keyset pagination | 6.8 | Done |
+| 10 | Buyer addresses | 5.3 | Done |
 | 11 | Cart (guest and logged in) and coupons | 5.6 | Planned |
 | 12 | Checkout, Razorpay, webhook, payment confirmation, cash on delivery, order expiry | 6.3 | Planned |
 | 13 | Orders: buyer view, seller dispatch, delivery, cancellation | 6.4 | Planned |
-| 14 | GST invoices and PDFs | 6.6 | Planned |
+| 14 | GST invoices and PDFs | 6.6 | Done |
 | 15 | Returns, refunds, seller ledger, and settlement CSV | 5.9, 6.5 | Planned |
-| 16 | Reviews and content pages | 5.10, 5.13 | Planned |
-| 17 | AI client, request log, cache, and daily limits | 3.2, 5.12 | Planned |
+| 16 | Reviews and content pages | 5.10, 5.13 | Done |
+| 17 | AI client, request log, cache, and daily limits | 3.2, 5.12 | Done |
 | 18 | Embeddings, natural-language search, image search, similar products | 6.8 | Planned |
 | 19 | AI listing builder from photos and AI-assisted import mapping | 6.2, 6.7 | Planned |
 | 20 | AI screening and the shopping assistant | 6.2, 6.9 | Planned |
@@ -124,9 +124,9 @@ Checkout, payment confirmation, order expiry, cancellation, and refunds run as `
 | --- | --- | --- |
 | `addresses` | The owning buyer; full access | The owning buyer; full access |
 | `sellers` | Anyone, if approved; the seller's own account; full access | Add: full access. Change: the seller itself; full access |
-| `products` | Anyone, if the product is approved and not deleted and its seller is approved (step 4); the owning seller; full access | The owning seller; full access |
+| `products` | Anyone, if the product is approved and not deleted and its seller is approved (step 4); the owning seller; full access | The owning seller; full access. Only full access approves or rejects a product or sets its GST rate and publication time (a trigger, step 7) |
 | `product_variants`, `product_images` | Anyone who can see the product | The owning seller; full access |
-| `product_moderation` | The owning seller; full access | Add: the owning seller; full access. Decide: full access |
+| `product_moderation` | The owning seller; full access | Add: the owning seller, only an undecided, unscreened review (step 7); full access. Screen and decide: full access. Withdraw: the owning seller, only their own open review |
 | `product_embeddings` | Anyone who can see the product | Worker only |
 | `carts`, `cart_items` | The owning buyer, or the guest holding the cart's token; full access | Same |
 | `orders` | The buyer; any seller with an item in the order; full access | Full access (the buyer may add their own) |
@@ -140,7 +140,7 @@ Checkout, payment confirmation, order expiry, cancellation, and refunds run as `
 | `seller_ledger_entries` | The seller; full access | Full access (append only) |
 | `reviews` | Anyone, if published; the author; full access | The author; full access |
 | `catalogue_imports`, `catalogue_import_rows` | The seller; full access | Seller adds imports; the worker processes rows |
-| `ai_requests` | Shared cache rows (no user, no seller) for anyone; otherwise the owning user or seller; full access | Same |
+| `ai_requests` | Shared cache rows (no user, no seller) for anyone; otherwise the owning user or seller; full access | The same, but only rows still `queued` or `running` (step 17); full access |
 | `search_queries` | Full access | Anyone, for themselves or with no user (append only) |
 | `email_outbox` | Full access | Anyone may add a row; only the worker changes rows, to record sending |
 | `audit_logs` | Full access | Full access, or a signed-in user recording their own action (append only) |
@@ -161,7 +161,7 @@ The five Better Auth tables (including `auth_rate_limits`) also have none, as th
   The values are UTC, and only Better Auth reads them.
 - **`users.role` has a CHECK constraint** allowing `buyer`, `seller`, and `admin`, matching the one-role-per-account decision.
 - **`sessions.impersonated_by` is `text`**, not `uuid` as section 5.3 listed, because that is what Better Auth generates.
-- **Invoice prefixes are 1 to 6 capital letters or digits**, so a full invoice number can stay within the 16 characters GST allows (see the open points below).
+- **Invoice prefixes are 1 to 4 capital letters or digits** (6 until step 14), so a full invoice number stays within the 16 characters GST allows (see the open points below).
 - **State codes are the two-digit GST state codes** (for example `27` for Maharashtra), because the first two digits of a GSTIN use the same codes and GST place of supply is decided by comparing them.
 - **Money in TypeScript** is read from the `bigint` columns as a JavaScript `number` holding whole paise.
   That is exact up to about ₹90 lakh crore, far beyond any order, and avoids converting `BigInt` values for JSON.
@@ -182,6 +182,7 @@ The five Better Auth tables (including `auth_rate_limits`) also have none, as th
 - **Database passwords are sent to PostgreSQL already hashed** (SCRAM-SHA-256), so a plain password never appears in a statement that the database might log.
 - **Tests use their own databases**, one per package (`ecokart_test_core`, `ecokart_test_web`, `ecokart_test_worker`), rebuilt from the real migrations at the start of every test run.
   The development database is never touched by tests, but the test setup sets the two database users' passwords to the example values, because users are shared by the whole server.
+  In a linked git worktree each name ends with the worktree's folder name (for example `ecokart_test_core_step_7`), and so does each test bucket, so several checkouts can run their tests at the same time without dropping each other's databases.
 
 ### Not in this step
 
@@ -202,6 +203,7 @@ The five Better Auth tables (including `auth_rate_limits`) also have none, as th
 - GST rules limit an invoice number to 16 characters.
   The format in section 5.7, `{seller prefix}/{FY}/{sequence}` with a year like `2026-27`, can go over that.
   Step 14 will propose a shorter format (for example `ABC/2627/000123`) for the client's chartered accountant to confirm.
+  Decided in step 14: `GRB/2627/000041`, with prefixes of at most 4 characters.
 - An OTP email queued in `email_outbox` would hold the code in plain text in the payload.
   Resolved in step 2: the code is encrypted before it is stored and removed once sent.
 
@@ -435,11 +437,11 @@ If Green Basket is suspended for fake listings, Ravi is signed out everywhere, c
      It always lifts the ban, which also repairs a ban left over from an earlier reinstatement that failed halfway.
    - **Repeating an action** (approving an approved seller, suspending a suspended one, reinstating one that is not suspended) changes nothing and answers 200.
      Approving a suspended seller answers 409.
-   - **Edit** (administrators): any business detail, except that the invoice prefix is fixed once the first invoice exists (changing it then answers 409), and the GSTIN and PAN cannot be removed while the seller is approved.
+   - **Edit** (administrators): any business detail, except that the invoice prefix is fixed once the first invoice exists (changing it then answers 409), and the GSTIN and PAN cannot be removed once the seller has been approved, even while suspended (since step 14).
      An empty change answers 400.
    - **Edit own contacts** (the seller): display name, support email, and support phone only.
      Legal and tax details stay with administrators, because they print on invoices.
-2. **Checks on every detail:** GSTIN and PAN formats, the PAN inside the GSTIN, the GSTIN's first two digits matching the state of the address, PIN code, phone numbers, a unique invoice prefix of 1 to 6 capital letters or digits, and a commission between 0% and 100%.
+2. **Checks on every detail:** GSTIN and PAN formats, the PAN inside the GSTIN, the GSTIN's first two digits matching the state of the address, PIN code, phone numbers, a unique invoice prefix of 1 to 4 capital letters or digits (6 until step 14), and a commission between 0% and 100%.
 3. **A seller's web address name (slug)** is made from the display name, for example `green-basket`, with `-2`, `-3` added if it is taken.
    "&" becomes "and", the slug is cut at 60 characters, and a name with no Latin letters or digits becomes `seller`.
    It does not change when the display name changes, so links keep working.
@@ -737,6 +739,798 @@ Later the same day Ravi changes the stock of Soft to 95 without anything else ch
 - Tests prove every rule above, the summary fields after each kind of change, that one seller can never read or change another's product, the upload form's limits against real object storage, the image job from upload to stored sizes (including metadata removal and every failure reason), and every API answer.
 - `pnpm check` passes.
 
+## Step 7: Listing moderation
+
+Status: Done (11 October 2026; extended 12 October 2026 with the client's answers).
+
+### Goal
+
+A seller submits a finished listing for review.
+A background job screens it at once with fixed rules (no AI yet), and an administrator works through the open reviews, riskiest first, and approves or rejects each one.
+Approval copies the GST rate and HSN code onto the product and puts it on the storefront; rejection sends it back to the seller with a reason.
+A seller can bring a listing back to draft at any time to change it, and an administrator can take down a listing that is on sale.
+
+For example, Green Basket submits "Bamboo Toothbrush, Pack of 4" with one ready photo.
+The screening job finds nothing wrong and marks it low risk.
+An administrator approves it, the product gets the 5% rate and HSN code 9603 of Bamboo Toothbrushes, and buyers can see it.
+Had the title said "toy gun" while "gun" is a prohibited term, the review would have been marked high risk with the flag `prohibited_term`, and the administrator would have rejected it with "Toy weapons cannot be sold on EcoKart".
+
+### What gets built
+
+1. **Submit** (the seller, `submitProduct` in `packages/core/src/modules/catalogue/moderation.ts`): a `draft` or `rejected` product moves to `pending_review`, the old rejection reason is cleared, a new `product_moderation` row is added, and a screening job is queued, all in one transaction (design doc 6.2 steps 1 and 2).
+   Submitting is refused with a list of what to fix when the listing could never be sold as it is:
+   - no ready photo, because the storefront needs a main image;
+   - a photo still being processed, so the reviewer sees the photos the buyer will see;
+   - no active variant, because the product would have no price;
+   - no HSN code, from the product or its category's default, because every order line needs one;
+   - a category that is no longer active or now has subcategories, or a brand that is no longer active.
+   A seller whose business is still `pending` can submit; an approved listing of a pending seller stays hidden until the seller is approved (step 4).
+2. **Screening** (`screenListing` in `screening.ts`, run by the worker from the queue `catalogue.screen-listing`): reads the listing, runs the fixed checks, and stores the flags and the risk level on the review.
+   It does nothing once the review has a decision, so a retry or a late job never changes a decided review.
+
+   | Flag | When | Risk |
+   | --- | --- | --- |
+   | `prohibited_term` | A word or phrase from the `prohibited_terms` setting appears in the title, description, highlights, attribute names or values, or option names or values | High |
+   | `large_discount` | A variant's price is 70% or more below its MRP, which usually means an inflated MRP | Medium |
+   | `missing_description` | The description is empty | Medium |
+
+   The review's risk is the highest risk of its flags, and `low` when there are none.
+   Step 20 adds the AI checks in the same job, after these.
+3. **The review queue** (administrators, `listReviewQueue`): the open reviews, highest risk first, then oldest first, so no listing waits forever behind newer ones.
+   Reviews whose screening has not finished come last.
+   Each entry shows the product (title, thumbnail, category, price range), the seller (name and status), when it was submitted, its risk and flags, and whether the product was on sale before.
+   An optional `risk` filter shows one level only, for example all low-risk reviews.
+4. **One product for review** (administrators, `getProductForReview`): the whole listing as the seller sees it, the seller's name and status, and the product's 20 most recent reviews with their flags, decisions, and reasons.
+5. **Approve** (administrators, `approveProduct`), only after screening has finished:
+   - the GST rate is copied from the category, unless the administrator gives another current GST rate;
+   - the HSN code is the product's own, or else the category's default, and is copied onto the product;
+   - the product becomes `approved`, its first publication time is set (and kept on later approvals), and its summary fields are rebuilt;
+   - the review records the decision, the administrator, and the time;
+   - `audit_logs` gets `product.approve` with the status, rate, and HSN code before and after.
+   The listing is checked again first (active variant, HSN code, category, brand), because a category or brand may have changed while it waited.
+6. **Reject** (administrators, `rejectProduct`) with a reason of up to 500 characters, at any time, even before screening finishes: the product becomes `rejected` with the reason the seller sees, the review records the decision, and `audit_logs` gets `product.reject`.
+   The seller edits the listing and submits it again, which opens a new review, so the history of every decision is kept.
+7. **Archive** (the seller, `archiveProduct`): an `approved` product becomes `archived`, which takes it off the storefront and keeps it for past orders (design doc 6.2).
+8. **Move back to draft** (the seller, `moveToDraft`), so a listing can change after it was submitted:
+   - from `pending_review`: the open review is closed as `withdrawn`, recording the seller and the time, and leaves the queue;
+   - from `approved`: the listing leaves the storefront until it is approved again, and keeps its web address and first publication time;
+   - from `archived`: the listing comes back to be changed and submitted again.
+   The seller then edits the draft and submits it, which opens a new review.
+   A draft or rejected listing can already change, so moving it answers 409.
+   Price, MRP, stock, and the active flag never need this, because they change at any time (step 6).
+9. **Take down** (administrators, `takeDownProduct`) with a reason of up to 500 characters: an `approved` listing becomes `rejected` with the reason the seller sees, for example after a buyer's complaint, and `audit_logs` gets `product.take_down`.
+   The seller changes it and submits it again like any rejected listing.
+10. **A category's GST rate change reaches its approved products** (decided 12 October 2026; the client may still confirm it).
+    When an administrator changes a category's rate, every approved product in it that still has the category's old rate gets the new one, in the same transaction, and `audit_logs` gets `category.update_product_rates` with the old and new rate and the number of products.
+    A product whose rate an administrator chose at approval keeps its own rate.
+11. **Extension points for other steps**, marked in the code:
+    - step 9 refreshes the storefront cache after approve, archive, move back to draft, and take down;
+    - step 18 queues the product's embeddings in the approval transaction;
+    - step 20 adds the AI checks to the screening job.
+12. **API:**
+
+    | Method and path | Who | What |
+    | --- | --- | --- |
+    | `POST /api/seller/products/{id}/submit` | The seller | Submit a draft or rejected listing for review |
+    | `POST /api/seller/products/{id}/move-to-draft` | The seller | Bring a listing under review, on sale, or archived back to draft |
+    | `POST /api/seller/products/{id}/archive` | The seller | Take an approved listing off sale |
+    | `GET /api/admin/moderation?risk=&cursor=&limit=` | Administrator | The open reviews, highest risk first, 20 a page by default and at most 100 |
+    | `GET /api/admin/products/{id}` | Administrator | One product with its seller and review history |
+    | `POST /api/admin/products/{id}/approve` | Administrator | Approve, with `{}` or `{ "gstRateBps": 500 }` to override the rate |
+    | `POST /api/admin/products/{id}/reject` | Administrator | Reject with `{ "reason": "..." }` |
+    | `POST /api/admin/products/{id}/take-down` | Administrator | Take a listing on sale off the storefront with `{ "reason": "..." }` |
+
+    Every answer is 200 with the product (and, for the administrator, its seller and reviews); a product in the wrong state answers 409, for example approving one that is not waiting for review.
+13. **Database changes:**
+    - the review queue index becomes `(risk_rank, submitted_at, id) WHERE decision IS NULL`, where `risk_rank` is a generated column (0 high, 1 medium, 2 low, 3 not screened yet), because sorting the risk text gives high, low, medium;
+    - one open review per product at most (a unique index on `product_id` where `decision` is null), so two submits at the same moment cannot open two reviews;
+    - checks that a decision, its time, and its administrator go together, that a rejection has a reason, and that an approved product has a GST rate, an HSN code, and a publication time, because order lines need all three;
+    - a seller (the web app without full access) can add a review only as an undecided, unscreened one, and change one only to withdraw their own open review;
+    - a review's decision can also be `withdrawn`;
+    - a database trigger refuses, for the web app without full access, any change that approves or rejects a product, or sets its GST rate or publication time, so a missed permission check in the code can never let a seller approve their own listing.
+14. **Example approved products in `pnpm db:seed`:** two listings for each example seller, each with variants and a generated photo, created, submitted, screened, and approved through the same services.
+    The seed runs the photo and screening jobs itself as the worker's database user, so it works without the worker running.
+
+### Smaller decisions made in this step
+
+- **Moderation lives in the catalogue module** (`moderation.ts` and `screening.ts`), not in a separate `modules/moderation/`.
+  `product_moderation` is a catalogue table, and approving writes product columns that only the catalogue changes, so one module keeps one owner for both.
+  Design doc section 4 is updated to match.
+- **"Price above MRP" is not a screening flag.**
+  The database already refuses a price above the MRP (step 6), so the flag could never appear.
+  A very large discount (70% or more) is flagged instead, because an inflated MRP is the real problem the check was for.
+- **Some problems refuse the submission, others only flag it.**
+  A problem the seller must fix before the listing could be sold refuses the submission at once with a list, so nobody waits for a review that can only end in rejection.
+  A problem an administrator should judge (a prohibited term, a large discount, an empty description) becomes a flag.
+- **Approval waits for screening; rejection does not.**
+  Every approved listing has been through the fixed checks, and an obviously bad listing can still be rejected straight away.
+- **Prohibited terms match whole words and phrases,** ignoring upper and lower case, punctuation, and spacing, so "gun" flags "Toy Gun" and "toy-gun" but not "begun" or "Burgundy".
+  Plural forms are separate terms ("gun", "guns"); the setting's description in the admin console says so.
+  Words in any script count, so Hindi terms work too.
+- **Only text the seller entered is screened;** brand and category names come from administrators.
+- **The GST rate follows the category, the HSN code does not.**
+  Sellers never set the rate, and a rate change by law applies to every sale from that day, so a category's new rate reaches its approved products (unless an administrator chose their rate).
+  An HSN code may be the seller's own choice, so a new category default does not overwrite it; a wrong code is fixed through a new review.
+- **A withdrawn review stays in the history,** with the seller who withdrew it, so the administrator sees every submission.
+- **A take-down is a rejection of a listing on sale,** not a new kind of review: the product shows the reason like any rejection, and the audit log records who took it down and why.
+- **Seller actions on a listing are not audited,** like every other seller change to listings (step 6); the review rows record each submission.
+  Administrator decisions are audited.
+- **The screening job is exported from `@ecokart/core`,** because it loads no heavy library; the worker registers it with the photo job.
+- **Screening looks at every variant, active or not,** because a seller can switch a variant on at any time without a review.
+- **An approval locks the product's category row before the product,** the same order a category change takes (the category, then its products).
+  So an approval during a rate change waits for it and copies the new rate, never one that is about to be replaced; a test holds a rate change open to prove it.
+- **Approving and rejecting answer with what the administrator sees:** the product, its seller, and its reviews.
+- **The catalogue reads seller names through the sellers module** (`getSellerLabels`), never from the `sellers` table, because a module owns its tables.
+- **The seed runs the photo and screening jobs as `ecokart_worker`,** on the same server as `DATABASE_URL`, with the `WORKER_DATABASE_PASSWORD` that `packages/core/.env` already holds for `pnpm db:migrate`, and it uploads its example photos to the local bucket.
+
+### Not in this step
+
+- AI checks in screening (step 20), embeddings (step 18), and refreshing the storefront cache (step 9).
+- Emails telling a seller a listing was approved or rejected; like the seller emails of step 4, they are a post-launch suggestion, and the seller sees the status and reason in the portal.
+- Approving or rejecting many listings at once: a post-launch suggestion.
+- Keeping the version on sale while changes wait for review: a listing that changes leaves the storefront until it is approved again (decided 12 October 2026).
+
+### Done when
+
+- On `pnpm dev`, through the real API: an administrator saves a prohibited term; a seller creates a listing with a photo and submits it; the worker screens it and the administrator sees it high in the queue with the flag; the administrator rejects it with a reason; the seller sees the reason, fixes the title, and submits again; the administrator approves it with the category's rate; the product shows to visitors; and the seller archives it, which hides it again.
+  Then an administrator takes down a listing on sale, the seller fixes and resubmits it, and after its approval the seller moves it back to draft (it leaves the storefront), submits it, and withdraws it from review.
+- Tests prove: each submission rule and the readiness list; one open review per product, even for two submits at the same moment; each screening flag, whole-word matching, the risk levels, and that a decided review is never changed; the queue order, risk filter, and pages; approval copying the rate, the override, and the HSN code, and waiting for screening; rejection with its reason; two administrators deciding at the same moment, of whom only one succeeds; an approval during a category rate change; archiving; moving back to draft from each state, and a withdrawal and an approval at the same moment; take-downs; a category's new rate reaching approved products but not a rate an administrator chose; the audit entries; the row-level security and trigger rules for reviews and products; the seed's example products; and every API answer.
+- `pnpm check` passes.
+
+### Open points found in this step
+
+- **Price-dependent GST rates** (design doc section 11, open since step 5) need the client's and the chartered accountant's decision, and must be settled before checkout freezes rates on order lines in step 12.
+  Until then approval copies the category's single rate (decided 12 October 2026), which is right for every category except clothing and footwear.
+- **A category's new GST rate reaching its approved products** was decided on 12 October 2026 as recommended; the client may still confirm it.
+- The 70% large-discount threshold is a starting point for administrators to confirm.
+
+## Step 9: Storefront reads, keyword search, and page caching
+
+Status: Done (12 October 2026).
+The user confirmed the recommended answer to every open question on 12 October 2026: no React pages, Cache Components switched on, the `cache_invalidations` table, CloudFront without page HTML, and the home page and out-of-stock defaults below.
+
+### Goal
+
+Anyone, signed in or not, can open the home page, browse a category with everything below it, open a product, and search by keyword, with filters, sorting, and pages that cost the same at page 200 as at page 1.
+The public reads are cached by Next.js and refreshed the moment a price, stock level, status, or category changes, in every web container, including when the change comes from the worker.
+
+For example, Asha opens Bamboo Kitchenware and sees the newest in-stock products first, filters to Bamboo Home under ₹500, and sorts by price.
+She searches for "bambo spatula", which has a typo, and still finds the spatula through the similar-words fallback.
+When Green Basket changes the spatula's price, the product page and the category pages that list it show the new price on the next visit, without anyone waiting for a cache to time out.
+
+### What gets built
+
+1. **Public catalogue reads** in `packages/core/src/modules/catalogue/storefront.ts`, always run as the `anonymous` context, so a cached answer never depends on who asked:
+   - **A product page by its slug:** title, description, highlights, attributes, option names, the category with its breadcrumbs (from `loadCategoryTree`), the brand, the seller's display name and slug, prices, whether it is in stock, rating, the active variants (options, price, MRP, in stock or not), and the ready photos in the seller's order with all three sizes.
+     SKUs, exact stock counts, HSN codes, and GST rates are not shown; buyers do not need them.
+   - **A product list** that every storefront page shares: the products in a set of categories, with optional filters, one sort order, and keyset pages.
+     Each item is a product card: title, slug, brand, lowest and highest price, lowest MRP, in stock or not, rating, and the main photo.
+   - **A category page:** the category with its breadcrumbs and direct subcategories, and the product list for it and everything below it (`subtreeIds`, no recursive SQL).
+   - **The home page:** new arrivals (the 12 newest in-stock products), then one row for each top-level category in display order with its 8 newest in-stock products (see the open questions).
+2. **What the public sees.**
+   Every read checks, in its own SQL and not only through row-level security: the product is `approved`, published, and not deleted, its seller is `approved`, and its category and every category above it are active.
+   Variants must be active, and photos must be `ready`.
+   A product whose page cannot be shown (archived, rejected, deleted, a suspended seller, a hidden category, or an unknown slug) answers 404.
+   An approved product whose variants are all inactive still has its page, with no variants and no price, so a link to it keeps working, but it is left out of every list, because a list sorts and filters by price.
+3. **Filters and sorting**, the same for category pages and search:
+
+   | Query parameter | Meaning |
+   | --- | --- |
+   | `brand` | One or more brand slugs, separated by commas, at most 10 |
+   | `minPricePaise`, `maxPricePaise` | Whole paise; compared with the price the card shows (the lowest active variant price) |
+   | `includeOutOfStock` | `true` also lists products that are out of stock; by default lists show only products in stock |
+   | `category` | Search only: a category slug; covers that category and everything below it |
+   | `sort` | `newest` (default for category pages), `price_asc`, `price_desc`, or `relevance` (search only, and its default) |
+   | `cursor`, `limit` | Keyset pages: 24 items by default (it fills grids of 2, 3, 4, or 6 columns), at most 100 |
+
+   Unknown values answer 400 with a plain reason, for example "sort must be one of newest, price_asc, price_desc".
+   An unknown brand or category slug in a filter answers 400, so a stale link says what is wrong instead of showing an empty page.
+   "Newest" means the time the product was first approved (`published_at`), and a product counts as on sale only once it has one.
+4. **Keyword search** in a new `packages/core/src/modules/search/` module (design doc section 4), which owns `search_queries`:
+   - The words are matched with `search_vector @@ websearch_to_tsquery('english', q)` and ranked by `ts_rank`, using the same `english` configuration as the stored vector (step 1).
+     `websearch_to_tsquery` understands quotes, `or`, and `-word`, and never fails on stray punctuation.
+   - **Typo fallback:** when the full-text match finds nothing and the query has at least 3 characters, the search runs again by word similarity on `search_text` (`pg_trgm`'s `word_similarity`, which the existing trigram index serves), most similar first.
+     The answer says which kind of match it is (`match: "exact"` or `"similar"`), so the page can say "Showing results for similar words".
+   - Relevance pages use a cursor of the rank (rounded to six decimals, so it compares exactly) and the product id; the similar-words fallback has its own cursor kind, so the second page continues the same kind of match.
+   - Every new search (a request without a cursor) writes a `search_queries` row with kind `keyword`, the query text, the number of products on the first page, and the time taken.
+     Further pages of the same search are not logged again, so the gap report counts searches, not pages.
+   - **A limit per IP address:** 120 search requests a minute, counted in `rate_limits` with the address hashed (step 2's pattern); the 121st answers 429 with a `Retry-After` header.
+     The limit is generous because many Indian mobile users share one address through their carrier.
+   - The match itself runs in two database functions, `app.public_products_with_words` and `app.public_products_with_similar_words`, which return the ids and ranks of matching products on sale (see the smaller decisions); the product list joins them and applies every other check.
+   - The search module calls the catalogue's product list and its exported helpers; it never queries catalogue tables itself.
+     Step 18 builds natural-language and image search on the same filter parsing and the same product list, adding a vector ordering.
+5. **The catalogue gap report** (design doc 6.8): administrators list the zero-result searches of the last 1 to 90 days (default 30), grouped by the query text ignoring capital letters, with how often each was searched and when last, most frequent first, at most 100 rows.
+   It is a fixed-size report, not a list that scrolls, so it has a limit instead of pages; the existing index on zero-result rows serves it.
+6. **Cache tags and the helper other steps call.**
+   Every cached storefront answer carries the tag `catalogue` and the tags of what it shows:
+
+   | Tag | On | Invalidated when |
+   | --- | --- | --- |
+   | `product:{id}` | The product page | The product changes: details, price, stock, status, photos, rating |
+   | `product-slug:{slug}` | The product page at that address, also when nothing is on sale there, so a cached "not found" ends when the product is approved | The product at that address changes |
+   | `category:{id}` | Every list page of that category | A product in it or anywhere below it changes |
+   | `seller:{id}` | The pages of that seller's products | The seller's display name changes |
+   | `home` | The home page | Any published product changes |
+   | `catalogue` | Everything | Categories or brands change, or a seller is approved, suspended, or reinstated |
+   | `content:{slug}` | A content page (step 16) | The page is edited or published |
+
+   `invalidateStorefront(tx, change)` in `packages/core/src/modules/catalogue/storefront-cache.ts` records the tags for a change inside the caller's transaction, so the cache is refreshed only if the change commits, and it works the same in the web app and the worker:
+   - `{ productIds }`: each product's tag and address tag, the tags of its category and every category above it, and `home`.
+   - `{ sellerId }`: the seller's tag.
+   - `{ contentSlug }`: the content page's tag (step 16).
+   - `'everything'`: the `catalogue` tag.
+
+   `refreshProducts` (step 6) calls it for every product it rebuilds that has ever been published, so price, stock, photo, and approval changes are covered without each caller remembering.
+   Step 7's archiving, moving back to draft, and take-downs call it themselves, because they change a product on sale without rebuilding its summary.
+
+   A page that is not found, or a query that is not valid, is cached as an answer and thrown again outside the cache, because Next.js passes an error thrown inside `'use cache'` on without its class (and in production without its message), which made every 404 and 400 a 500.
+   Changes that do not go through `refreshProducts` call it themselves: category and brand changes (step 5) and seller approval, suspension, reinstatement, and display-name changes (step 4) do so in this step; step 7 must do so when it archives or hides a product without rebuilding its summary, and step 16 when a rating changes or a content page is published (with `{ contentSlug }`).
+   Because the helper runs inside the services' transactions, routes need no revalidation calls of their own, and a step that merges later only calls it in its own services.
+7. **How a recorded tag reaches every web container:** a new append-only table, `cache_invalidations` (tag and time), and a custom Next.js cache handler (`apps/web/src/cache-handler.ts`, set as `cacheHandlers.default`).
+   The handler keeps Next.js's own in-memory cache for the entries, and at most once a second, before a request that reads the cache, it reads the invalidations recorded since it last looked and expires those tags locally.
+   A `revalidateTag` call inside the web app is also written to the table, so every container hears about it.
+   This is how the worker refreshes pages it cannot reach, for example when order expiry (step 12) gives stock back, and how two web tasks stay in step, without Redis.
+   The handler also remembers exactly when it expired each tag and refuses an entry whose rendering started before then, because Next.js keeps that time rounded to the millisecond (see the smaller decisions).
+   A nightly worker job (`catalogue.clear-cache-invalidations`, 03:15 India time) deletes invalidations older than a day; every cached entry expires within a day anyway.
+   A change to more than 100 products at once, such as renaming a large category, records `catalogue` instead of a tag per product, so the log stays short.
+8. **Next.js caching switched on** (`cacheComponents: true`) with cached reader functions in `apps/web/src/lib/storefront.ts` (`'use cache'`, `cacheTag`, and a `storefront` `cacheLife` profile: refreshed at least every hour, never served after a day, and kept by the browser for 30 seconds).
+   The public API routes and the frontend's server-rendered pages call the same functions, so they share one cache.
+   Search results are never cached, because each search is logged and limited.
+   CloudFront caches only static files and photos and passes page HTML through, because it cannot see the tag invalidations (design doc sections 3.1, 7, and 11).
+9. **Product photos for `next/image`:** a `productPhotoLoader` in `apps/web/src/lib/` that picks the stored size (thumb, card, or gallery) closest above the width the browser asks for.
+   Photos stay pre-sized on the CDN as design doc section 7 says; Next.js never resizes them.
+10. **The visitor's address** is read from `X-Forwarded-For` by counting the trusted proxies from the right (`TRUSTED_PROXY_COUNT`, default 1 for the load balancer alone, 2 with CloudFront in front of it), because the leftmost value is whatever the visitor sent.
+    One helper in `packages/core/src/lib/client-address.ts` serves the search limit, audit entries, and the sign-in audit hook, which each had their own copy that trusted the leftmost value.
+11. **API:**
+
+    | Method and path | Who | What |
+    | --- | --- | --- |
+    | `GET /api/home` | Anyone | New arrivals and a row per top-level category |
+    | `GET /api/products/{slug}` | Anyone | One product page (the route folder is `api/products/[slug]`, so step 16's reviews go under `api/products/[slug]/reviews`, because Next.js refuses two different names at one level) |
+    | `GET /api/categories/{slug}/products?brand=&minPricePaise=&maxPricePaise=&includeOutOfStock=&sort=&cursor=&limit=` | Anyone | The category with its breadcrumbs and subcategories, and a page of its products |
+    | `GET /api/search?q=&category=&brand=&minPricePaise=&maxPricePaise=&includeOutOfStock=&sort=&cursor=&limit=` | Anyone | A page of keyword results, with the kind of match |
+    | `GET /api/admin/search/gaps?days=` | Administrator | The catalogue gap report |
+
+    Lists answer `{ items, nextCursor }` like every other list, with `category` added on category pages and `match` on search.
+    `q` is required, 1 to 100 characters after trimming.
+12. **Database changes:**
+    partial indexes for the storefront lists, all `WHERE status = 'approved' AND deleted_at IS NULL`, on `(category_id, published_at DESC, id DESC)`, `(category_id, min_price_paise, id)`, `(published_at DESC, id DESC)` for the home page, and `(brand_id)`, which had no index;
+    the two search functions above, in their own hand-written migration, runnable only by the web app and the worker;
+    and the `cache_invalidations` table with its index on the time, without row-level security because it holds no buyer or seller data, readable and writable by the web app and also deletable by the worker.
+13. **A 429 answer:** `TooManyRequestsError` (with an optional `resetAt`) in `packages/core/src/errors.ts`, turned into 429 with a `Retry-After` header by `handleErrors`.
+    Step 17 owns this error for the AI limits; this step carries an exact copy of step 17's version, so the merge keeps one.
+
+### Smaller decisions made in this step
+
+- **Storefront reads live in new files: `catalogue/storefront.ts` and `catalogue/storefront-types.ts`, and search in its own module.**
+  The listing steps (6, 7, 8) own `products.ts`, `types.ts`, and `images.ts`, so this step adds nothing to them.
+  The catalogue owns `products`, so the one product list query lives there; the search module turns a request into filters, logs it, limits it, and chooses the fallback.
+  If search ever moves to a dedicated engine (design doc section 9), only the search module changes.
+- **Out-of-stock products are hidden from lists by default** and shown with `includeOutOfStock=true`; their own pages always work and say they are out of stock.
+- **The price filter and the price sort use the price the card shows** (the lowest active variant price), so what a buyer filters by is what they see.
+- **A seller's name and approval are read through the sellers module** (a public-seller lookup and an "approved seller" condition it exports), because the sellers module owns its table.
+- **A hidden category hides its products everywhere:** product pages, lists, and search leave out products whose category or any category above it is inactive.
+- **No 60-second cache of the category tree** (design doc section 7 had one).
+  The tree is one small query, cached storefront answers keep their result, and an uncached read is never a minute behind an administrator's change.
+  Design doc section 7 is updated to say so.
+- **An approved product always has a `published_at`:** step 7's `products_approved_check` makes it a database rule, and lists and product pages also require one.
+  `createTestProduct` takes an optional `publishedAt`.
+- **Search logs are anonymous:** `user_id` and `session_id` stay empty.
+  The gap report needs only the words and the count, and an anonymous log is not personal data.
+- **Not-found answers are not cached,** so a product approved a moment ago is found at once.
+- **Page caching invalidates by "expire now" rather than "serve stale while refreshing",** because a stale price or stock level is worse than a slightly slower first visit.
+- **The tag sync re-reads the last minute of invalidations each time,** and applies each one once, so a change whose transaction commits a little after it recorded its tags is never missed.
+- **Search matches through two `SECURITY DEFINER` database functions.**
+  PostgreSQL never uses an index for an operator that is not marked "leakproof" on a table with row-level security, and the full-text (`@@`) and trigram (`<%`) operators are not, so as the web app's database user every search read every product on sale (measured: no index use even when forced).
+  The functions run the match as the table owner, like the existing `app.is_order_seller`, and return only the ids and ranks of products that visitors may see anyway: approved, not deleted, from an approved seller.
+  The storefront query joins them and still applies its own checks and row-level security.
+  On 20,000 products, a search for "bamboo spatula" takes 4 ms through the full-text index.
+- **The storefront queries were checked against 20,000 products from 200 sellers:** every category, home, and price-sorted page reads its index in order and takes under a millisecond.
+  The approved-seller check stays an `EXISTS`, which the planner handles best, and each sort names where nulls go so that PostgreSQL can read the index in order (forwards for newest and price low to high, backwards for price high to low).
+- **An empty result of the full-text match falls back to similar words only when nothing matched,** rather than blending the two, so exact matches are never pushed down by near misses.
+  The answer says `similar` only when that fallback found something, so an empty answer never claims to show similar words.
+- **The cache handler checks expiry times itself.**
+  Next.js's in-memory cache keeps the time a tag expired rounded to the millisecond, so a page read in the same millisecond, which is exactly what happens when the handler reads the log at the start of a request, sometimes came back with the old price (found in the end-to-end check, 1 time in 2).
+  The handler keeps the exact times and refuses any entry whose rendering started before its tag expired; a test repeats the race 30 times against Next.js's real cache.
+- **Next.js loads the cache handler on its own, outside the app's bundle,** so the handler uses only type-level TypeScript and a small entry point, `@ecokart/core/cache`, rather than the whole of `@ecokart/core`.
+  It keeps its own pool of 2 database connections.
+- **GET routes that read nothing from the request call `connection()`** (`/api/home`, `/api/categories`, and `/api/health`), and `/api/search` reads the request before opening the database.
+  With Cache Components, `next build` prerenders any GET route that reads no request data; CI builds without a database, so the build failed on `/api/categories`, and the health check would have been frozen as a permanent 503 (found by building without `.env`, as CI does).
+- **Route tests run outside Next.js,** where `cacheTag`, `cacheLife`, and `connection` refuse to run, so `apps/web/vitest.setup.ts` replaces them; caching itself is proven on a production build.
+
+### What changed for the frontend developer
+
+- `cacheComponents` is on for the whole app.
+  The admin settings page lost its `export const dynamic = 'force-dynamic'` line, which Cache Components refuses; nothing else in the existing pages changed.
+- GET route handlers that read nothing from the request are prerendered by `next build` under Cache Components; a new one that reads the database must call `await connection()` from `next/server` first, as `/api/categories` and `/api/health` now do.
+- Admin and seller pages are now partial prerenders: the static shell is sent at once and the signed-in part streams in.
+  A signed-out visit to `/admin` or `/seller` now answers 200 and redirects from inside the page (with a one-second refresh for browsers without JavaScript) instead of an HTTP 307; checked in the browser, it lands on `/sign-in?returnTo=...` as before.
+- New pages that read cookies, headers, or the session outside `<Suspense>` will fail `next build` with a "blocking route" message; wrap that part in `<Suspense>`, as the Next.js guide in `node_modules/next/dist/docs/01-app/01-getting-started/08-caching.md` explains.
+- Storefront pages should call `readProductPage`, `readCategoryPage`, and `readHomePage` from `apps/web/src/lib/storefront.ts`, which are cached and tagged, and show photos with `productPhotoLoader` and `photoSource` from `apps/web/src/lib/product-photos.ts`.
+
+### Not in this step
+
+- React pages for the storefront: the frontend developer builds them on these routes and the cached functions in `apps/web/src/lib/storefront.ts`.
+- Sorting by rating, and a rating filter (step 16, once reviews exist).
+- Filters on product attributes (for example material), because attributes are free-form seller text with no shared list of names and values.
+- Counts next to filters ("Bamboo Home (12)"), a total result count, and search suggestions as the buyer types.
+- Brand pages and seller storefront pages.
+- Banners and hand-picked products on the home page, which would need new tables.
+- Similar products on the product page (step 18 adds them to the product page answer).
+- Natural-language and image search (step 18).
+
+### Done when
+
+- On `pnpm dev`, through the real API: a visitor reads the home page, a category page with its subcategories' products, filters it by brand and price, sorts it by price, pages through it, opens a product, searches with a typo and gets similar results, and is refused with 429 after the per-address limit.
+- On a production build (`next build` and `next start`), with the cache on: a product page is served from the cache, a seller's price change shows on the next visit, a change made by the worker shows too, and an administrator sees the gap report.
+- Tests prove: what the public sees and does not see (each hidden case above, as an anonymous visitor and as a signed-in seller whose own drafts must not appear); each filter, sort, and their pages without repeats or gaps, including ties in price and time; both kinds of search match and their pages; the search log and the per-address limit; the gap report; the tags each change records, from the services of steps 4, 5, and 6 and from `refreshProducts`; the cache handler's tag sync across two handler instances; the photo loader; the address helper; and every API answer.
+- `pnpm check` passes.
+
+### Open points found in this step
+
+- **What the home page shows** is not defined by the design doc or the quotation; new arrivals plus a row per top-level category is built as a starting point the client may still change.
+- **Whether out-of-stock products are hidden from lists by default** is the client's choice; hiding them is built and is a one-line default to change.
+- **The CloudFront rule for page HTML** (pass it through, cache static files and photos) belongs in the infrastructure code when it is written.
+- **`TRUSTED_PROXY_COUNT` must match the hosting** (1 behind the load balancer alone, 2 with CloudFront in front); Better Auth's own rate limiter still needs the same setting when the hosting is set up (step 2's open point).
+
+## Step 10: Buyer addresses
+
+Status: Done (11 October 2026).
+
+### Goal
+
+A signed-in buyer keeps a small book of delivery addresses: they add, edit, and delete addresses and choose which one is the default.
+Checkout (step 12) takes one of them and copies it onto the order, so a later edit never changes a past order.
+
+For example, Asha saves her home in Pune (Maharashtra, state code 27), which becomes her default because it is her first address.
+She adds her office in Bengaluru (Karnataka, 29) and makes it the default, and home stops being the default in the same change.
+When she later deletes the office, home becomes the default again.
+
+### What gets built
+
+1. **Addresses** in a new module, `packages/core/src/modules/addresses/` (`service.ts` and `types.ts`), which owns the `addresses` table:
+   - **List** (the buyer): every address that is not deleted, the default first and then the newest first, as one answer.
+   - **Add** (the buyer): full name (up to 100 characters), a delivery phone, address line 1 (up to 200), an optional line 2 (up to 200) and landmark (up to 100), city (up to 100), state code, PIN code, and optionally `isDefault: true`.
+     The first address becomes the default whatever was sent.
+   - **Edit** (the buyer): any of those fields, and `isDefault: true` to make the address the default.
+     `isDefault: false` is refused with a plain message, because a buyer with addresses always has exactly one default; they make another address the default instead.
+     An empty change answers 400.
+   - **Delete** (the buyer): a soft delete (`deleted_at`), as design doc section 5.1 says for addresses.
+     If it was the default, the newest remaining address becomes the default.
+     A deleted address answers 404 from then on.
+   - **At most 20 addresses per buyer**, not counting deleted ones; adding a 21st answers 409 "delete one first".
+   - **Checks on each field:** the phone is an Indian mobile number (`+91` and ten digits starting with 6 to 9), the state code is one of the GST state codes below, and the PIN code has six digits and does not start with 0.
+     A blank line 2 or landmark (an empty string, as a form sends it) is stored as empty (null).
+2. **Exactly one default, even when two changes arrive at once.**
+   Every change first takes a lock for that buyer (a transaction-level advisory lock on their id), so two changes to one buyer's addresses run one after the other.
+   Two "add my first address" requests at the same moment leave exactly one default, and two adds at 19 addresses cannot make 21.
+   The existing unique index `addresses_one_default_per_user_idx` stays as the database's backstop.
+3. **Buyers only.**
+   The service refuses any request context other than `buyer` with 403, and every query also filters on the buyer's id, with row-level security (the owner or full access) as the safety net.
+   Another buyer's address answers 404, the same as one that does not exist, so an id reveals nothing.
+4. **For checkout (step 12):** `getShippingAddress(tx, buyerId, addressId)` returns one of the buyer's live addresses as the order's `ShippingAddressSnapshot` (full name, phone, line 1, line 2, landmark, city, state code, PIN code), or 404 for a deleted address or someone else's.
+   It takes the buyer's id rather than a request context, because checkout runs as `system`.
+5. **The list of GST state codes** in `packages/core/src/lib/states.ts`: the 36 states and union territories with their two-digit codes and names, for example 27 Maharashtra and 38 Ladakh, and `stateName(code)`.
+   The shared `stateCode` format in `validation.ts` now accepts only these codes, so addresses, sellers, and the company details all refuse codes such as 00 or 99, which only looked right because they had two digits.
+   Invoices (step 14) print the name next to the code.
+   The file imports nothing, so the browser can use it too (`@ecokart/core/states`), and the admin console now shows "Pune, Maharashtra" instead of "Pune, 27".
+6. **`requireBuyer`** in `apps/web/src/lib/request-context.ts`: a signed-in buyer, or 401 or 403.
+   Steps 11 to 13 use it too.
+7. **API** for the signed-in buyer:
+
+   | Method and path | What |
+   | --- | --- |
+   | `GET /api/account/addresses` | Every live address, the default first |
+   | `POST /api/account/addresses` | Add an address |
+   | `GET /api/account/addresses/{id}` | One address |
+   | `PATCH /api/account/addresses/{id}` | Edit an address, or make it the default |
+   | `DELETE /api/account/addresses/{id}` | Delete an address |
+
+   Adding answers 201 and deleting 204; every other answer is 200.
+   Each address comes back with its state name as well as its code.
+   Signed out answers 401, a seller or administrator 403, someone else's or a deleted address 404, input that breaks a rule 400 with the reasons, and a 21st address 409.
+8. **A test fixture,** `createTestAddress`, for the cart, checkout, and order tests of steps 11 to 13.
+
+### Smaller decisions made in this step
+
+- **The buyer's own API lives under `/api/account/`,** next to `/api/seller/` and `/api/admin/`.
+  What only a signed-in buyer has goes there: addresses now, and orders and returns in steps 13 and 15.
+  What a guest also uses keeps a path of its own, for example the cart at `/api/cart` in step 11.
+  Checkout is an action on the cart rather than something kept in the account, so it is `/api/checkout` (step 12), and Razorpay's webhook stays at `/api/webhooks/razorpay`.
+  So the buyer's routes are `/api/account/addresses`, `/api/cart`, `/api/checkout`, and `/api/account/orders`.
+- **A new `addresses` module** owns the table, and design doc section 4 lists it.
+- **The list is one answer, not pages,** because a buyer has at most 20 live addresses, like the category tree in step 5.
+  The existing index on `user_id` finds them.
+- **No database change.**
+  The columns, the checks (international phone format, two digits for the state code, six digits for the PIN code), the one-default index, row-level security, the grants (the web app may not DELETE rows, which matches soft delete), and the `updated_at` trigger all came with step 1.
+  The stricter rules (Indian mobile, the state list, text lengths) are checked in the service, and the database keeps its broader checks, so a new state or union territory needs only a code change.
+- **An advisory lock, not row locks,** serialises one buyer's changes.
+  Locking the buyer's address rows cannot stop two "first address" requests, because there are no rows to lock yet.
+- **Edits change the row in place.**
+  Nothing refers to an address by foreign key, and an order copies the address into `orders.shipping_address` at checkout, so editing or deleting an address never changes a past order.
+- **The delivery phone must be an Indian mobile number,** because couriers call or text the person receiving the parcel.
+  It is asked for each address, rather than taken from the account, because a gift may go to someone else.
+- **Address changes are not written to `audit_logs`,** which is for administrator actions, as with seller listing edits in step 6.
+- **The state list leaves out codes no delivery address can have:** 97 (Other Territory, for offshore areas), and the retired 25 (Daman and Diu, merged into 26 in 2020) and 28 (Andhra Pradesh before 2014, now 37).
+
+### Not in this step
+
+- Address screens in the storefront; the frontend comes after the backend steps.
+- Checking the PIN code against the state, and limiting delivery to some PIN codes or states (see the open points).
+- Profile editing, and linking an email and a phone number to one account: a small step of its own after step 13 (see the open points).
+- Administrators reading or changing buyers' address books; every order keeps its own copy of the address, which step 13 shows.
+
+### Done when
+
+- On `pnpm dev`, through the real API: a buyer signs in with an email code, adds a first address that becomes the default, adds a second and makes it the default, edits the first, deletes the default and sees the other become the default again, and a seller is refused.
+- Tests prove: every field rule and the state list; the first address becoming the default; switching the default; the newest address taking over when the default is deleted; the limit of 20; the empty change; that one buyer can never read, change, or delete another's address; that two changes at the same moment leave exactly one default and never more than 20 addresses; `getShippingAddress` for a live, a deleted, and another buyer's address; the stricter `stateCode` for sellers and company details; and every API answer (200, 201, 204, 400, 401, 403, 404, 409).
+- `pnpm check` passes.
+
+### Open points found in this step
+
+- A delivery phone must be an Indian mobile number, as built (agreed with the project lead on 12 October 2026).
+  The client still has to confirm it; design doc section 11 lists it.
+  Accepting any phone number in international format instead would change one rule in `modules/addresses/types.ts` and its tests.
+- The chartered accountant should confirm the state list: 36 codes, leaving out 97, 25, and 28.
+- Delivery is open to every PIN code in India.
+  If the client's couriers cannot reach some areas, a list of serviceable PIN codes can be added when the courier is chosen.
+- A buyer who picks the wrong state gets the wrong kind of GST on the invoice (CGST plus SGST instead of IGST, or the other way round).
+  The PIN code's first digit names its postal region, so comparing it with the state would catch most such mistakes, but some border villages are served by a post office in the next state, so a strict check could refuse real addresses.
+  Suggested for after launch: fill in the state from the PIN code using India Post's directory.
+- Timeline week 3 lists buyer profile editing next to saved addresses, but step 2 left it out.
+  Decided 12 October 2026: it is not part of this step, and becomes a small step of its own after step 13.
+  Changing one's own name already works through Better Auth (`POST /api/auth/update-user`).
+  That step adds a phone number to an email account and an email to a phone account, each confirmed with a code sent to it.
+  It also closes a gap found here: Better Auth's phone plugin refuses a new phone number through `update-user` but accepts `phoneNumber: null`, so a buyer who signed up with a phone number could remove the only way they can sign in.
+
+## Step 14: GST invoices and PDFs
+
+Status: Done (12 October 2026).
+The decisions below were taken on 12 October 2026 with the recommended options; the client's chartered accountant still confirms the format (open points).
+
+### Goal
+
+Every confirmed order gets one GST invoice from each seller in it, numbered from that seller's own sequence, with everything the invoice prints frozen at the moment it is issued.
+The worker turns each invoice into a PDF, and the buyer, the issuing seller, and administrators download it through a link that works for five minutes.
+
+For example, Asha in Pune orders a bamboo toothbrush pack from Green Basket (Maharashtra) and a steel bottle from Bamboo Home (Karnataka).
+When her payment is confirmed, Green Basket issues invoice `GRB/2627/000041` with CGST and SGST, because seller and buyer are both in Maharashtra, and Bamboo Home issues `BMH/2627/000007` with IGST, because the bottle crosses a state border.
+A minute later both PDFs are ready.
+Asha downloads both from her order, and each seller sees only their own invoice in their invoice list.
+
+### What gets built
+
+1. **Issuing invoices** with `issueInvoices` in `packages/core/src/modules/invoices/service.ts`.
+   Payment confirmation (`confirmOrderPayment`, step 12) calls it inside its own transaction, after it marks the order `confirmed`; cash on delivery confirms at checkout, so checkout calls it there.
+   The transaction runs as `system` and already holds the order's row lock, so two confirmations of one order take turns.
+   The `orders`, `order_items`, and `payments` tables belong to the orders and payments modules, so the caller hands over the order's frozen details and the invoices module never reads those tables.
+   For each seller in the order, in order of seller id, it:
+   - takes the seller's next invoice number (item 2);
+   - freezes what the invoice prints: the seller's legal name, trade name, GSTIN, address with state name and code, and support contacts; the buyer's name and delivery address with state name and code; the order number, order date, and payment method; and the seller's order lines;
+   - also freezes the buyer's account id, which is never printed, so the invoices module can tell who may download the invoice without reading the orders tables;
+   - chooses the tax split: CGST plus SGST when the seller's state code equals the delivery address's state code, and IGST otherwise, with the delivery state as the place of supply;
+   - saves the `invoices` row and queues its PDF job in the same transaction.
+
+   Running it again for the same order issues nothing new and returns the invoices that exist, so a replayed confirmation can never use up a second number.
+   The signature is fixed now, so step 12 can rely on it:
+
+   ```ts
+   issueInvoices(tx: Transaction, queue: JobQueue, order: OrderToInvoice): Promise<IssuedInvoice[]>
+
+   interface OrderToInvoice {
+     orderId: string
+     orderNumber: string
+     placedAt: Date
+     paymentMethod: 'razorpay' | 'cod'
+     buyer: {
+       userId: string
+       name: string                            // orders.buyer_name
+       shippingAddress: ShippingAddressSnapshot // orders.shipping_address; the phone is not printed
+     }
+     // The lines to invoice, in the order the buyer sees them, without cancelled ones.
+     // Rows of order_items fit as they are.
+     lines: {
+       id: string; sellerId: string; title: string; sku: string; options: Record<string, string>
+       hsnCode: string; gstRateBps: number; unitPricePaise: number; quantity: number
+       lineTotalPaise: number; discountSharePaise: number; taxablePaise: number; taxPaise: number
+     }[]
+   }
+   // IssuedInvoice is { id: string; sellerId: string; invoiceNumber: string }
+   ```
+
+   The input is checked against this shape, so a mistake in the caller fails loudly instead of printing a wrong invoice.
+
+2. **Invoice numbers** come from the seller's own sequence (`sellers.invoice_seq` and `invoice_seq_fy`), through `takeInvoiceNumber`, added at the end of `modules/sellers/service.ts` because the sellers module owns those columns.
+   It is one conditional `UPDATE` that adds one to the sequence, or starts again at 1 when the Indian financial year (1 April to 31 March, counted in Asia/Kolkata) has changed, and returns the seller's details in the same statement.
+   The row lock it takes makes two confirmations for the same seller wait for each other, so numbers follow each other with no gaps and no repeats, and a confirmation that rolls back gives its number back.
+   The sequence never goes back to 0, which step 4's rule for changing the prefix depends on, and never moves back to an earlier year.
+   The format is `{prefix}/{financial year}/{sequence}`, for example `GRB/2627/000041` for Green Basket's 41st invoice of 2026-27: a prefix of 1 to 4 capital letters or digits, the year as four digits, and a six-digit sequence (999,999 invoices a year per seller).
+   That is at most 16 characters, as GST Rule 46 requires; the design's year written as `2026-27` would have reached 21.
+   Seller invoice prefixes are therefore at most 4 characters (step 4 allowed 6): creating or editing a seller with a longer one answers 400 with "invoicePrefix must be 1 to 4 capital letters or digits", and the database refuses it too.
+   Decided 12 October 2026; the chartered accountant confirms (open point 1).
+3. **Invoice lines** keep the order line's frozen values: title, options, SKU, HSN code, quantity, unit price, discount share, taxable value, GST rate, tax, and total.
+   Within one state, the tax of each line is split in two: CGST is half the line's tax rounded down to the paisa, and SGST is the rest, so the two always add up to the tax frozen on the order line.
+   For example, a line with ₹76.27 of tax shows CGST ₹38.13 and SGST ₹38.14.
+   The invoice totals are the sums of its lines.
+4. **The PDF** is made by a worker job (`invoices.render-pdf`) from the invoice row alone, with a template that is plain data, so the layout can change without touching order data (design doc section 10).
+   It prints:
+   - the title: "Tax Invoice", or "Bill of Supply" when every line is at 0% GST, or "Invoice-cum-Bill of Supply" when only some are;
+   - the invoice number and date, the order number and date, and the payment method;
+   - the seller (sold by) and the buyer (bill to and ship to), each with state name and code;
+   - the place of supply, and that tax is not payable on reverse charge;
+   - the lines with HSN codes, rates, and tax, then the totals and the total in words in Indian numbering, for example "Rupees One Lakh Two Thousand and Fifty Paise Only";
+   - a note that the invoice is computer generated, the authorised signatory line, and page numbers.
+
+   The file is stored privately at `invoices/{sellerId}/{invoiceId}.pdf` (`-cancelled.pdf` once cancelled, item 8), and `pdf_storage_key` is set once it is written.
+   A failed attempt is retried five times over about fifteen minutes.
+   The PDF library is pdfmake 0.3, loaded only from `@ecokart/core/worker`, with the Noto Sans font, which has the rupee sign.
+5. **Downloads through a short-lived signed link:** a new `ObjectStorage.createDownloadUrl(key, { expiresInSeconds, fileName })` signs a download of one private object and tells the browser to save it as `fileName`.
+   Invoice links last five minutes.
+   Step 8's import error report and step 15's statements use the same method.
+6. **Who sees an invoice:** the buyer of the order (by the account id frozen in the invoice), the issuing seller, and administrators, checked in the service and again by row-level security.
+   Anyone else gets 404 for an invoice and an empty list for an order, so neither reveals anything.
+   A seller never sees another seller's invoice, even for the same order.
+7. **Making a PDF again** (administrators): queues the PDF job again for one invoice, for example after the template changes, with the audit entry `invoice.render`.
+   The frozen data never changes, only the file.
+8. **Cancelling invoices** with `cancelInvoices`, for an order cancelled before dispatch (decided 12 October 2026).
+   Step 13's cancellation calls it inside its own transaction, which runs as `system` and holds the order's row lock:
+
+   ```ts
+   cancelInvoices(tx: Transaction, queue: JobQueue, input: { orderId: string; reason: string }): Promise<IssuedInvoice[]>
+   // reason: 1 to 500 characters, printed on the PDF, for example "Cancelled by the buyer before dispatch"
+   // returns the invoices this call cancelled; none when they were cancelled already
+   ```
+
+   It marks every invoice of the order cancelled, with the time and reason, and keeps its number used, as GST requires; GST returns list such invoices as cancelled.
+   Each PDF is made again with a "This invoice is cancelled" notice, the date and reason, and a light "CANCELLED" mark across the page.
+   Until the new PDF exists, the old one cannot be downloaded (409), and the invoice lists show the cancellation.
+   Calling it again changes nothing, and an order whose invoices were cancelled is never invoiced again.
+   GST credit notes for returns stay out of scope, as quotation 4.0 defers them.
+9. **API:**
+
+   | Method and path | Who | What |
+   | --- | --- | --- |
+   | `GET /api/invoices?orderId=` | Anyone signed in | The order's invoices the caller may see, each saying whether its PDF is ready and whether it was cancelled; an empty list for anyone else |
+   | `GET /api/invoices/{id}/pdf` | The buyer, the issuing seller, an administrator | Redirects (302) to a five-minute signed link to the PDF; 409 while the PDF is still being made |
+   | `GET /api/seller/invoices?cursor=&limit=` | The seller | Their own invoices, newest first, 20 a page by default and at most 100 |
+   | `POST /api/admin/invoices/{id}/render` | Administrator | Makes the PDF again (202) |
+
+10. **Database changes,** in three migrations:
+    - `0013_invoice_rules`: an index on `invoices (seller_id, issued_at, id)` for the seller's list; checks that an invoice number is at most 16 capital letters, digits, `/`, or `-`, and that `lines` is a list with at least one line; and a check that a seller who has ever been approved keeps a GSTIN and a PAN.
+      That last check closes a gap in step 4: a suspended seller's GSTIN could be removed and the seller then reinstated without one, which would make an approved seller who cannot issue invoices; `updateSeller` now refuses that removal too.
+    - `0014_invoice_prefix_length_guard` (hand-written): stops `pnpm db:migrate` with a plain message naming any seller whose prefix is longer than 4 characters, without changing any data.
+      An administrator gives each a shorter prefix (allowed until the seller's first invoice), and the migration then runs.
+    - `0015_invoice_prefix_and_cancellation`: invoice prefixes of 1 to 4 characters, and `invoices.cancelled_at` and `cancel_reason`, set together or not at all.
+
+### Smaller decisions made in this step
+
+- **The invoice row and its number are created in the confirmation transaction, and only the PDF waits for the worker.**
+  Design doc 6.6 takes the number inside the confirmation transaction, and 6.3 step 7 says confirmation "queues one invoice per seller"; this reads the two together.
+  A number taken in a background job could leave a gap when the job failed, and GST needs numbers without gaps.
+- **Locks are always taken in the same order:** the order row first (taken by the caller), then each seller's row in order of seller id, so two confirmations that share sellers never deadlock.
+- **A caller that forgets the order's lock cannot number an order twice.**
+  The unique rule of one invoice per order and seller refuses the second confirmation with a 409, and its number goes back with its rollback.
+- **The invoice date is the time of the confirmation transaction,** and the financial year comes from that time in Asia/Kolkata.
+  A confirmation that started at 23:59:59 on 31 March and reaches the sequence after one dated 1 April is refused with a 409 instead of being numbered in the wrong year, and its retry is numbered in the new year.
+  This can happen only within the same second around midnight.
+- **The seller's details are read while their sequence row is locked,** so the invoice shows the details valid at that moment, and later edits never change it.
+- **The buyer's phone number and email are not printed.**
+  GST does not ask for them, and buyers pass invoices on, for example for a warranty claim.
+- **State names** come from the platform's list of GST state codes (`lib/states.ts`, step 10) and are frozen into the invoice, so a later rename never changes an issued invoice.
+- **Invoice lines follow the order the caller gives them,** which is the order the buyer sees.
+- **`issueInvoices` checks that its transaction runs with full access** and stops with a clear error otherwise.
+  Row-level security would hide the sellers' sequence rows from any other context, and the numbering would then fail with a misleading message.
+- **pdfmake rather than PDFKit on its own.**
+  A pdfmake document is plain data, so the template is a function that tests can check without making a PDF, and pdfmake breaks long tables across pages and repeats their header row.
+  It uses PDFKit underneath.
+  It may read only the font files and never fetches anything from the network.
+- **pdfmake's type definitions are patched** (`patches/` and `patchedDependencies` in `pnpm-workspace.yaml`) to drop their reference to the browser's DOM types.
+  That reference made the browser's globals available to every Node file in `packages/core` and broke two existing tests' types.
+- **Tests read the text back out of each PDF** with unpdf (a test-only dependency), so they check what a reader sees, rupee sign included, not only the data that went in.
+- **The fonts are committed** in `packages/core/assets/fonts/` with their licence (SIL Open Font License), taken from the Noto project's official repository.
+  They are the unhinted files, about 430 KB each, because a PDF has no use for hinting.
+- **A PDF made again replaces the old file at the same address,** so the invoice keeps one file for each state.
+- **A cancelled invoice's PDF is a file of its own,** and the job records a file only if the invoice is still in the state the file shows.
+  Otherwise a PDF made just before the cancellation could finish last and replace the cancelled one.
+- **`pnpm db:migrate` prints the database's own message first** when a migration fails, so a migration's plain explanation, such as the prefix guard's, is the first line instead of being buried under the migration's SQL.
+- **Tests count out invoice prefixes** from a sequence that only test databases have, because random 4-character prefixes would collide now and then between test files running at once.
+- **A failed PDF is not recorded on the invoice.**
+  The job retries, and the worker logs the invoice id when it gives up.
+  Until the file exists, the invoice list shows it as not ready and the download answers 409, and an administrator can make it again.
+
+### Not in this step
+
+- Calling `issueInvoices` from payment confirmation and from cash on delivery checkout (step 12).
+  Whichever of steps 12 and 14 merges second adds that one call.
+  Until then, tests and the end-to-end check issue invoices for orders made with the test fixture, the same way step 12 will (`orderToInvoiceFor` in the test fixtures builds the input from the order's rows).
+- Showing invoices on the order screens (step 13); `listOrderInvoices` is ready for them.
+- GST credit notes, which quotation 4.0 defers to a later phase (its section 7).
+  A return is refunded in Razorpay and recorded in EcoKart (step 15), and the seller raises any credit note in their own accounts.
+- Calling `cancelInvoices` from order cancellation (step 13).
+- EcoKart's own invoices, for the delivery charge to buyers and for commission to sellers (open point 3).
+- Emailing invoices; buyers download them from their order.
+- Invoices to business buyers with a GSTIN; the launch sells to consumers.
+- E-invoicing (IRN and QR code), which applies only to sellers with a turnover above ₹5 crore.
+
+### Done when
+
+- On `pnpm dev`, the way step 12 will do it: an order delivered in Maharashtra, with lines from a Maharashtra seller and a Karnataka seller, gets two invoices, one with CGST and SGST and one with IGST, numbered from each seller's sequence.
+  The worker writes both PDFs, the buyer lists and downloads them through the API, and the PDF opens and reads correctly, rupee sign included.
+  Each seller lists and downloads only their own, another buyer gets 404, and an administrator makes one again.
+  When the order is cancelled the way step 13 will do it, both invoices are marked cancelled and their PDFs say so.
+- An administrator creating a seller with a 5-character prefix gets a 400 with a plain message, and on a copy of a database with such a seller, `pnpm db:migrate` stops with a message naming it and runs once its prefix is shortened.
+- Tests prove: numbering per seller and per year, including the reset to 1 in a new year and refusing an earlier year; two confirmations racing for one seller's number get consecutive numbers; two confirmations of the same order make one set of invoices, and without the order's lock the second is refused; two orders sharing two sellers never deadlock; cancelling marks every invoice, keeps the numbers, makes the PDFs again, changes nothing a second time, and a PDF made just before a cancellation never replaces the cancelled one; the frozen details do not change when the seller or product changes later; the tax split, its rounding, and the totals; the document titles; amounts in words; the PDF's contents; the signed link against real object storage; who can see what, in the service and in row-level security; and every API answer.
+- `pnpm check` passes.
+
+### Open points found in this step
+
+1. **The invoice number format** `GRB/2627/000041`, with prefixes of at most 4 characters, was decided on 12 October 2026 over the alternative `GREENB/26/000041`.
+   The chartered accountant should still confirm it before the first real invoice.
+2. **Invoices of cancelled orders** are marked cancelled, keep their numbers, and get a new PDF that says so (decided 12 October 2026).
+   The chartered accountant should confirm that this, rather than a credit note, suits orders cancelled before dispatch.
+3. **EcoKart's own invoices,** decided on 12 October 2026 to be outside step 14 and left to the client's chartered accountant.
+   If the delivery charge belongs to EcoKart (design doc section 11), EcoKart supplies the delivery and should invoice it to the buyer with GST; and the commission EcoKart charges sellers normally needs an invoice to each seller.
+   Neither is in the quotation or the design doc.
+4. **For the chartered accountant to confirm:** the printed fields and layout; the rounding of the CGST and SGST split; the "Bill of Supply" and "Invoice-cum-Bill of Supply" titles for 0% lines, numbered in the same series; the note that the invoice is computer generated instead of a signature; and quantities printed without a unit, because the catalogue does not record units.
+5. **Coupon discounts** lower the taxable value on the seller's invoice, as the order lines record them.
+   If EcoKart pays for a coupon rather than the seller, the chartered accountant should confirm this.
+6. **Names and addresses in Hindi.**
+   Noto Sans has no Devanagari letters, so a name or address typed in Hindi would print as empty boxes.
+   Supporting it means switching fonts letter by letter; a post-launch item unless the client expects Hindi addresses at launch.
+7. **Tax collected at source.**
+   As a marketplace, EcoKart must collect tax at source (TCS) on sellers' sales and file its own return for it (CGST Act section 52).
+   It does not change the seller's invoice, but it changes what each seller is paid, so the chartered accountant should confirm it before step 15 builds the settlement statement.
+
+## Step 17: AI client, request log, cache, and daily limits
+
+Status: Done (12 October 2026).
+
+### Goal
+
+Every AI feature in steps 18 to 20 reaches the models through one small client, and every call goes through one service that answers repeated questions from the cache, enforces the daily limits, and writes the call to `ai_requests` with its tokens, cost, and time.
+No AI feature is switched on in this step; it builds the road the later ones drive on.
+
+For example, in step 19 Ravi from Green Basket asks for a listing draft from three photos.
+The draft job finds that Green Basket has made 37 of its 100 calls today and the platform 812 of its 2000, records the call as `running`, sends the photos to DeepSeek V4.1 Flash through OpenRouter, checks the JSON reply against the draft's shape, and records the answer with its 2,140 input tokens, 380 output tokens, cost, and 4.2 seconds.
+Green Basket's 101st call of the day is refused with 429, "You have used today’s 100 AI calls; more are available after midnight India time", and nobody is called.
+
+### What gets built
+
+1. **A general "too many requests" error** in `packages/core/src/errors.ts`, for every limit in the app, not only AI.
+   - `new TooManyRequestsError(message, { resetAt })`, where `resetAt` (a `Date`, optional) is when the limit allows the next try.
+   - `handleErrors` answers 429 with `{ "error": message }`, and, when `resetAt` is given, a `Retry-After` header with the whole seconds until then (at least 1).
+   - The storefront lane's per-address search limit and the buyer lane's checkout limit throw the same error with the `resetAt` that `consumeRateLimit` returns.
+2. **One OpenAI-compatible HTTP client** in `packages/core/src/lib/ai/`, with no vendor SDK (design doc 3.2 and 4):
+   - `client.ts` posts JSON to `{base URL}/chat/completions` and `{base URL}/embeddings` with the API key and a time limit per call: 60 seconds unless the caller asks for less, for example a few seconds on a request-time path.
+     Every failure (no answer in time, a network error, or an error status) becomes an `AiProviderError` with a plain message: the provider's status and its own error text, never the key or the prompt.
+     The client does not retry these itself: jobs are retried by the queue, and request-time paths fall back instead of waiting.
+   - `chat.ts` has `TextModel.json(prompt, schema)` and `VisionModel.describe(images, prompt, schema)`.
+     A prompt is a system instruction, the user's text, and an example of the answer's shape.
+     The client adds one fixed line asking for a single JSON object shaped like the example, so every prompt contains the word "json" and an example, as DeepSeek's JSON mode requires.
+     The request asks for JSON mode (`response_format: { "type": "json_object" }`) and caps the answer at 2,000 tokens unless the caller sets another cap.
+     The reply is parsed and checked against the zod schema.
+     If it is not JSON, does not fit the schema, or was cut off at the cap, the client asks once more, showing the model its reply and what was wrong with it.
+     A second bad reply throws `AiReplyError`, so an unchecked answer is never returned.
+     Images are sent as `image_url` parts with the addresses the caller gives, which in production are the card-size photos on CloudFront.
+     Both return the checked answer with its usage: input and output tokens over both tries, and the cost when the provider reports one.
+   - `embed.ts` has `Embedder.embed(inputs, { inputType })`, which returns one vector per input; an input is a text or an image address.
+     It sends `input_type` (`search_document` for catalogue items, `search_query` for buyer queries) and `dimensions`, as OpenRouter's embeddings endpoint takes them.
+     A batch of only texts is sent as plain strings, which every OpenAI-compatible provider accepts; a batch with images uses the multimodal `content` form.
+     Every vector is checked to have exactly the configured size.
+   - `index.ts` has `createAiModels(settings)`, which builds the three from the AI settings.
+3. **The AI service** in `packages/core/src/modules/ai/service.ts`: `callAi(db, context, models, call)`, which every AI feature uses.
+   The call names its feature, which model it uses (text, vision, or embeddings), its seller and user if any, its input, how long a stored answer may be reused, the answer's schema, and the function that asks the model.
+   1. If AI is switched off, it stops with `NotConfiguredError` (503), "AI features are switched off".
+   2. **Cache.** The input hash is SHA-256 of the feature, the model, and the caller's input with its object keys sorted, so the same input always gives the same hash.
+      Callers put their prompt text in the input, so changing a prompt also changes the hash.
+      A `succeeded` row with the same feature and hash, for the same seller and user, and not older than the caller's cache lifetime, is returned without calling the model and without a new row.
+      Its stored answer is checked against the schema again, and an answer that no longer fits is treated as missing.
+      A call that gives no cache lifetime is never answered from the cache.
+   3. **Limits.** In one short transaction it takes an advisory lock, counts today's calls for the platform and for the seller, refuses with `TooManyRequestsError` if either limit is used up, and otherwise writes the row as `running`.
+      Counting and writing under one lock means two calls racing for the last call of the day cannot both get it.
+   4. The model is called after that transaction has committed, never inside it.
+   5. A second short transaction records `succeeded` with the answer, or `failed` with the error, together with the tokens, the cost in millionths of a US dollar (`cost_micro_usd`, empty when the provider reports none), the time taken, and `completed_at`.
+      The error is then thrown on to the caller.
+4. **Rules for the daily limits:**
+   - A day runs from midnight to midnight India time (Asia/Kolkata), so the limits reset when the sellers' day starts, not at 5:30 in the morning.
+     The refusal's `resetAt` is the next midnight India time.
+   - Every row in `ai_requests` is one call against the limits on the day it was created, whatever happened to it, because a failed call still reached the provider.
+     A cache hit costs nothing and is neither written nor counted.
+     A row whose answer needed the second try is still one call.
+   - What each feature counts against is fixed in one table in `modules/ai/service.ts` (`LIMIT_RULES`), for every value `ai_requests.feature` allows, so no later step needs to change the limit logic and no caller can leave a call out of a limit.
+     A test fails if the database allows a feature the table does not cover.
+   - A feature that counts against the seller must name its seller, or the call stops with a programming error.
+     A seller named on any other call only decides who may see the row and whose cache it uses.
+   - A limit of 0 switches that kind of call off.
+
+   | Feature | Step | Counts against | Row visible to |
+   | --- | --- | --- | --- |
+   | `listing_draft` | 19 | The seller and the platform | The seller |
+   | `import_mapping`, `import_fill` | 19 | The seller and the platform | The seller |
+   | `screening` | 20 | The platform only, so a seller who used up their calls can still submit for review | The seller (the row names them) and administrators |
+   | `nl_search`, `image_search`, `similar`, `assistant` | 18, 20 | The platform only | Shared (no seller, no user) |
+   | `embedding` | 18 | Nothing, but logged with its cost | Decided in step 18 |
+   | Any cache hit | All | Nothing, and no row is written | |
+
+   Buyer-facing calls carry no user id, so their answers are shared through the cache (for example one parsed "steel bottle under 500" serves every buyer for a day) and the log holds no buyer identity.
+   Per-address limits on those endpoints (design doc section 8) come with steps 18 and 20.
+5. **Database changes,** in two generated migrations and one hand-written one:
+   - The single `web_all` policy on `ai_requests` is split into `web_select` (unchanged: shared rows, the user's own, the seller's own, and full access), and `web_insert` and `web_update`, which allow the web app to write only rows that are still `queued` or `running`.
+     Once an answer is stored, the web app can no longer change it, so a mistake in any request path cannot overwrite a cached answer that other buyers would then be served.
+     The worker and administrators keep full access.
+   - `app.ai_calls_since(since, seller, platform features, seller features)`, a `SECURITY DEFINER` function that returns two numbers: the platform's and the seller's calls since a time, each counting only the features that count against it.
+     It is needed because row-level security lets a buyer's request see only shared rows and its own, so a count made from that request would be too low.
+     It never returns any row's content.
+   - `cost_micro_inr` is replaced by `cost_micro_usd`, because OpenRouter reports the cost in its credits, which are US dollars.
+   - The migrations are `0016_ai_request_policies_and_cost` (adds the new column and policies), `0017_ai_daily_usage` (the counting function), and `0018_ai_requests_drop_old` (drops the old column and `web_all`).
+6. **A fake AI server for tests,** `startFakeAiServer()` in `@ecokart/core/testing`.
+   It answers `/chat/completions` and `/embeddings` in OpenRouter's format with the replies a test chooses, checks the API key, and records every request, so steps 18 to 20 are tested without a key or the network.
+   Next to it, `rejectionOf(call, ErrorClass)` returns the error a call failed with, already typed, so tests check its fields without casts.
+7. **Configuration and startup checks:** `loadAiConfig` in `packages/core/src/lib/ai/config.ts` reads the variables from design doc 3.2, and the web app (`apps/web/src/lib/settings.ts`) and the worker (`apps/worker/src/main.ts`, which passes the result to the jobs as `WorkerOptions.ai`) call it when they start, so a deploy with a wrong AI setting stops instead of failing on its first AI call.
+
+   | Variable | Rule |
+   | --- | --- |
+   | `AI_ENABLED` | Required, `true` or `false`. `false` switches every AI feature off: calls answer 503 "AI features are switched off", and the other AI variables are not read. |
+   | `AI_BASE_URL` | An address; in production `https` and not a local address, so the key is never sent in the clear and the test server can never be used |
+   | `AI_API_KEY` | At least 16 characters, and not a `development-only` example in production |
+   | `AI_CHAT_MODEL`, `AI_VISION_MODEL`, `AI_EMBED_MODEL` | Model names, for example `deepseek/deepseek-v4.1-flash` |
+   | `AI_EMBED_DIMENSIONS` | Must be 1024, the size of the `product_embeddings` column, because a different size would only fail when the first vector is stored |
+   | `AI_EMBED_BASE_URL`, `AI_EMBED_API_KEY` | Optional and set together; without them embeddings use the chat endpoint |
+
+   With `AI_ENABLED=true`, every missing variable is named in one message, for example "AI_API_KEY is required when AI_ENABLED is true", and an empty line in a `.env` file counts as missing.
+   The `.env.example` files of both programs hold the OpenRouter values with `AI_ENABLED=false`.
+   The `provider` written on each row comes from the base URL: `openrouter` for openrouter.ai, `deepseek` for api.deepseek.com, `local` for a local address, and the host name otherwise.
+8. **An administrator usage report,** `GET /api/admin/ai/usage?from=YYYY-MM-DD&to=YYYY-MM-DD` (India dates, the last 30 days by default, at most 92 days).
+   For each day and feature it gives the calls, the failed calls, the input and output tokens, and the cost, and it gives today's platform calls next to the platform limit.
+   This is the cost report from design doc 5.12, and the place where an administrator sees the limits working.
+
+### Smaller decisions made in this step
+
+- **The AI switch is its own variable** (decided 12 October 2026), `AI_ENABLED`, required in every environment.
+  Without it, a key missing in production would switch AI off and nobody would notice; with it, AI can still be switched off on purpose, for example at launch before the key arrives.
+- **Cost is stored in US dollars, as reported** (decided 12 October 2026), in whole millionths of a dollar like every other stored amount.
+  A chat call costs a few hundred millionths and a short embedding about two, so rounding moves each row by at most half a millionth and the report's totals stay accurate to far less than a cent.
+  Converting at a stored exchange rate was the alternative, but an old rate would quietly misstate every cost.
+- **Embeddings do not count against the daily call limits** (decided 12 October 2026).
+  One approved import of a few hundred products needs thousands of them, which alone would use up the platform's 2000 calls, while even 100,000 embeddings cost about $4.
+  They are still logged with their cost, and the OpenRouter credit limit stays the hard cap.
+- **JSON mode, not schema-enforced output** (decided 12 October 2026).
+  OpenRouter lists DeepSeek's own endpoint, which our routing prefers, with JSON mode but without schema-enforced output, so the schema would mostly be ignored.
+  Every answer is checked against its schema in code, which AGENTS.md requires anyway.
+- **The model's name is part of the cache key,** so moving to another model never serves an answer from the old one.
+- **Who writes a `queued` row** (an open question from planning, needed by steps 8, 19, and 20): the web app, in the same transaction that queues the job, so the seller's screen can follow the row's status and a used-up limit is refused at once with 429 instead of failing later in the worker.
+  The worker then runs that row.
+  Step 19 adds this on top of the same limit check; step 17 builds only calls that run at once.
+- **A call that reaches a used-up limit inside a job** gets the same `TooManyRequestsError` with `resetAt`; each job in steps 18 to 20 decides whether to wait until then (pg-boss `startAfter`) or fail visibly.
+- **The AI settings have their own loader in their own file** (`lib/ai/config.ts`), and their own lines in each program's startup check, so the Razorpay settings of step 12 can be added next to them without touching the same lines.
+- **The limit tests write the default number of calls** (100 for a seller, 2000 for the platform) instead of saving smaller limits, because the settings tests own `platform_settings` and empty it before each test.
+- **The client sets no routing or data policy in its requests.**
+  OpenRouter's data policy and the preference for DeepSeek's own endpoint are set on the client's OpenRouter account (design doc 3.2), so the same requests also work against DeepSeek directly.
+
+### Not in this step
+
+- Any AI feature: embeddings and search (step 18), the listing builder and import mapping (step 19), screening and the shopping assistant (step 20).
+- `queued` rows and running them in the worker (step 19).
+- Sending local photos inline: OpenRouter cannot reach `http://localhost:8333`, so steps 18 and 19 send a photo on a local address as a data URL when the AI base URL is not local.
+- Per-address limits on the AI endpoints (steps 18 and 20).
+- Screens for the usage report; the frontend comes after the backend steps.
+- Clearing old `ai_requests` rows; at a few thousand rows a day the table stays small for years.
+
+### Done when
+
+- On `pnpm dev`, both programs start with AI switched off and with AI pointed at the fake server, and refuse to start with a wrong AI setting, naming the variable.
+- Through the real API, an administrator reads the usage report after calls made through the service, and a buyer is refused.
+- Tests prove: the cost is recorded in millionths of a dollar and added up in the report; JSON replies are checked, retried once with the reason, and refused after a second bad reply; cut-off replies count as bad; usage and cost are added up over both tries; provider errors, time limits, and malformed responses become `AiProviderError` without the key; image parts and embedding batches have the right shape and vector sizes are checked; the cache hits only the same feature, model, input, seller, and user within its lifetime, and re-checks stored answers; the platform and seller limits refuse at the limit with the next India midnight as `resetAt`, count failed calls, and do not count cache hits; two calls racing for the last call of the day get one answer and one 429; the new policies stop the web app changing a stored answer; the counting function counts rows a buyer cannot see; the configuration rules; the 429 answer and its `Retry-After` header; and every answer of the usage report.
+- `pnpm check` passes.
+
+### Open points
+
+- An OpenRouter API key per environment, each with a credit limit, which is the hard cap behind the daily limits.
+- The client sets the OpenRouter account's data policy (no providers that train on prompts) and its preference for DeepSeek's own endpoint, and accepts the providers' data terms (design doc 10).
+- A DeepSeek direct key as the standby (design doc 3.2).
+- The client confirms the daily limits of 2000 calls for the platform and 100 per seller (open since step 3).
+- Once a key exists: check whether DeepSeek V4.1 Flash thinks before answering by default, which would make every short JSON task slower and dearer, and whether OpenRouter passes `dimensions` and `input_type` on to Voyage (OpenRouter lists no supported parameters for it; 1024 is also Voyage's default size, and the client checks every vector's size either way).
+
 ## Change log
 
 - 5 October 2026: File created and step 1 written.
@@ -766,3 +1560,46 @@ Later the same day Ravi changes the stock of Soft to 95 without anything else ch
   Statements that had drifted were corrected (for example the row-level security table, the seller lifecycle, audit entries, and database checks).
   Where the code did not do what the documents promised, the code was fixed: plain messages for missing and wrong-type fields, GSTIN, PAN, and commission optional when creating a seller, the company GSTIN matching its state, Mailpit refused in production, the web app checking its settings at startup, accounts made through Better Auth's admin endpoint starting verified, and `pnpm admin:create` refusing a seller's owner.
   Tests were added for every "Done when" item that had none.
+- 11 October 2026: Test databases and buckets in a linked git worktree carry the worktree's folder name, so the remaining steps can be built in parallel checkouts without their test runs breaking each other.
+  Two checkouts running the core tests at once failed at random before (2 to 7 failed tests per run) and pass every time now.
+- 11 October 2026: Step 7 written.
+- 11 October 2026: Step 7 built.
+  While building it: screening covers inactive variants too, an approval locks the category before the product so a rate change at the same moment cannot leave a stale rate, the seed runs the photo and screening jobs as the worker's database user, and re-copying a category's new rate to approved products waits for the client's decision.
+  The design doc was updated in the same change (sections 4, 5.5, 6.2, and 8).
+- 11 October 2026: Step 10 written.
+- 11 October 2026: Step 10 built.
+  While building it: the stricter state code check also covers sellers and the company details, the seller portal shows the state's name next to its code, and a test fixture for saved addresses was added for steps 11 to 13.
+- 12 October 2026: Step 7 extended with the client's answers to its questions: a seller can move a listing back to draft from review, sale, or archive (a review is then withdrawn), an administrator can take down a listing on sale, a category's new GST rate reaches its approved products, approval copies the single category rate until price-dependent rates are settled, and moderation stays in the catalogue module with the large-discount flag.
+  The design doc was updated in the same change (sections 4, 5.5, 6.2, and 11).
+- 12 October 2026: Step 10's open questions answered.
+  Buyer profile editing becomes a small step of its own after step 13, and the delivery phone stays an Indian mobile number until the client confirms it (design doc section 11).
+- 11 October 2026: Step 14 written, with the signature of `issueInvoices` that step 12 calls.
+  Three decisions wait for the client: the invoice number format, what happens to the invoice of a cancelled order, and EcoKart's own invoices for delivery and commission.
+- 11 October 2026: Step 14 built, except the parts that wait for those decisions.
+  While building it: a seller who has been approved can no longer lose their GSTIN or PAN, even while suspended (a gap in step 4 that would have let a reinstated seller sell without being able to invoice); `issueInvoices` checks it runs in a system transaction; pdfmake's type definitions are patched so the browser's types stay out of `packages/core`; and tests read the text back out of each PDF.
+  The design doc was updated in the same change (sections 3, 4, 5.4, 5.7, 6.6, and 11).
+- 11 October 2026: After the planning pass's coordination notes, `issueInvoices` takes the confirmed order's frozen details from its caller instead of reading the orders tables, which the orders and payments modules own.
+  The buyer's account id is frozen in the invoice for download checks, the caller holds the order's row lock, and `takeInvoiceNumber` moved into `modules/sellers/service.ts`.
+- 12 October 2026: The client's three step 14 decisions arrived, all as recommended: invoice numbers like `GRB/2627/000041` with prefixes of at most 4 characters, cancelled invoices marked cancelled through `cancelInvoices` for step 13, and EcoKart's own invoices left to the chartered accountant.
+  Built the same day: the 4-character prefix rule (with a migration that first names any seller whose prefix is too long), `cancelInvoices` with its cancelled PDF, a plain first line from `pnpm db:migrate` when a migration fails, and counted invoice prefixes in tests.
+  The design doc was updated in the same change (sections 5.4, 5.7, 6.6, and 11).
+- 12 October 2026: Step 14 merged with main after steps 7 and 10.
+  Its migrations were generated again on top of step 7's and are now `0013_invoice_rules`, `0014_invoice_prefix_length_guard`, and `0015_invoice_prefix_and_cancellation`, with the same SQL; invoices take state names from step 10's `lib/states.ts`.
+  A slip from the earlier edit was corrected: the cancellation item had landed in step 4's list instead of step 14's.
+- 11 October 2026: Step 17 written.
+- 12 October 2026: Step 17 built.
+  While building it: the user chose a required `AI_ENABLED` switch, costs stored in US dollars as OpenRouter reports them (`cost_micro_inr` renamed `cost_micro_usd`), embeddings outside the daily call limits, and JSON mode with an example in every prompt; each feature's limit rule is fixed in one table, so steps 18 to 20 never change the limit logic; the limit tests write the default number of calls, because the settings tests own `platform_settings`.
+  The design doc was updated in the same change (sections 3.2, 4, and 5.12), and so was the row-level security table in step 1.
+- 12 October 2026: Step 17 merged with main after steps 7, 10, and 14.
+  Its migrations were generated again on top of step 14's as `0016_ai_request_policies_and_cost`, `0017_ai_daily_usage` (the same SQL), and `0018_ai_requests_drop_old`.
+  The new column and policies are added in the first and the old ones dropped in the last, because drizzle-kit can only make a rename by asking at a terminal, and a hand-written migration would leave its snapshot behind for the next `pnpm db:generate`.
+  No environment holds AI rows yet, so adding and dropping instead of renaming loses nothing.
+- 11 October 2026: Step 9 written: storefront reads in the catalogue module, keyword search in a new search module, cache tags with a helper other steps call, and tag invalidations shared through a `cache_invalidations` table read by a custom Next.js cache handler.
+  While building it: search matches through two database functions, because row-level security stopped the search indexes being used; storefront types moved to their own file, and the planned `published_at` database rule became a check in the queries, so other steps' files and fixtures stay as they are; the 429 error is an exact copy of step 17's.
+- 12 October 2026: Step 9 built, after the user confirmed every recommended answer.
+  While building it: the cache handler checks expiry times itself, because Next.js rounds them to the millisecond and the end-to-end check caught a stale product page; a change to more than 100 products records one `catalogue` tag; a nightly job clears the log; GET routes that read no request data call `connection()`, so a build without a database (CI) never prerenders them.
+  The design doc was updated in the same change (sections 3.1, 4, 5.2, 5.5, 5.13, 6.8, 7, 8, and 11).
+- 18 October 2026: Step 9 merged with main after steps 7, 10, 11, 14, and 17.
+  Its migrations were generated again on top of the product media migrations as `0023_storefront_lists_and_cache` and `0024_storefront_search_functions_and_grants`, with the same SQL.
+  Step 7's archiving, moving back to draft, and take-downs now refresh the storefront, and step 7's `products_approved_check` replaces the `published_at` rule this step had left open.
+  The end-to-end check after the merge found that every 404 and 400 from the cached readers answered 500; they are now cached as answers, with a product address tag so a cached "not found" ends when the product is approved.

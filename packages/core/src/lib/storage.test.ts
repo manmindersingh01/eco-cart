@@ -95,6 +95,58 @@ describe('objects', () => {
   })
 })
 
+/** A private file, like an invoice PDF. */
+async function invoiceKey(): Promise<string> {
+  const key = `invoices/${randomUUID()}/${randomUUID()}.pdf`
+  await storage.write(key, Buffer.from('%PDF-1.3 invoice'), {
+    contentType: 'application/pdf',
+  })
+  return key
+}
+
+describe('download links', () => {
+  test('download a private file under the given name', async () => {
+    const key = await invoiceKey()
+    const url = await storage.createDownloadUrl(key, {
+      expiresInSeconds: 60,
+      fileName: 'GRB-2627-000041.pdf',
+    })
+    const response = await fetch(url)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('application/pdf')
+    expect(response.headers.get('content-disposition')).toBe(
+      `attachment; filename="GRB-2627-000041.pdf"; filename*=UTF-8''GRB-2627-000041.pdf`,
+    )
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(
+      Buffer.from('%PDF-1.3 invoice'),
+    )
+    // The same file without the signature stays private.
+    expect((await fetch(url.split('?')[0]!)).status).toBe(403)
+  })
+
+  test('keep any file name safe in the header', async () => {
+    const url = await storage.createDownloadUrl(await invoiceKey(), {
+      expiresInSeconds: 60,
+      fileName: `Bill "₹" (it's).pdf`,
+    })
+    expect((await fetch(url)).headers.get('content-disposition')).toBe(
+      `attachment; filename="Bill ___ (it's).pdf"; filename*=UTF-8''Bill%20%22%E2%82%B9%22%20%28it%27s%29.pdf`,
+    )
+  })
+
+  test('stop working when they expire or are changed', async () => {
+    const key = await invoiceKey()
+    const url = await storage.createDownloadUrl(key, {
+      expiresInSeconds: 1,
+      fileName: 'invoice.pdf',
+    })
+    const other = await invoiceKey()
+    expect((await fetch(url.replace(key, other))).status).toBe(403)
+    await new Promise((resolve) => setTimeout(resolve, 2100))
+    expect((await fetch(url)).status).toBe(403)
+  })
+})
+
 describe('loadStorageConfig', () => {
   const base = {
     STORAGE_BUCKET: 'ecokart-prod',

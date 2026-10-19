@@ -22,6 +22,9 @@ coverage
 # Local-only project files
 EcoKart_One_Month_Delivery_Timeline.pdf
 .lavish
+# Git worktrees that parallel work sessions create; ignoring them here also
+# keeps Prettier and Oxlint out of them.
+.claude/worktrees/
 
 # Editor and OS files
 .vscode/*

@@ -7,6 +7,7 @@
     "src",
     "drizzle.config.ts",
     "vitest.config.ts",
-    "vitest.global-setup.ts"
+    "vitest.global-setup.ts",
+    "vitest.settings-setup.ts"
   ]
 }

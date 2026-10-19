@@ -10,8 +10,13 @@ import {
   createTestCategory,
   createTestSeller,
   createTestUser,
+  createTestVideo,
 } from '@ecokart/core/testing'
-import { processUploadedImage } from '@ecokart/core/worker'
+import {
+  loadVideoTools,
+  processUploadedImage,
+  processUploadedVideo,
+} from '@ecokart/core/worker'
 import { eq } from 'drizzle-orm'
 import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
@@ -27,6 +32,8 @@ import {
 } from './[id]/images/[imageId]/route'
 import { PUT as orderImages } from './[id]/images/order/route'
 import { POST as requestUpload } from './[id]/images/uploads/route'
+import { DELETE as removeVideo, POST as addVideo } from './[id]/video/route'
+import { POST as requestVideoUpload } from './[id]/video/uploads/route'
 import {
   DELETE as deleteProduct,
   GET as getProduct,
@@ -93,6 +100,22 @@ const productResponse = z.object({
           })
           .loose(),
       ),
+    })
+    .loose(),
+})
+
+const videoResponse = z.object({
+  product: z
+    .object({
+      video: z
+        .object({
+          id: z.string(),
+          status: z.string(),
+          width: z.number().nullable(),
+          height: z.number().nullable(),
+          urls: z.object({ video: z.string(), poster: z.string() }).nullable(),
+        })
+        .nullable(),
     })
     .loose(),
 })
@@ -298,6 +321,107 @@ describe('a listing through the API', () => {
       [],
     )
   })
+
+  test('upload a video, have it processed, and remove it', async () => {
+    const product = await created()
+    const id = { id: product.id }
+    const askForUpload = (body: unknown) =>
+      requestVideoUpload(
+        request(`/seller/products/${product.id}/video/uploads`, {
+          method: 'POST',
+          cookie: sellerCookie,
+          body,
+        }),
+        params(id),
+      )
+
+    const wrongType = await askForUpload({
+      contentType: 'video/x-msvideo',
+      size: 100_000,
+    })
+    expect(wrongType.status).toBe(400)
+    expect(await wrongType.json()).toEqual({
+      error: 'That video cannot be uploaded',
+      issues: ['contentType must be video/mp4, video/quicktime, or video/webm'],
+    })
+
+    const asked = await askForUpload({
+      contentType: 'video/mp4',
+      size: 100_000,
+    })
+    expect(asked.status).toBe(201)
+    const { upload } = z
+      .object({
+        upload: z.object({
+          key: z.string(),
+          url: z.string(),
+          fields: z.record(z.string(), z.string()),
+        }),
+      })
+      .parse(await asked.json())
+
+    // The browser posts the file straight to object storage.
+    const body = new FormData()
+    for (const [name, value] of Object.entries(upload.fields))
+      body.append(name, value)
+    body.append('file', new Blob([await createTestVideo()]))
+    expect((await fetch(upload.url, { method: 'POST', body })).status).toBe(204)
+
+    const added = await addVideo(
+      request(`/seller/products/${product.id}/video`, {
+        method: 'POST',
+        cookie: sellerCookie,
+        body: { uploadKey: upload.key },
+      }),
+      params(id),
+    )
+    expect(added.status).toBe(202)
+    const { video } = videoResponse.parse(await added.json()).product
+    expect(video).toMatchObject({ status: 'processing', urls: null })
+
+    // A second video is refused until this one is removed.
+    const second = await askForUpload({
+      contentType: 'video/mp4',
+      size: 100_000,
+    })
+    expect(second.status).toBe(409)
+    expect(await second.json()).toEqual({
+      error: 'A product can have one video; remove the current one first',
+    })
+
+    // What the worker does when it takes the job.
+    await processUploadedVideo(
+      { db: owner, storage, videoTools: loadVideoTools() },
+      video!.id,
+    )
+
+    const shown = videoResponse.parse(
+      await (
+        await getProduct(
+          request(`/seller/products/${product.id}`, { cookie: sellerCookie }),
+          params(id),
+        )
+      ).json(),
+    ).product.video!
+    expect(shown).toMatchObject({ status: 'ready', width: 640, height: 360 })
+    const file = await fetch(shown.urls!.video)
+    expect([file.status, file.headers.get('content-type')]).toEqual([
+      200,
+      'video/mp4',
+    ])
+    expect((await fetch(shown.urls!.poster)).status).toBe(200)
+
+    const removed = await removeVideo(
+      request(`/seller/products/${product.id}/video`, {
+        method: 'DELETE',
+        cookie: sellerCookie,
+      }),
+      params(id),
+    )
+    expect(removed.status).toBe(200)
+    expect(videoResponse.parse(await removed.json()).product.video).toBeNull()
+    // ffmpeg is slow on a small runner.
+  }, 60_000)
 })
 
 describe('refusals', () => {
@@ -348,5 +472,47 @@ describe('refusals', () => {
       params({ id: product.id }),
     )
     expect(response.status).toBe(409)
+  })
+})
+
+describe('the minimum buying quantity', () => {
+  const minimum = z.object({
+    product: z.object({ minOrderQuantity: z.number() }).loose(),
+  })
+
+  test('is set at creation and changes at any time, even under review', async () => {
+    const response = await createVia(sellerCookie, {
+      ...toothbrush(),
+      minOrderQuantity: 5,
+    })
+    expect(response.status).toBe(201)
+    const body: unknown = await response.json()
+    expect(minimum.parse(body).product.minOrderQuantity).toBe(5)
+    const { id } = productResponse.parse(body).product
+    await owner
+      .update(schema.products)
+      .set({ status: 'pending_review' })
+      .where(eq(schema.products.id, id))
+
+    const patch = (value: unknown) =>
+      patchProduct(
+        request(`/seller/products/${id}`, {
+          method: 'PATCH',
+          cookie: sellerCookie,
+          body: { minOrderQuantity: value },
+        }),
+        params({ id }),
+      )
+    const changed = await patch(10)
+    expect(changed.status).toBe(200)
+    expect(minimum.parse(await changed.json()).product.minOrderQuantity).toBe(
+      10,
+    )
+    const refused = await patch(0)
+    expect(refused.status).toBe(400)
+    expect(await refused.json()).toEqual({
+      error: 'Those product details are not valid',
+      issues: ['minOrderQuantity must be at least 1'],
+    })
   })
 })

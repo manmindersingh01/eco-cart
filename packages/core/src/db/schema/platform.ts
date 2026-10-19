@@ -44,9 +44,8 @@ export const contentPages = pgTable(
     title: text('title').notNull(),
     bodyMarkdown: text('body_markdown').notNull().default(''),
     status: text('status').notNull().default('draft'),
-    updatedBy: uuid('updated_by')
-      .notNull()
-      .references(() => users.id),
+    // Empty for the placeholder text the development seed writes.
+    updatedBy: uuid('updated_by').references(() => users.id),
     publishedAt: timestamptz('published_at'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -144,5 +143,26 @@ export const rateLimits = pgTable(
     // Lets a cleanup job delete expired windows without a full scan.
     index('rate_limits_window_start_idx').on(t.windowStart),
     check('rate_limits_count_check', sql`count >= 0`),
+  ],
+)
+
+/**
+ * Cache tags that changed, for example `product:{id}`, so every web container
+ * expires its cached storefront pages, including after changes the worker
+ * makes (backend spec step 9). Append only; a daily job removes rows older
+ * than a day. No row-level security: it holds no buyer or seller data, only
+ * tags naming public pages.
+ */
+export const cacheInvalidations = pgTable(
+  'cache_invalidations',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    tag: text('tag').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // Web containers read the latest rows every second.
+    index('cache_invalidations_created_at_idx').on(t.createdAt),
+    check('cache_invalidations_tag_check', sql`length(tag) between 1 and 256`),
   ],
 )

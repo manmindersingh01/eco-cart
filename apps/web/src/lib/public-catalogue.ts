@@ -1,37 +1,43 @@
-import { getCategoryTree, listBrands, withContext } from '@ecokart/core'
-import { unstable_cache } from 'next/cache'
+import {
+  getCategoryTree,
+  listBrands,
+  storefrontTags,
+  withContext,
+} from '@ecokart/core'
+import { cacheLife, cacheTag } from 'next/cache'
 import { getDatabase } from './db'
 import type { PublicBrand, PublicCategory } from './seller-products'
-
-export const PUBLIC_CATEGORY_TAG = 'public-categories'
-export const PUBLIC_BRAND_TAG = 'public-brands'
 
 export type PublicBrandPage = {
   items: PublicBrand[]
   nextCursor: string | null
 }
 
-const loadPublicCategories = unstable_cache(
-  () =>
-    withContext(getDatabase(), { role: 'anonymous' }, (tx) =>
-      getCategoryTree(tx),
-    ),
-  ['public-category-tree'],
-  { revalidate: 3_600, tags: [PUBLIC_CATEGORY_TAG] },
-)
+async function loadPublicCategories(): Promise<PublicCategory[]> {
+  'use cache'
+  cacheLife('storefront')
+  cacheTag(storefrontTags.catalogue)
+  return withContext(getDatabase(), { role: 'anonymous' }, (tx) =>
+    getCategoryTree(tx),
+  )
+}
 
-const loadPublicBrands = unstable_cache(
-  (q: string | undefined, cursor: string | undefined, limit: number) =>
-    withContext(getDatabase(), { role: 'anonymous' }, (tx) =>
-      listBrands(tx, {
-        ...(q ? { q } : {}),
-        ...(cursor ? { cursor } : {}),
-        limit,
-      }),
-    ),
-  ['public-brand-page'],
-  { revalidate: 3_600, tags: [PUBLIC_BRAND_TAG] },
-)
+async function loadPublicBrands(
+  q: string | undefined,
+  cursor: string | undefined,
+  limit: number,
+): Promise<PublicBrandPage> {
+  'use cache'
+  cacheLife('storefront')
+  cacheTag(storefrontTags.catalogue)
+  return withContext(getDatabase(), { role: 'anonymous' }, (tx) =>
+    listBrands(tx, {
+      ...(q ? { q } : {}),
+      ...(cursor ? { cursor } : {}),
+      limit,
+    }),
+  )
+}
 
 export function getPublicCategories(): Promise<PublicCategory[]> {
   return loadPublicCategories()

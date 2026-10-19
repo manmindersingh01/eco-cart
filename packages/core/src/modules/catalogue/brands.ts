@@ -19,6 +19,7 @@ import { foreignKeyViolation, uniqueViolation } from '../../lib/postgres.ts'
 import { firstFreeSlug, slugify } from '../../lib/slug.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
 import { recordAuditEntry, type AuditEntry } from '../audit/service.ts'
+import { invalidateStorefront } from './storefront-cache.ts'
 import { refreshProducts } from './summary.ts'
 import {
   brandUpdate,
@@ -117,6 +118,19 @@ export async function listBrands(
     ...page,
     items: page.items.map(({ id, name, slug }) => ({ id, name, slug })),
   }
+}
+
+/**
+ * Every brand by its name in lower case, active or not, for matching the
+ * names a seller typed in an import file (backend step 8).
+ */
+export async function brandIdsByName(
+  tx: Transaction,
+): Promise<Map<string, string>> {
+  const rows = await tx
+    .select({ id: brands.id, name: brands.name })
+    .from(brands)
+  return new Map(rows.map((row) => [row.name.toLowerCase(), row.id]))
 }
 
 /** Every brand A to Z, active or not. Administrators only. */
@@ -219,6 +233,7 @@ export async function createBrand(
       })
       .returning()
     const view = toView(row!)
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'brand.create',
@@ -282,6 +297,8 @@ export async function updateBrand(
       Object.fromEntries(
         Object.entries(auditable(brand)).filter(([key]) => key in changes),
       )
+    // Cached storefront pages show brand names and filter by brand.
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'brand.update',
@@ -322,6 +339,7 @@ export async function deleteBrand(
     if (foreignKeyViolation(error)) throw new ConflictError(IN_USE)
     throw error
   }
+  await invalidateStorefront(tx, 'everything')
   await recordAuditEntry(tx, {
     ...administratorActor(context),
     action: 'brand.delete',

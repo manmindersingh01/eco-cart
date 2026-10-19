@@ -1,8 +1,6 @@
 import { createBrand, listAllBrands, withContext } from '@ecokart/core'
-import { revalidateTag } from 'next/cache'
 import { clientIp, handleErrors, pageQuery, readJsonBody } from '@/lib/api'
 import { getDatabase } from '@/lib/db'
-import { PUBLIC_BRAND_TAG } from '@/lib/public-catalogue'
 import { requireAdmin } from '@/lib/request-context'
 
 /** Every brand A to Z, active or not: `?q=bamboo&cursor=...&limit=20`. */
@@ -22,6 +20,5 @@ export const POST = handleErrors(async (request: Request) => {
   const brand = await withContext(getDatabase(), context, (tx) =>
     createBrand(tx, context, input, clientIp(request)),
   )
-  revalidateTag(PUBLIC_BRAND_TAG, 'max')
   return Response.json({ brand }, { status: 201 })
 })

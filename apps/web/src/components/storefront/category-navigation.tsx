@@ -1,7 +1,9 @@
 import Link from 'next/link'
+import { connection } from 'next/server'
 import { getPublicCategories } from '@/lib/public-catalogue'
 
 export async function CategoryNavigation() {
+  await connection()
   const categories = await getPublicCategories()
 
   return (

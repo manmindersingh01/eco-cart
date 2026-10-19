@@ -5,6 +5,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3'
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { z } from 'zod'
 import { parseEnv, secretString } from './config.ts'
 
@@ -16,8 +17,12 @@ import { parseEnv, secretString } from './config.ts'
  *
  * Keys are grouped by who may read them:
  * - images/...    public product photo sizes, served through CloudFront
+ * - videos/...    public product videos and their posters, the same way
  * - uploads/...   files as the browser sent them, read only by the worker
- * - originals/... private copies of accepted photos
+ * - originals/... private copies of accepted photos and videos
+ * - invoices/...  invoice PDFs, downloaded through short-lived signed links
+ * - seller-documents/...  checked verification documents, downloaded by
+ *                 administrators through short-lived signed links
  */
 
 export interface StorageConfig {
@@ -27,7 +32,10 @@ export interface StorageConfig {
   endpoint: string | undefined
   /** Left out in production, where the ECS task role signs requests. */
   credentials: { accessKeyId: string; secretAccessKey: string } | undefined
-  /** Where `images/...` keys are served from: CloudFront in production. */
+  /**
+   * Where `images/...` and `videos/...` keys are served from: CloudFront in
+   * production.
+   */
   publicUrl: string
 }
 
@@ -99,6 +107,15 @@ export interface ObjectStorage {
       expiresInSeconds: number
     },
   ): Promise<UploadForm>
+  /**
+   * A link that downloads one private object until it expires, saved by the
+   * browser as `fileName`. Every private file (invoices, import reports,
+   * statements) is downloaded this way; product photos have public addresses.
+   */
+  createDownloadUrl(
+    key: string,
+    options: { expiresInSeconds: number; fileName: string },
+  ): Promise<string>
   /** The object's bytes, or null when there is no such object. */
   read(key: string): Promise<Buffer | null>
   write(
@@ -108,12 +125,25 @@ export interface ObjectStorage {
   ): Promise<void>
   /** Removes the object; nothing happens when it does not exist. */
   remove(key: string): Promise<void>
-  /** The public address of an `images/...` key. */
+  /** The public address of an `images/...` or `videos/...` key. */
   publicUrl(key: string): string
 }
 
 const isMissing = (error: unknown) =>
   error instanceof Error && error.name === 'NoSuchKey'
+
+/**
+ * Saves the file as `fileName`. The plain `filename` keeps only printable
+ * ASCII for old browsers, and `filename*` carries the exact name (RFC 6266).
+ */
+function attachmentDisposition(fileName: string): string {
+  const ascii = fileName.replace(/[^\x20-\x7e]|["\\]/g, '_')
+  const encoded = encodeURIComponent(fileName).replace(
+    /['()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`
+}
 
 export function createObjectStorage(
   config: StorageConfig,
@@ -132,6 +162,18 @@ export function createObjectStorage(
         Fields: { 'Content-Type': contentType },
         Expires: expiresInSeconds,
       })
+    },
+
+    createDownloadUrl(key, { expiresInSeconds, fileName }) {
+      return getSignedUrl(
+        client,
+        new GetObjectCommand({
+          Bucket,
+          Key: key,
+          ResponseContentDisposition: attachmentDisposition(fileName),
+        }),
+        { expiresIn: expiresInSeconds },
+      )
     },
 
     async read(key) {

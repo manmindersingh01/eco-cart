@@ -71,6 +71,20 @@ export function afterCursor(
 export const newestFirstCursor = (row: { cursorTime: string; id: string }) =>
   encodeCursor(row.cursorTime, row.id)
 
+/**
+ * Rows that come after the cursor in oldest-first order, for queues such as
+ * the seller documents waiting for review. The cursor has the same shape as
+ * a newest-first one; build it with `newestFirstCursor`.
+ */
+export function afterOldestFirstCursor(
+  cursor: string,
+  createdAt: AnyPgColumn,
+  id: AnyPgColumn,
+): SQL {
+  const [time, lastId] = decodeCursor(cursor, cursorShape)
+  return sql`(${createdAt}, ${id}) > (${time}::timestamptz, ${lastId}::uuid)`
+}
+
 const textCursorShape = z.tuple([z.literal('az'), z.string().max(1000)])
 
 export function encodeTextCursor(key: string): string {
@@ -104,3 +118,101 @@ export function toPage<Row, T>(
     nextCursor: rows.length > limit && last ? cursorOf(last) : null,
   }
 }
+
+/*
+ * Orders by one key and then id, ascending or descending, for the storefront
+ * (backend spec step 9): newest by publication time, by price, and by search
+ * rank. The cursor carries the name of its order, so a cursor from another
+ * order is refused instead of returning a wrong page.
+ */
+
+/** How the key travels in the cursor and is cast back in SQL. */
+export type CursorKeyType = 'timestamptz' | 'bigint' | 'numeric'
+
+const keyShapes: Record<CursorKeyType, z.ZodString> = {
+  // Microseconds, as exactTime selects it.
+  timestamptz: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/),
+  bigint: z.string().regex(/^-?\d{1,19}$/),
+  // Search ranks are rounded in SQL, so the text compares exactly.
+  numeric: z.string().regex(/^-?\d{1,20}(\.\d{1,20})?$/),
+}
+
+const orderName = z.string().regex(/^[a-z_-]{1,40}$/)
+
+/** `key` is the row's sort key as text, for example a price in paise. */
+export function encodeKeyCursor(
+  order: string,
+  key: string,
+  id: string,
+): string {
+  return Buffer.from(JSON.stringify([order, key, id])).toString('base64url')
+}
+
+/** The order a cursor was made for, so a caller can choose how to continue. */
+export function cursorOrder(cursor: string): string {
+  const [order] = decodeCursor(
+    cursor,
+    z.tuple([orderName, z.string(), z.string()]),
+  )
+  return order
+}
+
+/** Rows after the cursor in `order`, sorted by (`key`, `id`) in `direction`. */
+export function afterKeyCursor(
+  cursor: string,
+  order: string,
+  key: AnyPgColumn | SQL,
+  id: AnyPgColumn,
+  direction: 'asc' | 'desc',
+  type: CursorKeyType,
+): SQL {
+  const [, last, lastId] = decodeCursor(
+    cursor,
+    z.tuple([z.literal(order), keyShapes[type], z.uuid()]),
+  )
+  const after = direction === 'asc' ? sql`>` : sql`<`
+  return sql`(${key}, ${id}) ${after} (${last}::${sql.raw(type)}, ${lastId}::uuid)`
+}
+
+/*
+ * Ranked, then oldest first, by (rank, created time, id), for queues such as
+ * the listing review queue (backend spec step 7): a small whole-number rank
+ * first, for example 0 for high risk, then the time with microseconds.
+ */
+
+const rankedCursorShape = z.tuple([
+  z.literal('ranked'),
+  z.number().int().min(0).max(32_767),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/),
+  z.uuid(),
+])
+
+export function encodeRankedCursor(
+  rank: number,
+  time: string,
+  id: string,
+): string {
+  return Buffer.from(JSON.stringify(['ranked', rank, time, id])).toString(
+    'base64url',
+  )
+}
+
+/** Rows that come after the cursor in ranked, oldest-first order. */
+export function afterRankedCursor(
+  cursor: string,
+  rank: AnyPgColumn,
+  time: AnyPgColumn,
+  id: AnyPgColumn,
+): SQL {
+  const [, lastRank, lastTime, lastId] = decodeCursor(cursor, rankedCursorShape)
+  return sql`(${rank}, ${time}, ${id}) > (${lastRank}::smallint, ${lastTime}::timestamptz, ${lastId}::uuid)`
+}
+
+/** The ranked cursor of a row selected with its rank and `exactTime`. */
+export const rankedCursor = (row: {
+  rank: number
+  cursorTime: string
+  id: string
+}) => encodeRankedCursor(row.rank, row.cursorTime, row.id)

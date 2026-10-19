@@ -1,7 +1,18 @@
-import { desc, eq, sql } from 'drizzle-orm'
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import type { Database, Transaction } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
-import { sellers } from '../../db/schema/index.ts'
+import { sellerDocumentRequests, sellers } from '../../db/schema/index.ts'
 import {
   ConflictError,
   ForbiddenError,
@@ -20,11 +31,15 @@ import { uniqueViolation } from '../../lib/postgres.ts'
 import { firstFreeSlug, slugify } from '../../lib/slug.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
 import { recordAuditEntry, type AuditEntry } from '../audit/service.ts'
+import { invalidateStorefront } from '../catalogue/storefront-cache.ts'
 import type { Account, AccountDirectory } from '../auth/accounts.ts'
 import {
   businessUpdate,
   contactsUpdate,
+  DOCUMENT_TYPES,
+  documentTypeName,
   newSeller,
+  OPEN_DOCUMENT_STATUSES,
   suspension,
   taxIdIssues,
   type SellerStatus,
@@ -49,7 +64,10 @@ export interface SellerServices {
 }
 
 type SellerRow = typeof sellers.$inferSelect
-type Administrator = Extract<RequestContext, { role: 'admin' | 'system' }>
+export type Administrator = Extract<
+  RequestContext,
+  { role: 'admin' | 'system' }
+>
 
 const STATUSES: readonly SellerStatus[] = ['pending', 'approved', 'suspended']
 const isStatus = (value: string): value is SellerStatus =>
@@ -89,7 +107,7 @@ function auditable(view: SellerView) {
   return details
 }
 
-function assertAdministrator(
+export function assertAdministrator(
   context: RequestContext,
 ): asserts context is Administrator {
   if (context.role !== 'admin' && context.role !== 'system') {
@@ -97,7 +115,7 @@ function assertAdministrator(
   }
 }
 
-const administratorActor = (
+export const administratorActor = (
   context: Administrator,
 ): Pick<AuditEntry, 'actorUserId' | 'actorRole'> => ({
   actorUserId: context.userId ?? null,
@@ -234,7 +252,51 @@ export async function createSeller(
   }
 }
 
-/** pending to approved. Needs a GSTIN and a PAN for the seller's invoices. */
+const OPEN_DOCUMENT_STATES: Record<string, string> = {
+  requested: 'waiting for the seller to upload it',
+  processing: 'being checked',
+  received: 'waiting for review',
+}
+
+/**
+ * The seller's document requests that are neither accepted nor cancelled,
+ * in words, for example "PAN card (waiting for review)". Ordered by type,
+ * then oldest first, so the same requests always read the same way.
+ */
+async function outstandingDocuments(
+  tx: Transaction,
+  sellerId: string,
+): Promise<string[]> {
+  const rows = await tx
+    .select({
+      type: sellerDocumentRequests.documentType,
+      status: sellerDocumentRequests.status,
+    })
+    .from(sellerDocumentRequests)
+    .where(
+      and(
+        eq(sellerDocumentRequests.sellerId, sellerId),
+        inArray(sellerDocumentRequests.status, OPEN_DOCUMENT_STATUSES),
+      ),
+    )
+    .orderBy(
+      sql`array_position(array[${sql.join(
+        DOCUMENT_TYPES.map((type) => sql`${type}`),
+        sql`, `,
+      )}]::text[], ${sellerDocumentRequests.documentType})`,
+      sellerDocumentRequests.createdAt,
+      sellerDocumentRequests.id,
+    )
+  return rows.map(
+    ({ type, status }) =>
+      `${documentTypeName(type)} (${OPEN_DOCUMENT_STATES[status] ?? status})`,
+  )
+}
+
+/**
+ * pending to approved. Needs a GSTIN and a PAN for the seller's invoices,
+ * and every document an administrator asked for accepted or cancelled.
+ */
 export async function approveSeller(
   db: Database,
   context: RequestContext,
@@ -254,11 +316,21 @@ export async function approveSeller(
     if (missing.length > 0) {
       throw new ValidationError('This seller cannot be approved yet', missing)
     }
+    // Asking for a document locks the seller row too, so a request made at
+    // the same moment is either seen here or made after the approval.
+    const outstanding = await outstandingDocuments(tx, sellerId)
+    if (outstanding.length > 0) {
+      throw new ConflictError(
+        `This seller cannot be approved until every requested document is accepted or cancelled. Still open: ${outstanding.join(', ')}`,
+      )
+    }
     const [row] = await tx
       .update(sellers)
       .set({ status: 'approved', approvedAt: sql`now()` })
       .where(eq(sellers.id, sellerId))
       .returning()
+    // Their approved products appear on the storefront.
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'seller.approve',
@@ -296,6 +368,8 @@ export async function suspendSeller(
       .set({ status: 'suspended', suspendedReason: reason })
       .where(eq(sellers.id, sellerId))
       .returning()
+    // Their products disappear from every storefront page.
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'seller.suspend',
@@ -329,6 +403,7 @@ export async function reinstateSeller(
       .set({ status: next, suspendedReason: null })
       .where(eq(sellers.id, sellerId))
       .returning()
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'seller.reinstate',
@@ -365,11 +440,13 @@ export async function updateSeller(
       const current = await lockSeller(tx, sellerId)
       const merged = { ...current, ...changes }
       const issues = taxIdIssues(merged)
-      if (current.status === 'approved') {
+      // Also while suspended: reinstating brings the seller back as approved,
+      // and every sale needs a GST invoice with these details.
+      if (current.approvedAt) {
         if (!merged.gstin)
-          issues.push('gstin is needed while the seller is approved')
+          issues.push('gstin is needed once the seller has been approved')
         if (!merged.pan)
-          issues.push('pan is needed while the seller is approved')
+          issues.push('pan is needed once the seller has been approved')
       }
       if (issues.length > 0) {
         throw new ValidationError('Those seller details are not valid', issues)
@@ -390,6 +467,13 @@ export async function updateSeller(
         .set(changes)
         .where(eq(sellers.id, sellerId))
         .returning()
+      // Product pages show the seller's display name.
+      if (
+        changes.displayName !== undefined &&
+        changes.displayName !== current.displayName
+      ) {
+        await invalidateStorefront(tx, { sellerId })
+      }
       const before = auditable(toView(current))
       await recordAuditEntry(tx, {
         ...administratorActor(context),
@@ -409,7 +493,7 @@ export async function updateSeller(
   }
 }
 
-function assertSeller(
+export function assertSeller(
   context: RequestContext,
 ): asserts context is Extract<RequestContext, { role: 'seller' }> {
   if (context.role !== 'seller') {
@@ -455,6 +539,12 @@ export async function updateOwnContacts(
       .set(changes)
       .where(eq(sellers.id, context.sellerId))
       .returning()
+    if (
+      changes.displayName !== undefined &&
+      changes.displayName !== current.displayName
+    ) {
+      await invalidateStorefront(tx, { sellerId: context.sellerId })
+    }
     await recordAuditEntry(tx, {
       actorUserId: context.userId,
       actorRole: 'seller',
@@ -588,4 +678,175 @@ export async function findSellerForOwner(
     throw new Error(`Seller ${row.id} has an unknown status ${row.status}`)
   }
   return { id: row.id, status: row.status }
+}
+
+/** A seller as lists in other modules show it, for example the review queue. */
+export interface SellerLabel {
+  id: string
+  displayName: string
+  status: SellerStatus
+}
+
+/**
+ * The name and status of each seller in `ids`, so other modules can show
+ * sellers without reading this module's table (backend spec step 7).
+ */
+export async function getSellerLabels(
+  tx: Transaction,
+  ids: string[],
+): Promise<Map<string, SellerLabel>> {
+  if (ids.length === 0) return new Map()
+  const rows = await tx
+    .select({
+      id: sellers.id,
+      displayName: sellers.displayName,
+      status: sellers.status,
+    })
+    .from(sellers)
+    .where(inArray(sellers.id, [...new Set(ids)]))
+  return new Map(
+    rows.map((row) => {
+      if (!isStatus(row.status)) {
+        throw new Error(`Seller ${row.id} has an unknown status ${row.status}`)
+      }
+      return [row.id, { ...row, status: row.status }]
+    }),
+  )
+}
+
+// Invoice numbers (backend spec step 14). The sellers module owns each
+// seller's sequence; the invoices module turns it into an invoice number.
+
+/** The seller's details as their invoice prints them, read under the lock. */
+export interface InvoicingSeller {
+  id: string
+  legalName: string
+  displayName: string
+  gstin: string | null
+  line1: string
+  city: string
+  stateCode: string
+  pincode: string
+  supportEmail: string
+  supportPhone: string
+  invoicePrefix: string
+}
+
+/**
+ * Takes the seller's next invoice sequence number in `financialYear` (like
+ * `2026-27`): one more than the last, or 1 for the first invoice of a new
+ * year. One conditional UPDATE: its row lock makes two confirmations for the
+ * same seller take turns, and a transaction that rolls back gives its number
+ * back, so numbers never repeat and never leave a gap.
+ *
+ * The sequence never returns to 0, which the rule against changing the
+ * invoice prefix after the first invoice relies on, and never moves back to
+ * an earlier year.
+ */
+export async function takeInvoiceNumber(
+  tx: Transaction,
+  sellerId: string,
+  financialYear: string,
+): Promise<{ sequence: number; seller: InvoicingSeller }> {
+  const [row] = await tx
+    .update(sellers)
+    .set({
+      // Both expressions read the row as it was before this UPDATE.
+      invoiceSeq: sql`case when ${sellers.invoiceSeqFy} = ${financialYear} then ${sellers.invoiceSeq} + 1 else 1 end`,
+      invoiceSeqFy: financialYear,
+    })
+    .where(
+      and(
+        eq(sellers.id, sellerId),
+        // Year strings like 2026-27 sort in time order.
+        or(
+          isNull(sellers.invoiceSeqFy),
+          lte(sellers.invoiceSeqFy, financialYear),
+        ),
+      ),
+    )
+    .returning({
+      sequence: sellers.invoiceSeq,
+      id: sellers.id,
+      legalName: sellers.legalName,
+      displayName: sellers.displayName,
+      gstin: sellers.gstin,
+      line1: sellers.line1,
+      city: sellers.city,
+      stateCode: sellers.stateCode,
+      pincode: sellers.pincode,
+      supportEmail: sellers.supportEmail,
+      supportPhone: sellers.supportPhone,
+      invoicePrefix: sellers.invoicePrefix,
+    })
+  if (row) {
+    const { sequence, ...seller } = row
+    return { sequence, seller }
+  }
+
+  const [exists] = await tx
+    .select({ year: sellers.invoiceSeqFy })
+    .from(sellers)
+    .where(eq(sellers.id, sellerId))
+  if (!exists) throw new Error(`There is no seller ${sellerId}`)
+  // Only possible within a second of midnight on 31 March: a confirmation
+  // that started in the old year reached the sequence after one in the new.
+  throw new ConflictError(
+    `Invoice numbers have moved on to ${exists.year}; try again`,
+  )
+}
+
+/* What the storefront shows of sellers (backend spec step 9). */
+
+/** A seller as visitors see them. */
+export interface PublicSeller {
+  id: string
+  slug: string
+  displayName: string
+}
+
+/** The approved sellers among `sellerIds`, by id; the others are left out. */
+export async function getPublicSellers(
+  tx: Transaction,
+  sellerIds: readonly string[],
+): Promise<Map<string, PublicSeller>> {
+  if (sellerIds.length === 0) return new Map()
+  const rows = await tx
+    .select({
+      id: sellers.id,
+      slug: sellers.slug,
+      displayName: sellers.displayName,
+    })
+    .from(sellers)
+    .where(
+      and(inArray(sellers.id, [...sellerIds]), eq(sellers.status, 'approved')),
+    )
+  return new Map(rows.map((row) => [row.id, row]))
+}
+
+/**
+ * A condition that the seller in `sellerId`, a column of another table, is
+ * approved. Storefront queries check it in their own SQL; row-level security
+ * repeats it only as a safety net.
+ */
+export const sellerIsApproved = (sellerId: AnyPgColumn): SQL =>
+  sql`exists (select 1 from ${sellers} where ${sellers.id} = ${sellerId} and ${sellers.status} = 'approved')`
+
+/* Checkout (backend spec step 12). */
+
+/**
+ * Each seller's own commission rate in basis points, or null where the
+ * platform rate applies, so checkout can freeze the rate on each order line
+ * without reading this module's table.
+ */
+export async function getCommissionRates(
+  tx: Transaction,
+  ids: string[],
+): Promise<Map<string, number | null>> {
+  if (ids.length === 0) return new Map()
+  const rows = await tx
+    .select({ id: sellers.id, commissionBps: sellers.commissionBps })
+    .from(sellers)
+    .where(inArray(sellers.id, [...new Set(ids)]))
+  return new Map(rows.map((row) => [row.id, row.commissionBps]))
 }

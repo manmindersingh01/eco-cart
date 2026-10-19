@@ -276,6 +276,180 @@ describe('phone sign-in', () => {
   })
 })
 
+/** Signs in with a text message code and returns the session cookie. */
+async function signInByPhone(phoneNumber: string): Promise<string> {
+  const ip = nextIp()
+  expect(
+    (await call(auth, '/phone-number/send-otp', { phoneNumber }, { ip }))
+      .status,
+  ).toBe(200)
+  const verified = await call(
+    auth,
+    '/phone-number/verify',
+    { phoneNumber, code: await lastTextedCode(phoneNumber) },
+    { ip },
+  )
+  expect(verified.status).toBe(200)
+  return sessionCookie(verified)!
+}
+
+/** Adds a phone number to the signed-in account, as the profile page does. */
+async function addPhone(cookie: string, phoneNumber: string) {
+  const ip = nextIp()
+  await call(auth, '/phone-number/send-otp', { phoneNumber }, { ip })
+  return call(
+    auth,
+    '/phone-number/verify',
+    {
+      phoneNumber,
+      code: await lastTextedCode(phoneNumber),
+      updatePhoneNumber: true,
+    },
+    { ip, cookie },
+  )
+}
+
+/** Adds an email to the signed-in account, as the profile page does. */
+async function addEmail(cookie: string, email: string) {
+  const ip = nextIp()
+  const requested = await call(
+    auth,
+    '/email-otp/request-email-change',
+    { newEmail: email },
+    { ip, cookie },
+  )
+  if (requested.status !== 200) return requested
+  return call(
+    auth,
+    '/email-otp/change-email',
+    { newEmail: email, otp: await lastEmailedCode(email) },
+    { ip, cookie },
+  )
+}
+
+const errorOf = async (response: Response) => ({
+  status: response.status,
+  body: await response.json(),
+})
+
+describe('a buyer adds a phone number or an email', () => {
+  test('an email buyer adds a phone number with a code, then signs in with it', async () => {
+    const email = newEmail()
+    const cookie = await signInByEmail(email)
+    const phoneNumber = newMobile()
+
+    expect((await addPhone(cookie, phoneNumber)).status).toBe(200)
+    const session = await sessionFor(cookie)
+    expect(session?.user).toMatchObject({
+      email,
+      phoneNumber,
+      phoneNumberVerified: true,
+    })
+    const byPhone = await sessionFor(await signInByPhone(phoneNumber))
+    expect(byPhone?.user.id).toBe(session!.user.id)
+  })
+
+  test('a phone buyer adds an email with a code sent to it, then signs in with it', async () => {
+    const phoneNumber = newMobile()
+    const cookie = await signInByPhone(phoneNumber)
+    const email = newEmail()
+
+    expect((await addEmail(cookie, email)).status).toBe(200)
+    const session = await sessionFor(cookie)
+    expect(session?.user).toMatchObject({
+      email,
+      emailVerified: true,
+      phoneNumber,
+    })
+    const byEmail = await sessionFor(await signInByEmail(email))
+    expect(byEmail?.user.id).toBe(session!.user.id)
+  })
+
+  test('a buyer never removes the phone number that is their only way to sign in', async () => {
+    const phoneNumber = newMobile()
+    const cookie = await signInByPhone(phoneNumber)
+    const removePhone = () =>
+      call(auth, '/update-user', { phoneNumber: null }, { cookie })
+
+    expect(await errorOf(await removePhone())).toMatchObject({
+      status: 403,
+      body: {
+        message:
+          'Your phone number is the only way you sign in, so it cannot be removed; add an email address first',
+      },
+    })
+    expect((await sessionFor(cookie))?.user.phoneNumber).toBe(phoneNumber)
+
+    // With an email to sign in with, the phone number may go.
+    expect((await addEmail(cookie, newEmail())).status).toBe(200)
+    expect((await removePhone()).status).toBe(200)
+    expect((await sessionFor(cookie))?.user.phoneNumber).toBeNull()
+  })
+
+  test('adds only what is missing, and only for buyers', async () => {
+    const emailBuyer = await signInByEmail(newEmail())
+    expect(await errorOf(await addEmail(emailBuyer, newEmail()))).toMatchObject(
+      {
+        status: 403,
+        body: { message: 'This account already has an email address' },
+      },
+    )
+    const phoneBuyer = await signInByPhone(newMobile())
+    expect(
+      await errorOf(await addPhone(phoneBuyer, newMobile())),
+    ).toMatchObject({
+      status: 403,
+      body: { message: 'This account already has a phone number' },
+    })
+    const { owner: sellerOwner } = await createTestSeller(owner)
+    const seller = await signInByEmail(sellerOwner.email)
+    expect(await errorOf(await addPhone(seller, newMobile()))).toMatchObject({
+      status: 403,
+      body: {
+        message:
+          'Only buyer accounts can add a phone number or an email address here',
+      },
+    })
+    const signedOut = await call(auth, '/email-otp/request-email-change', {
+      newEmail: newEmail(),
+    })
+    expect(signedOut.status).toBe(401)
+  })
+
+  test("never takes another account's email or phone number", async () => {
+    const takenEmail = newEmail()
+    await signInByEmail(takenEmail)
+    const takenPhone = newMobile()
+    await signInByPhone(takenPhone)
+
+    const phoneBuyer = await signInByPhone(newMobile())
+    const ip = nextIp()
+    // Better Auth answers as usual, so nobody learns the address is taken,
+    // but sends no code, and no code can complete the change.
+    expect(
+      (
+        await call(
+          auth,
+          '/email-otp/request-email-change',
+          { newEmail: takenEmail },
+          { ip, cookie: phoneBuyer },
+        )
+      ).status,
+    ).toBe(200)
+    const changed = await call(
+      auth,
+      '/email-otp/change-email',
+      { newEmail: takenEmail, otp: await lastEmailedCode(takenEmail) },
+      { ip, cookie: phoneBuyer },
+    )
+    expect(changed.status).toBe(400)
+
+    const emailBuyer = await signInByEmail(newEmail())
+    expect((await addPhone(emailBuyer, takenPhone)).status).toBe(400)
+    expect((await sessionFor(emailBuyer))?.user.phoneNumber).toBeNull()
+  })
+})
+
 describe('endpoints EcoKart does not use', () => {
   test.each([
     '/sign-in/phone-number',
@@ -284,8 +458,6 @@ describe('endpoints EcoKart does not use', () => {
     '/email-otp/request-password-reset',
     '/email-otp/reset-password',
     '/forget-password/email-otp',
-    '/email-otp/request-email-change',
-    '/email-otp/change-email',
   ])('%s answers 404', async (path) => {
     expect((await call(auth, path, {})).status).toBe(404)
   })

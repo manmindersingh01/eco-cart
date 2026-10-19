@@ -6,7 +6,9 @@ import {
   integer,
   jsonb,
   numeric,
+  pgPolicy,
   pgTable,
+  smallint,
   text,
   unique,
   uniqueIndex,
@@ -29,6 +31,7 @@ import {
   fullAccess,
   webDelete,
   webInsert,
+  webRole,
   webSelect,
   webUpdate,
   workerPolicy,
@@ -102,6 +105,10 @@ const productVisible = (column: string) =>
 const productEditable = (column: string) =>
   sql`exists (select 1 from products p where p.id = ${sql.raw(column)} and (p.seller_id = ${currentSellerId} or ${fullAccess}))`
 
+// The condition of the partial storefront indexes; storefront queries repeat
+// it so the planner can use them.
+const onSale = sql`status = 'approved' and deleted_at is null`
+
 export const products = pgTable(
   'products',
   {
@@ -129,6 +136,9 @@ export const products = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     hsnCode: text('hsn_code'),
+    // The fewest units of one variant a buyer may order at once, for example
+    // 5 bamboo straws; the seller changes it at any time, like a price.
+    minOrderQuantity: integer('min_order_quantity').notNull().default(1),
     // Copied from the category at approval and frozen on each order line.
     gstRateBps: integer('gst_rate_bps'),
     status: text('status').notNull().default('draft'),
@@ -190,6 +200,18 @@ export const products = pgTable(
       'gin',
       t.searchText.op('gin_trgm_ops'),
     ),
+    // Storefront lists (backend spec step 9) read only products on sale, so
+    // their indexes leave everything else out.
+    index('products_public_category_published_idx')
+      .on(t.categoryId, t.publishedAt.desc(), t.id.desc())
+      .where(onSale),
+    index('products_public_category_price_idx')
+      .on(t.categoryId, t.minPricePaise, t.id)
+      .where(onSale),
+    index('products_public_published_idx')
+      .on(t.publishedAt.desc(), t.id.desc())
+      .where(onSale),
+    index('products_public_brand_idx').on(t.brandId).where(onSale),
     check(
       'products_status_check',
       sql`status in ('draft', 'pending_review', 'approved', 'rejected', 'archived')`,
@@ -201,12 +223,22 @@ export const products = pgTable(
     check('products_gst_rate_bps_check', sql`gst_rate_bps between 0 and 10000`),
     check('products_total_stock_check', sql`total_stock >= 0`),
     check(
+      'products_min_order_quantity_check',
+      sql`min_order_quantity between 1 and 1000`,
+    ),
+    check(
       'products_price_range_check',
       sql`min_price_paise > 0 and max_price_paise >= min_price_paise and min_mrp_paise >= min_price_paise`,
     ),
     check(
       'products_rating_check',
       sql`rating_avg between 0 and 5 and rating_count >= 0`,
+    ),
+    // Order lines copy all three, so an approved product must have them
+    // (backend spec step 7).
+    check(
+      'products_approved_check',
+      sql`status <> 'approved' or (gst_rate_bps is not null and hsn_code is not null and published_at is not null)`,
     ),
     // Visitors see a product only while both it and its seller are
     // approved, so suspending a seller hides all their listings at once.
@@ -304,6 +336,56 @@ export const productImages = pgTable(
   ],
 ).enableRLS()
 
+/** A product's one optional video, checked and converted by the worker. */
+export const productVideos = pgTable(
+  'product_videos',
+  {
+    id: uuidPrimaryKey(),
+    // Unique: a product has at most one video.
+    productId: uuid('product_id')
+      .notNull()
+      .unique()
+      .references(() => products.id),
+    // videos/{id}: the public files are videos/{id}/video.mp4 and poster.jpg.
+    storageKey: text('storage_key').notNull().unique(),
+    // processing until the worker has converted it, like a photo.
+    status: text('status').notNull().default('processing'),
+    // The browser's upload; unique, so one upload becomes one video.
+    uploadKey: text('upload_key').unique(),
+    // Shown to the seller when the video cannot be used.
+    failureReason: text('failure_reason'),
+    // The converted file's, filled in by the worker.
+    durationMs: integer('duration_ms'),
+    width: integer('width'),
+    height: integer('height'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  () => [
+    check(
+      'product_videos_status_check',
+      sql`status in ('processing', 'ready', 'failed')`,
+    ),
+    check(
+      'product_videos_ready_check',
+      sql`status <> 'ready' or (duration_ms is not null and width is not null and height is not null)`,
+    ),
+    check(
+      'product_videos_failed_check',
+      sql`(status = 'failed') = (failure_reason is not null)`,
+    ),
+    check(
+      'product_videos_size_check',
+      sql`duration_ms > 0 and width > 0 and height > 0`,
+    ),
+    webSelect(productVisible('product_videos.product_id')),
+    webInsert(productEditable('product_videos.product_id')),
+    webUpdate(productEditable('product_videos.product_id')),
+    webDelete(productEditable('product_videos.product_id')),
+    workerPolicy(),
+  ],
+).enableRLS()
+
 /** One row per submission, so the review history is kept (design doc 5.5). */
 export const productModeration = pgTable(
   'product_moderation',
@@ -318,8 +400,16 @@ export const productModeration = pgTable(
       .notNull()
       .default(sql`'[]'::jsonb`),
     aiRisk: text('ai_risk'),
+    // The queue's order: sorting the risk text would give high, low, medium,
+    // and a review that is not screened yet goes last (backend spec step 7).
+    riskRank: smallint('risk_rank')
+      .notNull()
+      .generatedAlwaysAs(
+        sql`case ai_risk when 'high' then 0 when 'medium' then 1 when 'low' then 2 else 3 end`,
+      ),
     aiRequestId: uuid('ai_request_id').references(() => aiRequests.id),
     decision: text('decision'),
+    // Null when the system decided, for example the development seed.
     decidedBy: uuid('decided_by').references(() => users.id),
     decidedAt: timestamptz('decided_at'),
     // Shown to the seller on rejection.
@@ -332,9 +422,13 @@ export const productModeration = pgTable(
       t.productId,
       t.createdAt.desc(),
     ),
-    // The administrator's review queue.
-    index('product_moderation_open_created_at_idx')
-      .on(t.createdAt)
+    // The administrator's review queue: riskiest first, then oldest first.
+    index('product_moderation_open_queue_idx')
+      .on(t.riskRank, t.submittedAt, t.id)
+      .where(sql`decision is null`),
+    // One open review per product, so two submits cannot open two.
+    uniqueIndex('product_moderation_open_product_id_unique')
+      .on(t.productId)
       .where(sql`decision is null`),
     check(
       'product_moderation_ai_risk_check',
@@ -342,13 +436,32 @@ export const productModeration = pgTable(
     ),
     check(
       'product_moderation_decision_check',
-      sql`decision in ('approved', 'rejected')`,
+      // withdrawn: the seller took the listing back before a decision.
+      sql`decision in ('approved', 'rejected', 'withdrawn')`,
+    ),
+    check(
+      'product_moderation_decided_check',
+      sql`(decision is null) = (decided_at is null) and (decision is not null or decided_by is null)`,
+    ),
+    check(
+      'product_moderation_reason_check',
+      sql`decision is distinct from 'rejected' or reason is not null`,
     ),
     webSelect(
       sql`${fullAccess} or exists (select 1 from products p where p.id = product_moderation.product_id and p.seller_id = ${currentSellerId})`,
     ),
-    webInsert(productEditable('product_moderation.product_id')),
-    webUpdate(fullAccess),
+    // A seller opens a review; only full access screens or decides one.
+    webInsert(
+      sql`${fullAccess} or (decision is null and decided_by is null and ai_risk is null and ai_flags = '[]'::jsonb and exists (select 1 from products p where p.id = product_moderation.product_id and p.seller_id = ${currentSellerId}))`,
+    ),
+    // Full access screens and decides; the owning seller may only withdraw
+    // their own open review (backend spec step 7).
+    pgPolicy('web_update', {
+      for: 'update',
+      to: webRole,
+      using: sql`${fullAccess} or (decision is null and exists (select 1 from products p where p.id = product_moderation.product_id and p.seller_id = ${currentSellerId}))`,
+      withCheck: sql`${fullAccess} or (decision = 'withdrawn' and exists (select 1 from products p where p.id = product_moderation.product_id and p.seller_id = ${currentSellerId}))`,
+    }),
     workerPolicy(),
   ],
 ).enableRLS()

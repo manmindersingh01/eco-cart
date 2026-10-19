@@ -22,6 +22,8 @@ const TABLES_WITHOUT_RLS = new Set([
   'platform_settings',
   'content_pages',
   'rate_limits',
+  // Tags naming public pages, for refreshing the page cache (step 9).
+  'cache_invalidations',
 ])
 const BETTER_AUTH_TABLES = new Set([
   'users',
@@ -70,8 +72,8 @@ async function columns(): Promise<
 }
 
 describe('schema rules', () => {
-  test('the database has all 37 tables from the design', async () => {
-    expect(await publicTables()).toHaveLength(37)
+  test('the database has all 41 tables from the design', async () => {
+    expect(await publicTables()).toHaveLength(41)
   })
 
   test('every table with buyer or seller data has row-level security', async () => {
@@ -203,7 +205,8 @@ describe('schema rules', () => {
 
   test('no table forces row-level security on its owner', async () => {
     // The owner runs migrations and test fixtures, and the SECURITY DEFINER
-    // helper app.is_order_seller relies on the owner not being filtered.
+    // helpers app.is_order_seller, the storefront search functions, and
+    // app.refresh_product_rating rely on the owner not being filtered.
     const forced = (await publicTables())
       .filter((table) => table.forced)
       .map((table) => table.name)

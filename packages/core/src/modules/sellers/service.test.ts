@@ -26,6 +26,7 @@ import {
   createTestCategory,
   createTestProduct,
   createTestUser,
+  testInvoicePrefixes,
 } from '../../testing/fixtures.ts'
 import {
   createAccountDirectory,
@@ -66,8 +67,17 @@ let auth: Auth
 let accounts: AccountDirectory
 let services: SellerServices
 let admin: Extract<RequestContext, { role: 'admin' }>
+// Invoice prefixes have only 4 characters, so the test database counts them
+// out instead of leaving them to chance.
+let freePrefixes: string[] = []
+const nextPrefix = () => {
+  const prefix = freePrefixes.pop()
+  if (!prefix) throw new Error('Reserve more invoice prefixes for this file')
+  return prefix
+}
 
 beforeAll(async () => {
+  freePrefixes = await testInvoicePrefixes(owner, 100)
   queue = await startJobQueue(requireEnv('DATABASE_URL'), 'sellers-test')
   auth = createAppAuth({
     db: web,
@@ -114,7 +124,7 @@ function sellerInput(overrides: Record<string, unknown> = {}) {
     pincode: '411001',
     supportEmail: 'help@greenbasket.test',
     supportPhone: '+912012340001',
-    invoicePrefix: randomLetters(6),
+    invoicePrefix: nextPrefix(),
     commissionBps: null,
     ...overrides,
   }
@@ -240,6 +250,11 @@ describe('createSeller', () => {
       'pincode must be a six-digit PIN code',
     ],
     [
+      'two digits that are not a GST state code',
+      { stateCode: '99', gstin: null, pan: null },
+      'stateCode must be a GST state code, like 27 for Maharashtra',
+    ],
+    [
       'a phone without +91',
       { supportPhone: '02012340001' },
       'supportPhone must be in international format',
@@ -247,12 +262,12 @@ describe('createSeller', () => {
     [
       'a lower-case invoice prefix',
       { invoicePrefix: 'grb' },
-      'invoicePrefix must be 1 to 6 capital letters or digits',
+      'invoicePrefix must be 1 to 4 capital letters or digits',
     ],
     [
-      'a seven-letter invoice prefix',
-      { invoicePrefix: 'ABCDEFG' },
-      'invoicePrefix must be 1 to 6 capital letters or digits',
+      'a five-letter invoice prefix, too long for a 16-character invoice number',
+      { invoicePrefix: 'GREEN' },
+      'invoicePrefix must be 1 to 4 capital letters or digits',
     ],
     [
       'a commission over 100%',
@@ -546,7 +561,19 @@ describe('updateSeller', () => {
       await validationIssues(
         updateSeller(web, admin, seller.id, { gstin: null }),
       ),
-    ).toEqual(['gstin is needed while the seller is approved'])
+    ).toEqual(['gstin is needed once the seller has been approved'])
+
+    // Suspension does not lift the rule, or reinstating would bring back an
+    // approved seller who cannot issue invoices.
+    await suspendSeller(services, admin, seller.id, { reason: 'Fake listings' })
+    expect(
+      await validationIssues(
+        updateSeller(web, admin, seller.id, { gstin: null, pan: null }),
+      ),
+    ).toEqual([
+      'gstin is needed once the seller has been approved',
+      'pan is needed once the seller has been approved',
+    ])
   })
 
   test('refuses an invoice prefix another seller uses', async () => {
@@ -563,7 +590,7 @@ describe('updateSeller', () => {
 
   test('fixes the invoice prefix once the first invoice exists', async () => {
     const seller = await createSeller(services, admin, sellerInput())
-    const prefix = randomLetters(6)
+    const prefix = nextPrefix()
     expect(
       (await updateSeller(web, admin, seller.id, { invoicePrefix: prefix }))
         .invoicePrefix,
@@ -574,7 +601,7 @@ describe('updateSeller', () => {
       .set({ invoiceSeq: 1 })
       .where(eq(sellers.id, seller.id))
     await expect(
-      updateSeller(web, admin, seller.id, { invoicePrefix: randomLetters(6) }),
+      updateSeller(web, admin, seller.id, { invoicePrefix: nextPrefix() }),
     ).rejects.toThrow(ConflictError)
   })
 

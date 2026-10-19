@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { connection } from 'next/server'
 import { BrandDiscovery } from '@/components/storefront/brand-discovery'
 import { Card, EmptyState, StatusBadge } from '@/components/ui/feedback'
 import { getPublicBrands, getPublicCategories } from '@/lib/public-catalogue'
@@ -12,6 +13,7 @@ export const metadata: Metadata = {
 }
 
 export default async function HomePage() {
+  await connection()
   const [categories, brands] = await Promise.all([
     getPublicCategories(),
     getPublicBrands({ limit: 12 }),

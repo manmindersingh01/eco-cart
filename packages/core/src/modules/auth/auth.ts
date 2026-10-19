@@ -8,6 +8,7 @@ import {
 import { admin, emailOTP, phoneNumber } from 'better-auth/plugins'
 import { createAccessControl } from 'better-auth/plugins/access'
 import { defaultStatements } from 'better-auth/plugins/admin/access'
+import { clientAddress } from '../../lib/client-address.ts'
 import type { AuditEntry } from '../audit/service.ts'
 import type { EmailOtpPurpose } from '../notifications/types.ts'
 
@@ -37,8 +38,15 @@ export const accountRoles = {
 export const isIndianMobileNumber = (value: string) =>
   /^\+91[6-9]\d{9}$/.test(value)
 
-// EcoKart has no passwords, and changing an email belongs to profile work
-// that comes later, so these endpoints answer 404.
+// An account that signs up by phone gets an address here, because Better
+// Auth needs an email for every user. `.invalid` can never receive mail.
+const PLACEHOLDER_EMAIL_DOMAIN = '@phone.ecokart.invalid'
+
+/** Whether the account's email is the stand-in a phone sign-up gets. */
+export const isPlaceholderEmail = (email: string) =>
+  email.toLowerCase().endsWith(PLACEHOLDER_EMAIL_DOMAIN)
+
+// EcoKart has no passwords, so these endpoints answer 404.
 const UNUSED_PATHS = [
   '/sign-in/phone-number',
   '/phone-number/request-password-reset',
@@ -46,8 +54,6 @@ const UNUSED_PATHS = [
   '/email-otp/request-password-reset',
   '/email-otp/reset-password',
   '/forget-password/email-otp',
-  '/email-otp/request-email-change',
-  '/email-otp/change-email',
 ]
 const PHONE_PATHS = ['/phone-number/send-otp', '/phone-number/verify']
 
@@ -86,8 +92,74 @@ function codeRecipient(path: string, body: unknown): CodeRecipient | null {
   ) {
     return { channel: 'phone', address: body.phoneNumber }
   }
+  if (
+    path === '/email-otp/request-email-change' &&
+    'newEmail' in body &&
+    typeof body.newEmail === 'string'
+  ) {
+    return { channel: 'email', address: body.newEmail.trim().toLowerCase() }
+  }
   return null
 }
+
+/** The signed-in account as a profile rule needs to see it. */
+interface ProfileUser {
+  role?: string | null | undefined
+  email: string
+  emailVerified: boolean
+  phoneNumber?: string | null | undefined
+}
+
+/**
+ * Why a signed-in buyer may not make this change to how they sign in, or
+ * null. A buyer adds the missing one of email and phone, each confirmed
+ * with a code; a buyer never removes their only way to sign in (backend
+ * profile step). Changing an email or phone that is already there is not
+ * offered yet.
+ */
+function profileRefusal(
+  path: string,
+  body: unknown,
+  user: ProfileUser,
+): string | null {
+  const fields: object = typeof body === 'object' && body !== null ? body : {}
+  const addsPhone =
+    path === '/phone-number/verify' &&
+    'updatePhoneNumber' in fields &&
+    fields.updatePhoneNumber === true
+  const addsEmail =
+    path === '/email-otp/request-email-change' ||
+    path === '/email-otp/change-email'
+  const removesPhone =
+    path === '/update-user' &&
+    'phoneNumber' in fields &&
+    fields.phoneNumber === null
+
+  if ((addsPhone || addsEmail) && user.role !== 'buyer') {
+    return 'Only buyer accounts can add a phone number or an email address here'
+  }
+  if (addsPhone && user.phoneNumber) {
+    return 'This account already has a phone number'
+  }
+  if (addsEmail && !isPlaceholderEmail(user.email)) {
+    return 'This account already has an email address'
+  }
+  if (
+    removesPhone &&
+    user.phoneNumber &&
+    (isPlaceholderEmail(user.email) || !user.emailVerified)
+  ) {
+    return 'Your phone number is the only way you sign in, so it cannot be removed; add an email address first'
+  }
+  return null
+}
+
+const PROFILE_PATHS = new Set([
+  '/phone-number/verify',
+  '/email-otp/request-email-change',
+  '/email-otp/change-email',
+  '/update-user',
+])
 
 /** The roles a request asks Better Auth's admin endpoints to give. */
 function requestedRoles(path: string, body: unknown): string[] {
@@ -141,12 +213,6 @@ export interface AuthDependencies {
 
 const otpExpiry = () => new Date(Date.now() + OTP_EXPIRES_IN_SECONDS * 1000)
 
-/** The visitor's address as the load balancer reports it. */
-function clientIp(headers: Headers | undefined): string | null {
-  const forwarded = headers?.get('x-forwarded-for')?.split(',')[0]?.trim()
-  return forwarded || headers?.get('x-real-ip') || null
-}
-
 function auditedBody(body: unknown): Record<string, unknown> {
   if (typeof body !== 'object' || body === null) return {}
   return Object.fromEntries(
@@ -198,6 +264,8 @@ export function createAuth(dependencies: AuthDependencies) {
         '/phone-number/send-otp': { window: 60, max: 5 },
         '/sign-in/email-otp': { window: 60, max: 10 },
         '/phone-number/verify': { window: 60, max: 10 },
+        '/email-otp/request-email-change': { window: 60, max: 5 },
+        '/email-otp/change-email': { window: 60, max: 10 },
       },
     },
     hooks: {
@@ -223,6 +291,16 @@ export function createAuth(dependencies: AuthDependencies) {
             message:
               'This account owns a seller business, so its role cannot change',
           })
+        }
+
+        if (PROFILE_PATHS.has(ctx.path)) {
+          const session = await getSessionFromCtx(ctx)
+          const refusal = session
+            ? profileRefusal(ctx.path, ctx.body, session.user)
+            : null
+          if (refusal) {
+            throw new APIError('FORBIDDEN', { message: refusal })
+          }
         }
 
         const recipient = codeRecipient(ctx.path, ctx.body)
@@ -272,7 +350,7 @@ export function createAuth(dependencies: AuthDependencies) {
           entityType: 'user',
           entityId: targetUserId ?? 'unknown',
           after: body,
-          ip: clientIp(ctx.request?.headers ?? ctx.headers),
+          ip: clientAddress(ctx.request?.headers ?? ctx.headers),
         })
       }),
     },
@@ -282,6 +360,11 @@ export function createAuth(dependencies: AuthDependencies) {
         expiresIn: OTP_EXPIRES_IN_SECONDS,
         allowedAttempts: 3,
         storeOTP: 'hashed',
+        // Adds an email to an account that signed up by phone: the code goes
+        // to the new address. The account's current address is the
+        // placeholder, which cannot receive a code, so it is not checked;
+        // the hooks above allow this only for such accounts.
+        changeEmail: { enabled: true, verifyCurrentEmail: false },
         sendVerificationOTP: ({ email, otp, type }) =>
           dependencies.sendEmailOtp({
             email,
@@ -296,9 +379,8 @@ export function createAuth(dependencies: AuthDependencies) {
         allowedAttempts: 3,
         phoneNumberValidator: isIndianMobileNumber,
         signUpOnVerification: {
-          // `.invalid` is reserved and can never receive mail.
           getTempEmail: (number) =>
-            `${number.replace(/^\+/, '')}@phone.ecokart.invalid`,
+            `${number.replace(/^\+/, '')}${PLACEHOLDER_EMAIL_DOMAIN}`,
           getTempName: () => '',
         },
         sendOTP: (message) =>

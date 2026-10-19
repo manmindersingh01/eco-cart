@@ -18,7 +18,7 @@ import {
   type SellerSummary,
 } from '@/lib/admin-sellers'
 import { getDatabase } from '@/lib/db'
-import { formatIndianDate } from '@/lib/format'
+import { formatIndianDate, formatState } from '@/lib/format'
 import { requireAdminPageContext } from '@/lib/page-auth'
 
 export const metadata: Metadata = {
@@ -154,7 +154,7 @@ export default async function AdminSellersPage({
                         <p className="mt-1 text-muted">{seller.legalName}</p>
                       </td>
                       <td className="px-4 py-4">
-                        {seller.city}, {seller.stateCode}
+                        {seller.city}, {formatState(seller.stateCode)}
                       </td>
                       <td className="px-4 py-4">
                         <StatusBadge tone={statusTone(seller.status)}>
@@ -194,7 +194,7 @@ export default async function AdminSellersPage({
                   <div>
                     <dt className="text-muted">Location</dt>
                     <dd className="mt-1 font-medium">
-                      {seller.city}, {seller.stateCode}
+                      {seller.city}, {formatState(seller.stateCode)}
                     </dd>
                   </div>
                   <div>

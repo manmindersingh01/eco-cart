@@ -49,6 +49,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Add a dependency: `pnpm --filter @ecokart/web add <name>`.
   The version goes into the `catalog` in `pnpm-workspace.yaml` and `package.json` gets `catalog:`.
 - Tests rebuild their own databases (`ecokart_test_core`, `ecokart_test_web`, `ecokart_test_worker`) from the migrations and empty their own buckets (`ecokart-test-*`) on every run, and never touch the development database or bucket.
+  The settings tests empty `platform_settings`, so they run against a database of their own (`ecokart_test_core_settings`); every other core test may rely on the commercial settings that `saveTestSettings` saves.
+  In a linked git worktree the names end with the worktree's folder name (for example `ecokart_test_core_step_7`), so several checkouts can run their tests at the same time.
 - Example data for local development (platform settings, three approved sellers, a category tree, and brands): `pnpm db:seed`; it only fills what is missing and refuses production.
 - Not set up yet: e2e tests.
   Add them here when they exist.
@@ -57,11 +59,12 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 
 - Follow the layout in design doc section 4: routes in `apps/web/src/app/`, business logic in `packages/core/src/modules/<domain>/` (`service.ts`, `queries.ts`, `jobs.ts`, `types.ts`), schema in `packages/core/src/db/schema/`, SQL migrations in `packages/core/src/db/migrations/`, worker job registration in `apps/worker/src/worker.ts`, external clients in `packages/core/src/lib/`.
 - The worker runs `packages/core` and its own code as TypeScript directly on Node.js, so use only type-level TypeScript syntax (no `enum`, `namespace`, or constructor parameter properties) and import local files with their `.ts` extension.
-- Code that only the worker runs and that loads heavy libraries (the image library `sharp`) is exported from `@ecokart/core/worker`, never from `@ecokart/core`, so the web app never loads it.
+- Code that only the worker runs and that loads heavy libraries (the image library `sharp`, the PDF libraries `pdfmake` and `unpdf`, the CSV and Excel parsers) or runs programs (ffmpeg and ffprobe for product videos) is exported from `@ecokart/core/worker`, never from `@ecokart/core`, so the web app never loads it.
 - The worker refuses to start while a queue in `packages/core/src/jobs.ts` is missing, so a deploy that skipped `pnpm db:migrate` fails loudly.
+  It also refuses to start without ffmpeg and ffprobe (on the `PATH`, or at `FFMPEG_PATH` and `FFPROBE_PATH`), so the worker's Docker image must install them.
 - Pages, server actions, and API routes call module services.
   They never write SQL themselves.
-- Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, conflict, validation, not configured), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
+- Services throw the errors in `packages/core/src/errors.ts` (not signed in, forbidden, not found, conflict, validation, not configured, too many requests), and API routes wrap their handler in `handleErrors` from `apps/web/src/lib/api.ts`, so every route answers with the same status codes and `{ "error", "issues" }` shape.
 - Services check input with `parseInput` and the shared formats and `strictObject` in `packages/core/src/lib/validation.ts`, so every message is plain language.
 - A service that also changes a Better Auth account (through `AccountDirectory`) takes the database and runs its own transactions in a safe order; other services take a transaction.
 - The catalogue module splits its services by topic (`categories.ts`, `brands.ts`, `tree.ts`, `products.ts`, `images.ts`, `summary.ts`, `jobs.ts`) instead of one `service.ts`.
@@ -76,9 +79,10 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Do not add Redis, Elasticsearch, a separate vector database, or another queue.
   Postgres covers all of these at launch, and section 9 of the design doc says when that changes.
 - Uploads go straight from the browser to object storage with a signed POST form (`ObjectStorage.createUploadForm`).
-  Files never pass through the web app, and the worker checks and re-encodes every photo before it is shown, so nothing a browser sent is ever served as it arrived.
+  Files never pass through the web app, and the worker checks and re-encodes every photo and video before it is shown, so nothing a browser sent is ever served as it arrived.
 - Public pages (home, category, product, content) use tag-based caching and must revalidate their tag when the product or category changes.
   Personal pages (cart, orders, seller portal, admin) are never cached.
+  Services do it with `invalidateStorefront(tx, change)` in the transaction of the change, never with Next.js's `revalidateTag`, so it also works in the worker; `refreshProducts` already does it for every published product it rebuilds.
 
 ## Money, tax, and orders
 
@@ -93,7 +97,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Carts store no prices.
   Read price and stock fresh from `product_variants` every time the cart is shown or checked out.
 - Commercial values (commission, delivery charge, free-delivery threshold) and company details come from platform settings through `getSetting`, never from constants in code.
-- The catalogue service updates the summary fields on `products` (`min_price_paise`, `total_stock`, `rating_avg`, `search_text`, and the rest) on every write that affects them.
+- The catalogue service updates the summary fields on `products` (`min_price_paise`, `total_stock`, `search_text`, and the rest) on every write that affects them.
+  `rating_avg` and `rating_count` change only through `app.refresh_product_rating`, which the reviews service calls in the transaction of every review change.
 - The seller ledger (`seller_ledger_entries`) is append only.
   Fix a mistake with a new `adjustment` entry, never with UPDATE or DELETE.
 - If seller and buyer are in the same state, the invoice uses CGST plus SGST.
@@ -118,6 +123,8 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   Never add a second path.
 - EcoKart never receives card data.
   Keep it that way.
+- Online payment is off while the `RAZORPAY_*` keys are blank, which leaves cash on delivery.
+  Tests and local runs use the stand-in Razorpay server `startFakeRazorpay` from `@ecokart/core/testing`, never the real one.
 
 ## Database and security
 
@@ -156,12 +163,12 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Seller accounts are made only by `createSeller`, together with their business; Better Auth's administrator endpoints refuse the `seller` role and refuse to change the role of an account that owns a business.
 - Email codes are stored hashed (`storeOTP: "hashed"`); phone codes are not yet, and must be before SMS goes live (backend spec step 2).
   The OTP delivery callbacks only queue the email or SMS; they never send inline.
-- Object storage buckets are private, and every download of a private file (originals, imports, invoices, return photos) is a short-lived signed URL.
-  Only the product photo sizes under `images/` are public, served through CloudFront.
+- Object storage buckets are private, and every download of a private file (originals, imports, invoices, return photos, seller verification documents) is a short-lived signed URL.
+  Only the product photo sizes under `images/` and the converted product videos under `videos/` are public, served through CloudFront.
 
 ## AI features
 
-- Every AI call goes through `packages/core/src/lib/ai/`, one OpenAI-compatible HTTP client whose base URL, API key, and model names come from environment variables (`AI_BASE_URL`, `AI_API_KEY`, `AI_CHAT_MODEL`, `AI_VISION_MODEL`, `AI_EMBED_MODEL`, `AI_EMBED_DIMENSIONS`, see design doc section 3.2).
+- Every AI call goes through `packages/core/src/lib/ai/`, one OpenAI-compatible HTTP client whose base URL, API key, and model names come from environment variables (`AI_ENABLED`, `AI_BASE_URL`, `AI_API_KEY`, `AI_CHAT_MODEL`, `AI_VISION_MODEL`, `AI_EMBED_MODEL`, `AI_EMBED_DIMENSIONS`, see design doc section 3.2).
   Never import a vendor SDK anywhere else, and never hard-code a provider or model name outside that folder.
 - The gateway is OpenRouter (`https://openrouter.ai/api/v1`), decided by the client on 2 October 2026.
   Chat and vision use `deepseek/deepseek-v4.1-flash`; embeddings use `voyageai/voyage-multimodal-3.5` at 1024 dimensions.
@@ -175,7 +182,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Log every AI call in `ai_requests`.
   Check the cache on `(feature, input_hash)` first, and enforce the daily platform and per-seller limits before calling out.
 - Run deterministic checks before AI checks.
-  For example, listing screening checks price above MRP and prohibited terms before asking the model.
+  For example, listing screening checks prohibited terms and an implausibly large discount (70% or more below the MRP) before asking the model.
 - The shopping assistant answers only from the product data it was given and says so when it cannot answer.
   It returns a structured object with cited product ids, and the storefront renders product cards from that object, never raw model text as HTML.
 

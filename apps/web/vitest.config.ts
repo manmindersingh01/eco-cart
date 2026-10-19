@@ -11,6 +11,11 @@ export default defineConfig({
     },
   },
   test: {
+    // These tests talk to a real PostgreSQL, Mailpit, and object storage.
+    // On a busy laptop or a small CI runner a few take several seconds, so
+    // Vitest's 5-second default made them fail at random; a real hang still
+    // fails at 20 seconds.
+    testTimeout: 20_000,
     // Rebuilds ecokart_test_web from the real migrations before every run.
     globalSetup: ['./vitest.global-setup.ts'],
     setupFiles: ['./vitest.setup.ts'],
@@ -23,6 +28,8 @@ export default defineConfig({
       // "development-only-encryption-key!" in base64.
       MESSAGE_ENCRYPTION_KEY: 'ZGV2ZWxvcG1lbnQtb25seS1lbmNyeXB0aW9uLWtleSE=',
       SMS_PROVIDER: 'mailpit',
+      // As in development; a test that needs AI points it at the fake server.
+      AI_ENABLED: 'false',
       // Its own bucket on the compose.yaml storage service, or CI's.
       ...testStorageEnv('web'),
     },
