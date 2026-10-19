@@ -235,7 +235,8 @@ async function queueOrderEmail(
     | 'order_placed'
     | 'payment_received'
     | 'dispatched'
-    | 'cancelled' = 'order_placed',
+    | 'cancelled'
+    | 'refund_recorded' = 'order_placed',
 ) {
   const [row] = await worker
     .insert(emailOutbox)
@@ -353,6 +354,24 @@ describe('emails other than sign-in codes', () => {
       'Hello Asha Patil,\n\nPart of your order EK-261018-000003 is on its way. We will email you again when the rest is dispatched.\n\nBamboo Toothbrush × 2\n\nCourier: Delhivery\nTracking number: DLV1234567\nTrack it: https://www.delhivery.com/track/DLV1234567\n\nThank you for shopping with EcoKart.',
       'Hello Asha Patil,\n\nWe are sorry: your order EK-261018-000004, placed on 18 Oct 2026, has been cancelled. Reason: The seller cannot supply it\n\nBamboo Toothbrush × 2\n\nWe will refund ₹398 to the way you paid, and email you when the refund is made.',
     ])
+  })
+
+  test('sends the refund recorded email', async () => {
+    const { sender, sent } = fakeEmailSender()
+    const row = await queueOrderEmail(
+      {
+        orderNumber: 'EK-261020-000007',
+        buyerName: 'Asha Patil',
+        amountPaise: 50_000,
+        method: 'gateway',
+        lines: [{ title: 'Bamboo Toothbrush', options: {}, quantity: 1 }],
+      },
+      'refund_recorded',
+    )
+    await sendQueuedEmail(depsWith(sender), row.id)
+    expect(sent[0]!.text).toBe(
+      'Hello Asha Patil,\n\nWe have refunded ₹500 for order EK-261020-000007.\n\nFor your return of:\nBamboo Toothbrush × 1\n\nIt goes back the way you paid. Your bank may take a few working days to show it.\n\nThank you for shopping with EcoKart.',
+    )
   })
 
   test('gives up at once on an email no template can render', async () => {

@@ -197,13 +197,14 @@ packages/
       auth/  catalogue/  cart/  checkout/  orders/  payments/  ledger/
       invoices/  returns/  search/  ai/  imports/  notifications/
       settings/  audit/  sellers/  rate-limits/
-      addresses/  reviews/  content/
+      addresses/  reviews/  content/  assistant/
         (each module has service.ts, plus jobs.ts, types.ts, or config.ts where needed; the
          catalogue splits its services by topic: categories.ts, brands.ts,
          tree.ts for the in-memory category tree, products.ts, images.ts,
          summary.ts for the summary fields on products, moderation.ts for
          submitting, reviewing, and archiving listings, screening.ts for the
-         screening job, storefront.ts and storefront-types.ts for the public
+         screening job, embeddings.ts for the product embeddings that
+         search uses, storefront.ts and storefront-types.ts for the public
          product, category, and home pages and the product list they share
          with search, storefront-cache.ts for the cache tags and
          invalidateStorefront, and jobs.ts; search/ turns a request into
@@ -358,8 +359,8 @@ accounts                                core; for password and social sign-in, s
 verifications                           core; holds OTP codes while they are valid
   id            uuid PK
   identifier    text    the email or phone the code was sent to
-  value         text    email codes stored hashed (storeOTP: hashed); phone codes in plain
-                        text for their five minutes until SMS goes live (backend spec, step 2)
+  value         text    email codes stored hashed (storeOTP: hashed); phone codes as a hash
+                        keyed with the auth secret (backend spec, step 2)
   expires_at    timestamp (UTC)
   created_at, updated_at
   INDEX (identifier)
@@ -577,8 +578,9 @@ carts
   user_id      uuid FK users, UNIQUE, nullable
   guest_token  text UNIQUE, nullable   cookie token for guests, merged on login
   coupon_code  text, nullable
-  created_at, updated_at
+  created_at, updated_at   every change to the cart or its items moves updated_at
   CHECK (user_id IS NOT NULL OR guest_token IS NOT NULL)
+  INDEX (updated_at) WHERE user_id IS NULL   a nightly job removes guest carts unchanged for 31 days, after their 30-day cookie has run out
 
 cart_items
   id          uuid PK
@@ -697,8 +699,9 @@ return_requests
   refund_id      uuid FK refunds, nullable
   created_at, updated_at
   INDEX (status, created_at, id)
-  INDEX (user_id)
-  INDEX (seller_id)
+  INDEX (user_id, created_at DESC, id DESC)     the buyer's returns
+  INDEX (seller_id, created_at DESC, id DESC)   the seller's returns
+  UNIQUE (order_item_id) WHERE status is requested or approved: one open return per line
 
 return_photos     a buyer's photo for a return: uploaded before the return is sent, checked and
                   re-encoded by the worker (processing | ready | failed), private, and attached
@@ -774,6 +777,7 @@ refunds
   recorded_at         timestamptz
   created_at
   INDEX (order_id)
+  UNIQUE (return_request_id) where it is set: a return is refunded once
 ```
 
 The unique constraint on `(provider, event_id)` is what makes webhook processing idempotent.
@@ -837,7 +841,8 @@ catalogue_imports
   file_type          text   csv | xlsx
   status             text   uploaded | mapping_suggested | mapping_confirmed | validating | importing | completed | failed
   headers            text[]
-  column_mapping     jsonb   {"Product Name": "title", "Price (Rs)": "price", ...}
+  column_mapping     jsonb   {"Product Name": "title", "Price (Rs)": "price", ...}, set only when the seller confirms
+  suggested_mapping  jsonb, nullable   per column: the field, a confidence from 0 to 1, and whether the name or the AI chose it
   ai_request_id      uuid FK ai_requests, nullable
   total_rows, ok_rows, error_rows   int
   error_report_key   text, nullable   CSV of failed rows with reasons
@@ -961,7 +966,7 @@ rate_limits
   key           text PK   e.g. otp:phone:+91..., checkout:user:<id>, ip:1.2.3.4:search
   window_start  timestamptz
   count         int
-  INDEX (window_start)   for clearing old windows
+  INDEX (window_start)   a nightly job removes windows that started over a day ago; no rule may count over a longer window
 
 cache_invalidations                     append only; no row-level security: only tags of public pages
   id            bigserial PK
@@ -990,10 +995,11 @@ Login is handled by Better Auth, mounted in the web app at `/api/auth/*`.
 1. The user enters an email or mobile number and the browser calls Better Auth's email OTP or phone number plugin.
    Mobile numbers must be Indian (`+91` and ten digits starting with 6 to 9), and phone sign-in stays off until an SMS provider is configured.
 2. Before a code is made, two limits are checked: five code requests a minute from one IP address (Better Auth, counted in `auth_rate_limits`), and five codes an hour for one email address or number from anywhere (our `rate_limits`, with the address hashed).
-3. Better Auth generates a six-digit code with a five-minute expiry, stores it in `verifications` (hashed for email), and calls our callback.
+3. Better Auth generates a six-digit code with a five-minute expiry, stores it hashed in `verifications`, and calls our callback.
    The callback queues the email through `email_outbox`, or the SMS as a job, with the code encrypted; the worker decrypts it, sends the message, and then removes the code.
 4. The user enters the code.
    Better Auth verifies it, allows three attempts, creates the user on first sign-in (with the `buyer` role by default; a phone-only account gets a placeholder email under the reserved `.invalid` domain), and writes a `sessions` row.
+   It deletes the code once used, and every expired code whenever it checks one, so `verifications` needs no clean-up job.
 5. The browser receives the `ecokart.session_token` cookie: HttpOnly, SameSite Lax, and Secure on https.
 6. On every request the app reads the session through Better Auth, looks up the seller id for a seller account, and runs the request's queries through `withContext`, which sets the user id, role, and seller id with `SET LOCAL` for row-level security.
 
@@ -1083,9 +1089,13 @@ GST credit notes for returns are deferred, as quotation 4.0 says.
 ### 6.7 Catalogue import
 
 1. The seller uploads a CSV or XLSX file straight to object storage and a `catalogue_imports` row is created.
-2. A job reads the headers and the first few rows, asks the text model for a suggested mapping from the seller's column names to EcoKart fields, and stores it with a confidence per column.
-3. The seller reviews and confirms the mapping in the portal.
-   Until the AI suggestion arrives (step 19), the seller chooses every column by hand.
+2. A job reads the headers and the first few rows and suggests a field for each column, with a confidence.
+   Names settle most columns without any AI, such as "Product Name" for the title or "Price (Rs)" for the price.
+   Only the columns the names leave open go to the text model, in a second job, with a few sample values each; its answer is checked, and only columns and fields it was asked about are kept.
+   The call counts against the seller's daily AI calls from the moment the file is read.
+   With AI switched off, a daily limit used up, or an answer that cannot be used, the names' suggestion stands.
+3. The seller reviews and confirms the mapping in the portal, choosing any column the suggestion left open.
+   The seller may confirm before the AI has answered, and a suggestion is never applied without them.
    Each row becomes one draft with one variant, and a file has at most 5,000 rows and 10 MB.
 4. A job validates every row deterministically (required fields, price and MRP numeric and sane, stock non-negative, category resolvable), optionally asks the text model to propose missing descriptions or categories for rows that lack them, and creates draft products and variants for valid rows.
 5. Failed rows are written to an error report CSV with row numbers and reasons, and the seller submits the valid drafts for review.
@@ -1146,7 +1156,7 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 - The full list of row-level security rules is in `docs/backend-spec.md`, step 1.
 - Application code still checks permissions explicitly; row-level security is the safety net that makes a missed check a bug rather than a data leak.
   In the same spirit, a database trigger refuses any change by the web app without full access that approves or rejects a product or sets its GST rate, so a seller can never approve their own listing.
-- Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, email codes stored hashed (phone codes get the same before SMS goes live), three attempts per code, and suspension through Better Auth's ban, which revokes every session of that user.
+- Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, email and phone codes stored hashed, three attempts per code, and suspension through Better Auth's ban, which revokes every session of that user.
 - Better Auth rate limits its own endpoints (OTP sending and verification), with the counters in the database so the limits hold across web containers.
   A second limit caps the codes sent to any one email address or phone number.
   Checkout, search, and every AI endpoint use the `rate_limits` table with an upsert per window.
