@@ -23,6 +23,7 @@ import {
 } from '../../db/schema/index.ts'
 import { NotFoundError, ValidationError } from '../../errors.ts'
 import { imageSizeKey, type ImageSize } from '../../lib/images.ts'
+import { formatRupees } from '../../lib/money.ts'
 import { videoFileKey, videoPosterKey } from '../../lib/videos.ts'
 import {
   afterKeyCursor,
@@ -313,7 +314,11 @@ export async function listPublicProducts(
 ): Promise<Page<ProductCard>> {
   const { filters, match, sort } = query
   const limit = Math.min(query.limit ?? STOREFRONT_PAGE_SIZE, MAX_PAGE_SIZE)
-  if (filters.categoryIds?.length === 0 || filters.brandIds?.length === 0) {
+  if (
+    filters.productIds?.length === 0 ||
+    filters.categoryIds?.length === 0 ||
+    filters.brandIds?.length === 0
+  ) {
     return { items: [], nextCursor: null }
   }
   const order = ordering(sort, match)
@@ -330,6 +335,7 @@ export async function listPublicProducts(
     // A product with no active variant has no price to show or sort by.
     isNotNull(products.minPricePaise),
     ...(filters.includeOutOfStock ? [] : [eq(products.inStock, true)]),
+    ...(filters.productIds ? [inArray(products.id, filters.productIds)] : []),
     ...(filters.categoryIds
       ? [inArray(products.categoryId, filters.categoryIds)]
       : []),
@@ -815,6 +821,133 @@ export async function listSimilarProducts(
     tree,
   )
   return { productId: product.id, categoryId: product.categoryId, items }
+}
+
+/* For other modules: the shopping assistant (step 20). */
+
+/** The longest description the assistant is given; the start says the most. */
+const MAX_FACTS_DESCRIPTION = 800
+
+/** What the shopping assistant may say about a product, and nothing more. */
+export interface ProductFacts {
+  id: string
+  title: string
+  brand: string | null
+  category: string
+  /** Prices as shoppers read them, for example ₹1,299. */
+  price: string
+  mrp: string
+  inStock: boolean
+  rating: { average: number; count: number } | null
+  highlights: string[]
+  attributes: Record<string, string>
+  /** Each option and its values, for example { "Colour": ["Blue", "Green"] }. */
+  options: Record<string, string[]>
+  description: string
+}
+
+/**
+ * The facts of the products on sale among `ids`, in the order of `ids`;
+ * those not on sale are left out. Only what the product page shows.
+ */
+export async function getProductFacts(
+  tx: Transaction,
+  ids: readonly string[],
+): Promise<ProductFacts[]> {
+  if (ids.length === 0) return []
+  const tree = await loadCategoryTree(tx)
+  const rows = await tx
+    .select({
+      id: products.id,
+      title: products.title,
+      brandName: brands.name,
+      categoryId: products.categoryId,
+      minPricePaise: products.minPricePaise,
+      maxPricePaise: products.maxPricePaise,
+      minMrpPaise: products.minMrpPaise,
+      inStock: products.inStock,
+      ratingAvg: products.ratingAvg,
+      ratingCount: products.ratingCount,
+      highlights: products.highlights,
+      attributes: products.attributes,
+      optionNames: products.optionNames,
+      description: products.description,
+    })
+    .from(products)
+    .leftJoin(
+      brands,
+      and(eq(brands.id, products.brandId), eq(brands.isActive, true)),
+    )
+    .where(
+      and(
+        inArray(products.id, [...new Set(ids)]),
+        isNotNull(products.minPricePaise),
+        ...onSale(tree),
+      ),
+    )
+  const variants = await tx
+    .select({
+      productId: productVariants.productId,
+      options: productVariants.options,
+    })
+    .from(productVariants)
+    .where(
+      and(
+        inArray(
+          productVariants.productId,
+          rows.map((row) => row.id),
+        ),
+        eq(productVariants.isActive, true),
+      ),
+    )
+    .orderBy(asc(productVariants.createdAt))
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  return ids.flatMap((id): ProductFacts[] => {
+    const row = byId.get(id)
+    if (
+      !row ||
+      row.minPricePaise === null ||
+      row.maxPricePaise === null ||
+      row.minMrpPaise === null
+    ) {
+      return []
+    }
+    const options = Object.fromEntries(
+      row.optionNames.map((name) => [
+        name,
+        [
+          ...new Set(
+            variants
+              .filter((variant) => variant.productId === id)
+              .flatMap((variant) => variant.options[name] ?? []),
+          ),
+        ],
+      ]),
+    )
+    const price =
+      row.minPricePaise === row.maxPricePaise
+        ? formatRupees(row.minPricePaise)
+        : `${formatRupees(row.minPricePaise)} to ${formatRupees(row.maxPricePaise)}`
+    return [
+      {
+        id,
+        title: row.title,
+        brand: row.brandName,
+        category: tree.byId(row.categoryId)?.name ?? '',
+        price,
+        mrp: formatRupees(row.minMrpPaise),
+        inStock: row.inStock === true,
+        rating:
+          row.ratingCount > 0
+            ? { average: Number(row.ratingAvg), count: row.ratingCount }
+            : null,
+        highlights: row.highlights,
+        attributes: row.attributes,
+        options,
+        description: row.description.trim().slice(0, MAX_FACTS_DESCRIPTION),
+      },
+    ]
+  })
 }
 
 /* For other modules: reviews (step 16). */

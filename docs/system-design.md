@@ -197,13 +197,14 @@ packages/
       auth/  catalogue/  cart/  checkout/  orders/  payments/  ledger/
       invoices/  returns/  search/  ai/  imports/  notifications/
       settings/  audit/  sellers/  rate-limits/
-      addresses/  reviews/  content/
+      addresses/  reviews/  content/  assistant/
         (each module has service.ts, plus jobs.ts, types.ts, or config.ts where needed; the
          catalogue splits its services by topic: categories.ts, brands.ts,
          tree.ts for the in-memory category tree, products.ts, images.ts,
          summary.ts for the summary fields on products, moderation.ts for
          submitting, reviewing, and archiving listings, screening.ts for the
-         screening job, storefront.ts and storefront-types.ts for the public
+         screening job, embeddings.ts for the product embeddings that
+         search uses, storefront.ts and storefront-types.ts for the public
          product, category, and home pages and the product list they share
          with search, storefront-cache.ts for the cache tags and
          invalidateStorefront, and jobs.ts; search/ turns a request into
