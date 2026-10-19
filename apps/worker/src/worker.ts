@@ -4,8 +4,10 @@ import {
   createPool,
   loadNotificationConfig,
   QUEUES,
+  registerCartJobs,
   registerNotificationJobs,
   registerOrderJobs,
+  registerRateLimitJobs,
   registerStorefrontCacheJobs,
   type StorageConfig,
 } from '@ecokart/core'
@@ -101,6 +103,8 @@ export async function startWorker(
     db,
     storage: createObjectStorage(options.storage),
   })
+  await registerCartJobs(boss, { db })
+  await registerRateLimitJobs(boss, { db })
 
   return {
     boss,

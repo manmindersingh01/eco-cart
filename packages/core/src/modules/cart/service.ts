@@ -76,8 +76,20 @@ async function findCart(
 }
 
 /**
- * The shopper's cart, created if needed, and locked until the transaction
- * ends, so two changes to one cart take turns.
+ * Marks the cart as changed now. Every change renews a guest's cart cookie,
+ * and the nightly clean-up goes by this time, so it must move with every
+ * change, also one that only removes an item.
+ */
+async function markChanged(tx: Transaction, cartId: string): Promise<void> {
+  await tx
+    .update(carts)
+    .set({ updatedAt: sql`now()` })
+    .where(eq(carts.id, cartId))
+}
+
+/**
+ * The shopper's cart, created if needed, locked until the transaction ends
+ * so two changes to one cart take turns, and marked as changed.
  */
 async function openCart(tx: Transaction, shopper: Shopper): Promise<CartRow> {
   if (shopper.role === 'anonymous' && !shopper.guestToken) {
@@ -94,6 +106,7 @@ async function openCart(tx: Transaction, shopper: Shopper): Promise<CartRow> {
     .onConflictDoNothing()
   const cart = await findCart(tx, shopper)
   if (!cart) throw new Error('The cart just created could not be found')
+  await markChanged(tx, cart.id)
   return cart
 }
 
@@ -397,7 +410,7 @@ export async function addCartItem(
   return viewCart(tx, context, cart, photos)
 }
 
-/** The line for `variantId` in the shopper's cart, or 404. */
+/** The line for `variantId` in the shopper's cart, or 404; for a change. */
 async function cartLine(
   tx: Transaction,
   shopper: Shopper,
@@ -417,6 +430,7 @@ async function cartLine(
           )
       : []
   if (!cart || !item) throw new NotFoundError('That item is not in your cart')
+  await markChanged(tx, cart.id)
   return { cart, itemId: item.id }
 }
 

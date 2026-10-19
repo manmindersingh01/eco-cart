@@ -383,6 +383,7 @@ export {
   updateCoupon,
 } from './modules/cart/coupons.ts'
 export {
+  GUEST_CART_DAYS,
   MAX_CART_LINES,
   MAX_LINE_QUANTITY,
   type CartCoupon,
@@ -412,6 +413,16 @@ export {
   expireUnpaidOrders,
   registerOrderJobs,
 } from './modules/orders/jobs.ts'
+export {
+  REMOVE_STALE_GUEST_CARTS_QUEUE,
+  registerCartJobs,
+  removeStaleGuestCarts,
+} from './modules/cart/jobs.ts'
+export {
+  REMOVE_EXPIRED_RATE_LIMITS_QUEUE,
+  registerRateLimitJobs,
+  removeExpiredRateLimits,
+} from './modules/rate-limits/jobs.ts'
 export {
   createRazorpay,
   loadRazorpayConfig,

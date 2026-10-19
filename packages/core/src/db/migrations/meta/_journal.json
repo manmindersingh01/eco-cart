@@ -239,6 +239,13 @@
       "when": 1792441784795,
       "tag": "0033_order_list_index",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792442131819,
+      "tag": "0034_guest_cart_clean_up_index",
+      "breakpoints": true
     }
   ]
 }

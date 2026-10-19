@@ -1,4 +1,5 @@
 import type { QueueDefinition } from './lib/queue.ts'
+import { cartQueues } from './modules/cart/jobs.ts'
 import { draftQueues } from './modules/catalogue/drafts.ts'
 import { catalogueQueues } from './modules/catalogue/images.ts'
 import { screeningQueues } from './modules/catalogue/screening.ts'
@@ -8,6 +9,7 @@ import { importQueues } from './modules/imports/service.ts'
 import { invoiceQueues } from './modules/invoices/service.ts'
 import { notificationQueues } from './modules/notifications/jobs.ts'
 import { orderQueues } from './modules/orders/jobs.ts'
+import { rateLimitQueues } from './modules/rate-limits/jobs.ts'
 import { returnQueues } from './modules/returns/photos.ts'
 import { sellerQueues } from './modules/sellers/documents.ts'
 
@@ -27,4 +29,6 @@ export const QUEUES: QueueDefinition[] = [
   ...sellerQueues,
   ...orderQueues,
   ...returnQueues,
+  ...cartQueues,
+  ...rateLimitQueues,
 ]
