@@ -1,15 +1,17 @@
-import { and, asc, eq, sql, type SQL } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm'
 import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import type { Database, Transaction } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
-import { paymentEvents, payments } from '../../db/schema/index.ts'
+import { paymentEvents, payments, refunds } from '../../db/schema/index.ts'
 import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
   ValidationError,
 } from '../../errors.ts'
+import { formatRupees } from '../../lib/money.ts'
+import { uniqueViolation } from '../../lib/postgres.ts'
 import type { JobQueue } from '../../lib/queue.ts'
 import {
   toRazorpayPayment,
@@ -456,3 +458,94 @@ export const latestPaymentStatus = (orderId: AnyPgColumn): SQL<string | null> =>
   sql<
     string | null
   >`(select ${payments.status} from ${payments} where ${payments.orderId} = ${qualified(orderId)} order by ${payments.createdAt} desc, ${payments.id} desc limit 1)`
+
+/* Refunds (backend spec step 15). The administrator refunds in the Razorpay
+ * dashboard, or by bank transfer for cash on delivery, and records it here;
+ * EcoKart never calls Razorpay to refund. */
+
+export type RefundRow = typeof refunds.$inferSelect
+
+export interface NewRefund {
+  orderId: string
+  returnRequestId: string | null
+  amountPaise: number
+  method: 'gateway' | 'bank_transfer'
+  /** The Razorpay refund id, for a refund through the gateway. */
+  providerRefundId: string | null
+  note: string | null
+  recordedBy: string
+}
+
+/**
+ * Records a refund the administrator has made, never more than is left of
+ * the order's payment, and marks the payment refunded once nothing is left.
+ * The caller holds the order's lock, so two refunds of one order take turns.
+ */
+export async function recordRefund(
+  tx: Transaction,
+  refund: NewRefund,
+): Promise<RefundRow> {
+  const paid = (await paymentsOfOrder(tx, refund.orderId)).find(
+    (payment) =>
+      payment.status === 'captured' ||
+      payment.status === 'partially_refunded' ||
+      // Cash on delivery for a parcel that arrived while another is on its
+      // way: the courier has collected it, though the order is not complete.
+      payment.provider === 'cod',
+  )
+  if (!paid) {
+    throw new ConflictError('This order has no payment to refund')
+  }
+  const left = paid.amountPaise - (await refundedSoFar(tx, refund.orderId))
+  if (refund.amountPaise > left) {
+    throw new ConflictError(
+      `Only ${formatRupees(left)} of this order's payment is left to refund`,
+    )
+  }
+  let row: RefundRow | undefined
+  try {
+    ;[row] = await tx
+      .insert(refunds)
+      .values({ ...refund, paymentId: paid.id })
+      .returning()
+  } catch (error) {
+    if (uniqueViolation(error) === 'refunds_provider_refund_id_unique') {
+      throw new ConflictError('That Razorpay refund is already recorded')
+    }
+    throw error
+  }
+  if (paid.status === 'captured' || paid.status === 'partially_refunded') {
+    await tx
+      .update(payments)
+      .set({
+        status: refund.amountPaise === left ? 'refunded' : 'partially_refunded',
+      })
+      .where(eq(payments.id, paid.id))
+  }
+  return row!
+}
+
+/** The refunds of these returns, by return id. */
+export async function refundsOfReturns(
+  tx: Transaction,
+  returnIds: readonly string[],
+): Promise<Map<string, RefundRow>> {
+  if (returnIds.length === 0) return new Map()
+  const rows = await tx
+    .select()
+    .from(refunds)
+    .where(inArray(refunds.returnRequestId, [...returnIds]))
+  return new Map(rows.map((row) => [row.returnRequestId!, row]))
+}
+
+/** What has been refunded of the order's payment so far. */
+export async function refundedSoFar(
+  tx: Transaction,
+  orderId: string,
+): Promise<number> {
+  const [{ total } = { total: '0' }] = await tx
+    .select({ total: sql<string>`coalesce(sum(${refunds.amountPaise}), 0)` })
+    .from(refunds)
+    .where(eq(refunds.orderId, orderId))
+  return Number(total)
+}

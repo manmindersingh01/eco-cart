@@ -11,6 +11,7 @@ import {
   pgTable,
   text,
   unique,
+  uniqueIndex,
   uuid,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
@@ -314,8 +315,21 @@ export const returnRequests = pgTable(
       t.createdAt,
       t.id,
     ),
-    index('return_requests_user_id_idx').on(t.userId),
-    index('return_requests_seller_id_idx').on(t.sellerId),
+    // The buyer's and the seller's lists of returns, newest first.
+    index('return_requests_user_id_created_at_idx').on(
+      t.userId,
+      t.createdAt.desc(),
+      t.id.desc(),
+    ),
+    index('return_requests_seller_id_created_at_idx').on(
+      t.sellerId,
+      t.createdAt.desc(),
+      t.id.desc(),
+    ),
+    // A line has at most one return waiting for a decision or a refund.
+    uniqueIndex('return_requests_open_line_key')
+      .on(t.orderItemId)
+      .where(sql`status in ('requested', 'approved')`),
     check(
       'return_requests_status_check',
       sql`status in ('requested', 'approved', 'rejected', 'refunded')`,
