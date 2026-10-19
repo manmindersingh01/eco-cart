@@ -391,8 +391,11 @@ describe('cash on delivery', () => {
             set: { value: false },
           })
         await expect(
-          // placeOrder opens its transactions as savepoints inside this one.
           placeOrder(
+            // placeOrder only opens transactions on it, which a transaction
+            // does as savepoints, and passes it to consumeRateLimit, which
+            // takes a transaction too.
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion
             tx as unknown as typeof web,
             { queue, razorpay },
             buyer.context,
