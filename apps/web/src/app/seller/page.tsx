@@ -9,7 +9,7 @@ import { requireSeller } from '@/lib/request-context'
 import { sellerStatusPresentation } from '@/lib/seller-profile'
 
 export const metadata: Metadata = {
-  title: 'Seller portal | EcoKart',
+  title: 'Seller portal',
 }
 
 export default async function SellerPage() {

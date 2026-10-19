@@ -222,8 +222,22 @@
     {
       "idx": 31,
       "version": "7",
-      "when": 1792348969684,
-      "tag": "0031_order_list_index",
+      "when": 1792348120533,
+      "tag": "0031_bank_accounts_and_return_photos",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792348121872,
+      "tag": "0032_bank_account_and_return_photo_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792441784795,
+      "tag": "0033_order_list_index",
       "breakpoints": true
     }
   ]

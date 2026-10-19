@@ -7,7 +7,7 @@ import { getDatabase } from '@/lib/db'
 import { requireSeller } from '@/lib/request-context'
 
 export const metadata: Metadata = {
-  title: 'Business profile | EcoKart',
+  title: 'Business profile',
 }
 
 export default async function SellerProfilePage() {
