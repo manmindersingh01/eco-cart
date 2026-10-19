@@ -5,11 +5,15 @@ import { sealSecret } from '../../lib/encryption.ts'
 import type { JobQueue } from '../../lib/queue.ts'
 import { SEND_EMAIL_QUEUE, SEND_SMS_QUEUE } from './jobs.ts'
 import {
+  cancelledSubject,
+  dispatchedSubject,
   orderPlacedSubject,
   otpEmailSubject,
   paymentReceivedSubject,
 } from './templates.ts'
 import type {
+  CancelledPayload,
+  DispatchedPayload,
   EmailOtpPurpose,
   OrderPlacedPayload,
   OtpEmailPayload,
@@ -140,5 +144,37 @@ export async function queuePaymentReceivedEmail(
     template: 'payment_received',
     subject: paymentReceivedSubject(payment.orderNumber),
     payload: payment,
+  })
+}
+
+/** Queues the dispatched email for one shipment (backend spec step 13). */
+export async function queueDispatchedEmail(
+  tx: Transaction,
+  queue: JobQueue,
+  to: { userId: string; email: string },
+  shipment: DispatchedPayload,
+): Promise<number | null> {
+  return queueEmail(tx, queue, {
+    userId: to.userId,
+    to: to.email,
+    template: 'dispatched',
+    subject: dispatchedSubject(shipment.orderNumber),
+    payload: shipment,
+  })
+}
+
+/** Queues the order cancelled email (backend spec step 13). */
+export async function queueCancelledEmail(
+  tx: Transaction,
+  queue: JobQueue,
+  to: { userId: string; email: string },
+  order: CancelledPayload,
+): Promise<number | null> {
+  return queueEmail(tx, queue, {
+    userId: to.userId,
+    to: to.email,
+    template: 'cancelled',
+    subject: cancelledSubject(order.orderNumber),
+    payload: order,
   })
 }

@@ -8,7 +8,7 @@ import { requireAdmin } from '@/lib/request-context'
 import { getSellerServices } from '@/lib/sellers'
 
 export const metadata: Metadata = {
-  title: 'Seller details | EcoKart',
+  title: 'Seller details',
 }
 
 export default async function SellerDetailPage({

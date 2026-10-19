@@ -9,7 +9,7 @@ import { requireSeller } from '@/lib/request-context'
 import { getStorage } from '@/lib/storage'
 
 export const metadata: Metadata = {
-  title: 'Product editor | EcoKart',
+  title: 'Product editor',
 }
 
 export default async function SellerProductPage({

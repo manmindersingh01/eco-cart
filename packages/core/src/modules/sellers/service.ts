@@ -850,3 +850,22 @@ export async function getCommissionRates(
     .where(inArray(sellers.id, [...new Set(ids)]))
   return new Map(rows.map((row) => [row.id, row.commissionBps]))
 }
+
+/* Orders (backend spec step 13). */
+
+/**
+ * The display names of the sellers among `ids` that the caller may see, by
+ * id: every seller for administrators, approved ones for buyers, so a
+ * suspended seller's lines show without a name.
+ */
+export async function getSellerNames(
+  tx: Transaction,
+  ids: readonly string[],
+): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map()
+  const rows = await tx
+    .select({ id: sellers.id, displayName: sellers.displayName })
+    .from(sellers)
+    .where(inArray(sellers.id, [...new Set(ids)]))
+  return new Map(rows.map((row) => [row.id, row.displayName]))
+}

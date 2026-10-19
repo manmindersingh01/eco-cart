@@ -1,3 +1,4 @@
+import { isPlaceholderEmail } from '@ecokart/core'
 import { handleErrors } from '@/lib/api'
 import { requireSignedIn } from '@/lib/request-context'
 
@@ -12,7 +13,7 @@ export const GET = handleErrors(async (request: Request) => {
     id: user.id,
     name: user.name,
     // Phone-only accounts carry a placeholder address nobody should see.
-    email: user.email.endsWith('.invalid') ? null : user.email,
+    email: isPlaceholderEmail(user.email) ? null : user.email,
     phoneNumber: user.phoneNumber ?? null,
     role: context.role,
     sellerId: context.role === 'seller' ? context.sellerId : null,

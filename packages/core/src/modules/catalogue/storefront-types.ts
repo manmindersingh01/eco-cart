@@ -43,6 +43,9 @@ export interface ProductCard {
   inStock: boolean
   ratingAvg: number
   ratingCount: number
+  /** The fewest a buyer may order of any variant, for example 2. */
+  minOrderQuantity: number
+  /** The main photo. */
   image: PublicImage | null
 }
 
@@ -51,7 +54,19 @@ export interface PublicVariant {
   options: Record<string, string>
   pricePaise: number
   mrpPaise: number
+  /** In stock for at least the product's minimum order quantity. */
   inStock: boolean
+}
+
+/** A product's video as visitors see it: converted, with its poster. */
+export interface PublicVideo {
+  /** The MP4 file. */
+  url: string
+  /** A still to show before it plays. */
+  posterUrl: string
+  width: number
+  height: number
+  durationMs: number
 }
 
 /** A product page. SKUs, stock counts, HSN codes, and GST rates stay private. */
@@ -72,14 +87,22 @@ export interface PublicProduct {
   minPricePaise: number | null
   maxPricePaise: number | null
   minMrpPaise: number | null
+  /** At least one variant is in stock for the minimum order quantity. */
   inStock: boolean
   ratingAvg: number
   ratingCount: number
+  /** The fewest a buyer may order of any variant, for example 2. */
+  minOrderQuantity: number
   publishedAt: Date
   /** The active variants, in the seller's order. */
   variants: PublicVariant[]
-  /** The ready photos, in the seller's order. */
+  /**
+   * The ready photos, in the seller's order: the first is the main photo,
+   * which cards show, then up to three more.
+   */
   images: PublicImage[]
+  /** Null without a video, or until the worker has converted it. */
+  video: PublicVideo | null
 }
 
 /** Filters of a storefront list, checked and with slugs turned into ids. */

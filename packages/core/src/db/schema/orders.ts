@@ -7,6 +7,7 @@ import {
   index,
   integer,
   jsonb,
+  pgPolicy,
   pgTable,
   text,
   unique,
@@ -31,6 +32,7 @@ import {
   fullAccess,
   isOrderBuyer,
   webInsert,
+  webRole,
   webSelect,
   webUpdate,
   workerPolicy,
@@ -92,6 +94,8 @@ export const orders = pgTable(
       t.id.desc(),
     ),
     index('orders_status_created_at_idx').on(t.status, t.createdAt, t.id),
+    // The administrators' list of every order, newest first.
+    index('orders_created_at_idx').on(t.createdAt.desc(), t.id.desc()),
     check(
       'orders_status_check',
       sql`status in ('pending_payment', 'confirmed', 'cancelled', 'completed')`,
@@ -322,6 +326,76 @@ export const returnRequests = pgTable(
     ),
     webInsert(sql`user_id = ${currentUserId} or ${fullAccess}`),
     webUpdate(fullAccess),
+    workerPolicy(),
+  ],
+).enableRLS()
+
+/**
+ * A photo a buyer uploads for a return (design doc 5.7). The worker checks
+ * it and keeps a re-encoded private copy; the photo joins a return request
+ * when the buyer sends the request, which copies its storage key into
+ * `return_requests.images`.
+ */
+export const returnPhotos = pgTable(
+  'return_photos',
+  {
+    id: uuidPrimaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    returnRequestId: uuid('return_request_id').references(
+      () => returnRequests.id,
+    ),
+    // The file as the browser sent it, read only by the worker.
+    uploadKey: text('upload_key').notNull().unique(),
+    // The checked copy, set once the worker accepts the photo.
+    storageKey: text('storage_key'),
+    status: text('status').notNull().default('processing'),
+    failureReason: text('failure_reason'),
+    contentHash: text('content_hash'),
+    width: integer('width'),
+    height: integer('height'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index('return_photos_user_id_created_at_idx').on(
+      t.userId,
+      t.createdAt.desc(),
+      t.id.desc(),
+    ),
+    index('return_photos_return_request_id_idx').on(t.returnRequestId),
+    check(
+      'return_photos_status_check',
+      sql`status in ('processing', 'ready', 'failed')`,
+    ),
+    check(
+      'return_photos_ready_check',
+      sql`(status = 'ready') = (storage_key is not null and content_hash is not null and width is not null and height is not null)`,
+    ),
+    check(
+      'return_photos_failure_check',
+      sql`(status = 'failed') = (failure_reason is not null)`,
+    ),
+    check(
+      'return_photos_attached_check',
+      sql`return_request_id is null or status = 'ready'`,
+    ),
+    // The seller sees the photos of a return of theirs.
+    webSelect(
+      sql`user_id = ${currentUserId} or ${fullAccess} or exists (select 1 from return_requests r where r.id = return_photos.return_request_id and r.seller_id = ${currentSellerId})`,
+    ),
+    // A buyer adds their own photos, unchecked and not yet part of a return.
+    webInsert(
+      sql`${fullAccess} or (user_id = ${currentUserId} and status = 'processing' and return_request_id is null)`,
+    ),
+    // A buyer attaches their own photos to their own return.
+    pgPolicy('web_update', {
+      for: 'update',
+      to: webRole,
+      using: sql`user_id = ${currentUserId} or ${fullAccess}`,
+      withCheck: sql`${fullAccess} or (user_id = ${currentUserId} and exists (select 1 from return_requests r where r.id = return_photos.return_request_id and r.user_id = ${currentUserId}))`,
+    }),
     workerPolicy(),
   ],
 ).enableRLS()

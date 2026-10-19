@@ -145,11 +145,12 @@ apps/
       api/me/route.ts          the signed-in account, its role, and its seller id
       api/admin/settings/      administrators read and change platform settings
       api/admin/sellers/       administrators create, approve, suspend, and reinstate sellers,
-                               and ask a seller for verification documents
+                               ask a seller for verification documents, and enter their bank account
       api/admin/seller-documents/  administrators' queue of documents to review; one request's
                                history, file downloads, accepting, rejecting, and cancelling
       api/seller/profile/      a seller's own business details and support contacts
       api/seller/documents/    the documents asked of a seller, and uploading them
+      api/seller/bank-account/ the bank account a seller's payouts go to, last 4 digits only
       api/seller/products/     a seller's listings, variants, stock, and photos; submitting
                                for review, moving back to draft, and archiving
       api/invoices/            an order's invoices and their PDF downloads, for its buyer and sellers
@@ -163,6 +164,9 @@ apps/
       api/admin/products/      administrators review one listing, approve or reject it, and
                                take down a listing on sale
       api/account/addresses/   a signed-in buyer's saved delivery addresses
+      api/account/return-photos/  a buyer's return photos: upload, add, and follow the check
+      api/return-photos/[id]/file/  a return photo through a short-lived link, for its buyer,
+                               the seller of the return, and administrators
       api/admin/ai/usage/      administrators see AI calls, tokens, and cost per day, and today's calls against the limit
       api/home/                the home page: new arrivals and a row per top-level category
       api/products/[slug]/     one product page, for anyone
@@ -292,15 +296,15 @@ Three rules keep this maintainable.
 | Sellers | `sellers`, `seller_document_requests`, `seller_document_files` |
 | Catalogue | `categories`, `brands`, `products`, `product_variants`, `product_images`, `product_videos`, `product_moderation`, `product_embeddings` |
 | Cart and promotions | `carts`, `cart_items`, `coupons` |
-| Orders | `orders`, `order_items`, `shipments`, `order_events`, `return_requests`, `invoices` |
+| Orders | `orders`, `order_items`, `shipments`, `order_events`, `return_requests`, `return_photos`, `invoices` |
 | Payments | `payments`, `payment_events`, `refunds` |
-| Seller money | `seller_ledger_entries` |
+| Seller money | `seller_ledger_entries`, `seller_bank_accounts` |
 | Reviews | `reviews` |
 | Imports | `catalogue_imports`, `catalogue_import_rows` |
 | AI and search | `ai_requests`, `search_queries` |
 | Platform | `platform_settings`, `content_pages`, `email_outbox`, `audit_logs`, `rate_limits`, `cache_invalidations` |
 
-That is 41 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
+That is 43 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
 Better Auth keeps its rate-limit counters in `auth_rate_limits`; our own `rate_limits` table, with a different shape, serves the per-address sign-in code limit, and later checkout, search, and AI.
 
 ### 5.3 Identity
@@ -625,6 +629,7 @@ orders
   created_at, updated_at
   INDEX (user_id, created_at DESC, id DESC)
   INDEX (status, created_at, id)
+  INDEX (created_at DESC, id DESC)     the administrators' list of every order
 
 order_items
   id                    uuid PK
@@ -694,6 +699,10 @@ return_requests
   INDEX (status, created_at, id)
   INDEX (user_id)
   INDEX (seller_id)
+
+return_photos     a buyer's photo for a return: uploaded before the return is sent, checked and
+                  re-encoded by the worker (processing | ready | failed), private, and attached
+                  to the return request it was sent with, whose images list its storage key
 
 invoices
   id                          uuid PK
@@ -785,6 +794,10 @@ seller_ledger_entries
   created_by         uuid FK users, nullable
   created_at
   INDEX (seller_id, created_at, id)
+
+seller_bank_accounts   the account a seller's payouts go to, one per seller, entered by administrators:
+                       account holder, IFSC, the account number sealed with MESSAGE_ENCRYPTION_KEY,
+                       and its last 4 digits, the only part ever shown
 ```
 
 The ledger is append only.
@@ -904,7 +917,7 @@ platform_settings
   updated_by  uuid FK users, nullable
   updated_at
   keys: commission_bps, delivery_charge_paise, free_delivery_threshold_paise,
-        cod_enabled, payment_timeout_minutes, ai_daily_limit_platform,
+        cod_enabled, return_window_days, payment_timeout_minutes, ai_daily_limit_platform,
         ai_daily_limit_seller, prohibited_terms, company_details
 
 content_pages
@@ -963,6 +976,9 @@ Every change is written to `audit_logs`, and `pnpm db:seed` fills in obvious exa
 
 Emails go through an outbox table rather than being sent inline.
 The row is written in the same transaction as the business change, so an email is never lost or sent for a change that was rolled back, and the worker retries failures.
+Administrators see the emails that failed and the ones that are stuck (still queued but unchanged for 30 minutes), and the background jobs that failed in each queue, newest first.
+They can retry one, which gives an email fresh attempts or a job one more attempt, and each retry is written to `audit_logs`.
+A sign-in code is never sent again, because it has expired by then; the person asks for a new one.
 
 ## 6. Main flows
 
@@ -979,6 +995,10 @@ Login is handled by Better Auth, mounted in the web app at `/api/auth/*`.
    Better Auth verifies it, allows three attempts, creates the user on first sign-in (with the `buyer` role by default; a phone-only account gets a placeholder email under the reserved `.invalid` domain), and writes a `sessions` row.
 5. The browser receives the `ecokart.session_token` cookie: HttpOnly, SameSite Lax, and Secure on https.
 6. On every request the app reads the session through Better Auth, looks up the seller id for a seller account, and runs the request's queries through `withContext`, which sets the user id, role, and seller id with `SET LOCAL` for row-level security.
+
+A signed-in buyer can add the way of signing in they do not have yet, each confirmed with a code: a phone number to an email account (Better Auth's phone verification with `updatePhoneNumber`), or an email to a phone account (its email-change endpoints, with the code sent to the new address).
+Changing an email or number that is already there is not offered yet.
+A buyer can never remove the phone number that is their only way to sign in, and sellers and administrators cannot use these endpoints.
 
 The first administrator is created with `pnpm admin:create`.
 Administrators manage accounts through Better Auth's admin endpoints: create accounts, set roles, ban and unban, and revoke sessions, each written to `audit_logs`.
@@ -1031,7 +1051,7 @@ This is the flow that has to be correct under concurrency, so it is spelled out 
 7. `confirmOrderPayment` runs in one transaction: mark the payment captured, mark the order confirmed, write ledger entries for each seller (sale and commission), queue one invoice per seller, queue the order-placed and payment-received emails, and revalidate product caches.
 8. A scheduled job every five minutes cancels orders still `pending_payment` after the configured timeout and restores stock and coupon usage. If a capture webhook arrives for an order that was already cancelled, the payment is stored as captured and the order is flagged in the admin console for a manual refund.
 
-Cash on delivery skips steps 3 to 6 and confirms immediately. Its payment row is marked captured when the seller marks the shipment delivered.
+Cash on delivery skips steps 3 to 6 and confirms immediately. Its payment row is marked captured when the seller marks the shipment delivered; for an order from several sellers, when the last parcel is delivered and the order completes.
 
 ### 6.4 Dispatch, delivery, and cancellation
 

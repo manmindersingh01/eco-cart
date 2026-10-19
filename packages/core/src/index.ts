@@ -17,9 +17,10 @@ export { QUEUES } from './jobs.ts'
 export {
   startJobQueue,
   type JobQueue,
+  type QueueCounts,
   type QueueDefinition,
 } from './lib/queue.ts'
-export { type Auth } from './modules/auth/auth.ts'
+export { isPlaceholderEmail, type Auth } from './modules/auth/auth.ts'
 export { loadAuthConfig, type AuthConfig } from './modules/auth/config.ts'
 export {
   createAppAuth,
@@ -35,6 +36,19 @@ export {
 } from './modules/auth/accounts.ts'
 export { loadNotificationConfig } from './modules/notifications/config.ts'
 export { registerNotificationJobs } from './modules/notifications/jobs.ts'
+export {
+  listUndeliveredEmails,
+  retryEmail,
+  STUCK_EMAIL_MINUTES,
+  type EmailState,
+  type OutboxEmailView,
+} from './modules/notifications/outbox.ts'
+export {
+  listFailedJobs,
+  listJobQueues,
+  retryFailedJob,
+  type FailedJobView,
+} from './modules/background-jobs/service.ts'
 export {
   settingKeys,
   type CompanyDetails,
@@ -90,6 +104,28 @@ export {
   type DocumentType,
   type DocumentUpload,
 } from './modules/sellers/types.ts'
+export {
+  getOwnBankAccount,
+  getSellerBankAccount,
+  setSellerBankAccount,
+} from './modules/ledger/bank-accounts.ts'
+export { loadLedgerConfig, type LedgerConfig } from './modules/ledger/config.ts'
+export type { BankAccountView } from './modules/ledger/types.ts'
+export {
+  addReturnPhoto,
+  attachReturnPhotos,
+  CHECK_RETURN_PHOTO_QUEUE,
+  createReturnPhotoUpload,
+  getReturnPhoto,
+  getReturnPhotoDownload,
+} from './modules/returns/photos.ts'
+export {
+  MAX_PHOTOS_PER_RETURN,
+  type ReturnPhotoDownload,
+  type ReturnPhotoStatus,
+  type ReturnPhotoUpload,
+  type ReturnPhotoView,
+} from './modules/returns/types.ts'
 export type { Page } from './lib/pagination.ts'
 export {
   createCategory,
@@ -258,6 +294,7 @@ export type {
   PublicImage,
   PublicProduct,
   PublicVariant,
+  PublicVideo,
   StorefrontSort,
 } from './modules/catalogue/storefront-types.ts'
 export {
@@ -458,3 +495,34 @@ export {
   getProductLabels,
   type ProductLabel,
 } from './modules/catalogue/storefront.ts'
+// Orders after checkout (backend spec step 13).
+export {
+  cancelOrderAsAdmin,
+  cancelOwnOrder,
+  dispatchLines,
+  markShipmentDelivered,
+} from './modules/orders/fulfilment.ts'
+export {
+  findVerifiedPurchase,
+  getAdminOrder,
+  getBuyerOrder,
+  getSellerOrder,
+  listAdminOrders,
+  listBuyerOrders,
+  listSellerOrders,
+} from './modules/orders/views.ts'
+export type {
+  AdminOrderSummary,
+  AdminOrderView,
+  BuyerOrderSummary,
+  BuyerOrderView,
+  DispatchRequest,
+  OrderLineView,
+  OrderProgress,
+  PaymentState,
+  SellerOrderSummary,
+  SellerOrderTab,
+  SellerOrderView,
+  ShipmentView,
+  VerifiedPurchase,
+} from './modules/orders/types.ts'

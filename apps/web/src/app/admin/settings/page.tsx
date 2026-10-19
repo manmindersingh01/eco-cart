@@ -9,7 +9,7 @@ import { getDatabase } from '@/lib/db'
 import { requireAdmin } from '@/lib/request-context'
 
 export const metadata: Metadata = {
-  title: 'Platform settings | EcoKart',
+  title: 'Platform settings',
 }
 
 export default async function AdminSettingsPage() {
@@ -46,6 +46,7 @@ export default async function AdminSettingsPage() {
           {[
             ['commerce', 'Commerce'],
             ['payments', 'Payments'],
+            ['returns', 'Returns'],
             ['ai-limits', 'AI limits'],
             ['moderation', 'Moderation'],
             ['company', 'Company details'],

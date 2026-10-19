@@ -30,7 +30,8 @@ export function StatusBadge({
   return (
     <span
       className={cx(
-        'inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold',
+        // w-fit: a badge in a grid cell would otherwise stretch to the cell.
+        'inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-semibold',
         tones[tone],
         className,
       )}

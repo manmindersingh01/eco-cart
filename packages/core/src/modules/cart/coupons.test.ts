@@ -67,6 +67,8 @@ const auditFor = (couponId: string) =>
     )
     .orderBy(auditLogs.id)
 
+// Far in the future, so the test never runs after the sale has ended: with
+// the real 2026 dates it began failing on 19 October 2026.
 const diwali = (code: string) => ({
   code,
   description: 'Diwali sale',
@@ -76,8 +78,8 @@ const diwali = (code: string) => ({
   maxDiscountPaise: 30_000,
   usageLimit: 1_000,
   perUserLimit: 1,
-  startsAt: '2026-10-20T00:00:00+05:30',
-  endsAt: '2026-11-05T00:00:00+05:30',
+  startsAt: '2099-10-20T00:00:00+05:30',
+  endsAt: '2099-11-05T00:00:00+05:30',
 })
 
 describe('createCoupon', () => {
@@ -91,7 +93,7 @@ describe('createCoupon', () => {
       usedCount: 0,
       isActive: true,
       createdBy: admin.userId,
-      startsAt: new Date('2026-10-19T18:30:00.000Z'),
+      startsAt: new Date('2099-10-19T18:30:00.000Z'),
     })
     const [entry] = await auditFor(coupon.id)
     expect(entry).toMatchObject({
@@ -149,7 +151,7 @@ describe('createCoupon', () => {
     ],
     [
       'an end before the start',
-      { endsAt: '2026-10-19T00:00:00+05:30' },
+      { endsAt: '2099-10-19T00:00:00+05:30' },
       ['endsAt must be after startsAt'],
     ],
     [
@@ -229,7 +231,7 @@ describe('updateCoupon', () => {
     ])
     expect(
       await validationIssues(
-        update(coupon.id, { endsAt: '2026-10-01T00:00:00+05:30' }),
+        update(coupon.id, { endsAt: '2099-10-01T00:00:00+05:30' }),
       ),
     ).toEqual(['endsAt must be after startsAt'])
   })

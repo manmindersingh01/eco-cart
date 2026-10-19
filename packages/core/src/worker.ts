@@ -34,3 +34,9 @@ export {
   registerSellerJobs,
   type SellerJobDependencies,
 } from './modules/sellers/jobs.ts'
+// Loads the image library.
+export {
+  checkUploadedReturnPhoto,
+  registerReturnJobs,
+  type ReturnJobDependencies,
+} from './modules/returns/jobs.ts'
