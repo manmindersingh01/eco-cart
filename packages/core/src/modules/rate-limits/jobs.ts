@@ -59,14 +59,14 @@ export async function removeExpiredRateLimits(
 }
 
 /**
- * Removes expired counts every night at 03:45 India time. A night the worker
+ * Removes expired counts every night at 04:00 India time. A night the worker
  * was down gets one run when it starts again.
  */
 export async function registerRateLimitJobs(
   boss: PgBoss,
   deps: { db: Database },
 ): Promise<void> {
-  await boss.schedule(REMOVE_EXPIRED_RATE_LIMITS_QUEUE, '45 3 * * *', null, {
+  await boss.schedule(REMOVE_EXPIRED_RATE_LIMITS_QUEUE, '0 4 * * *', null, {
     tz: 'Asia/Kolkata',
     missed: 'once',
   })

@@ -17,6 +17,7 @@ export { QUEUES } from './jobs.ts'
 export {
   startJobQueue,
   type JobQueue,
+  type QueueCounts,
   type QueueDefinition,
 } from './lib/queue.ts'
 export { isPlaceholderEmail, type Auth } from './modules/auth/auth.ts'
@@ -35,6 +36,19 @@ export {
 } from './modules/auth/accounts.ts'
 export { loadNotificationConfig } from './modules/notifications/config.ts'
 export { registerNotificationJobs } from './modules/notifications/jobs.ts'
+export {
+  listUndeliveredEmails,
+  retryEmail,
+  STUCK_EMAIL_MINUTES,
+  type EmailState,
+  type OutboxEmailView,
+} from './modules/notifications/outbox.ts'
+export {
+  listFailedJobs,
+  listJobQueues,
+  retryFailedJob,
+  type FailedJobView,
+} from './modules/background-jobs/service.ts'
 export {
   settingKeys,
   type CompanyDetails,
@@ -261,9 +275,14 @@ export {
   getPublicProduct,
   listingFilters,
   listPublicProducts,
+  listSimilarProducts,
   queryObject,
+  SIMILAR_PRODUCTS,
+  type ListMatch,
   type ListSort,
   type ProductListQuery,
+  type SimilarProducts,
+  type VectorMatch,
   type WordMatch,
 } from './modules/catalogue/storefront.ts'
 export type {
@@ -288,6 +307,26 @@ export {
   searchProducts,
 } from './modules/search/service.ts'
 export type { SearchGap, SearchResult } from './modules/search/types.ts'
+// Search by meaning and by photo, and product embeddings (backend spec step 18).
+export {
+  naturalSearch,
+  type NaturalSearchDependencies,
+  type NaturalSearchResult,
+  type UnderstoodQuery,
+} from './modules/search/natural.ts'
+export {
+  createSearchPhotoUpload,
+  MAX_SEARCH_PHOTO_BYTES,
+  searchByPhoto,
+  type PhotoSearchDependencies,
+  type SearchPhotoUpload,
+} from './modules/search/photos.ts'
+export {
+  EMBED_MISSING_QUEUE,
+  EMBED_PRODUCT_QUEUE,
+  embedProduct,
+  queueMissingEmbeddings,
+} from './modules/catalogue/embeddings.ts'
 export { clientAddress, trustedProxyCount } from './lib/client-address.ts'
 export { IMAGE_SIZES, type ImageSize } from './lib/images.ts'
 export {

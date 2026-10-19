@@ -204,3 +204,21 @@ export function fakeEmbeddingsReply(
 /** A vector of `dimensions` numbers, different for each `seed`. */
 export const fakeVector = (seed = 1, dimensions = 1024): number[] =>
   Array.from({ length: dimensions }, (_, i) => Math.sin(seed * (i + 1)))
+
+/**
+ * A unit vector `angleDegrees` away from the axis `axis`, turned towards the
+ * next axis, so tests can place vectors at known distances: the cosine
+ * distance to `fakeDirection(axis)` grows with the angle. Give each test its
+ * own axis, and its vectors stay far from every other test's.
+ */
+export function fakeDirection(
+  axis: number,
+  angleDegrees = 0,
+  dimensions = 1024,
+): number[] {
+  const vector = Array.from({ length: dimensions }, () => 0)
+  const radians = (angleDegrees * Math.PI) / 180
+  vector[axis % dimensions] = Math.cos(radians)
+  vector[(axis + 1) % dimensions] = Math.sin(radians)
+  return vector
+}

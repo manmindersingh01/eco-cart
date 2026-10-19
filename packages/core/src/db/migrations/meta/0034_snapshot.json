@@ -1,5 +1,5 @@
 {
-  "id": "cd11a2d6-ffa2-419a-aa80-370d25b24df8",
+  "id": "f4391c3f-4c0f-4f51-acf9-2cdc3aac385d",
   "prevId": "04ae65ca-2f91-45d2-b9eb-15a72b4d0f10",
   "version": "7",
   "dialect": "postgresql",
@@ -996,24 +996,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "carts_guest_updated_at_idx": {
-          "name": "carts_guest_updated_at_idx",
-          "columns": [
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "user_id is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "carts_user_id_users_id_fk": {
           "name": "carts_user_id_users_id_fk",
@@ -6883,6 +6866,16 @@
             "ecokart_web"
           ],
           "withCheck": "true"
+        },
+        "web_update": {
+          "name": "web_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "ecokart_web"
+          ],
+          "using": "app.has_full_access()",
+          "withCheck": "app.has_full_access()"
         },
         "worker_all": {
           "name": "worker_all",

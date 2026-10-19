@@ -37,6 +37,7 @@ export {
 // Loads the image library.
 export {
   checkUploadedReturnPhoto,
+  deleteUnsentReturnPhotos,
   registerReturnJobs,
   type ReturnJobDependencies,
 } from './modules/returns/jobs.ts'
