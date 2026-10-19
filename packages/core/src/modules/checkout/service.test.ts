@@ -376,24 +376,37 @@ describe('cash on delivery', () => {
     const buyer = await newBuyer()
     const { variant } = await newItem()
     await addToCart(buyer, variant.id)
-    await owner
-      .insert(platformSettings)
-      .values({ key: 'cod_enabled', value: false })
-      .onConflictDoUpdate({
-        target: platformSettings.key,
-        set: { value: false },
-      })
-    try {
-      await expect(checkout(buyer, 'cod')).rejects.toThrow(
-        new ConflictError(
-          'Cash on delivery is not available right now; please pay online',
-        ),
-      )
-    } finally {
-      await owner
-        .delete(platformSettings)
-        .where(eq(platformSettings.key, 'cod_enabled'))
-    }
+    // The setting is switched off only inside a transaction that is always
+    // rolled back, and the order is placed in that same transaction. Saved
+    // for real, other test files placing cash on delivery orders at the same
+    // time were refused now and then.
+    const rolledBack = new Error('rolled back on purpose')
+    await expect(
+      web.transaction(async (tx) => {
+        await tx
+          .insert(platformSettings)
+          .values({ key: 'cod_enabled', value: false })
+          .onConflictDoUpdate({
+            target: platformSettings.key,
+            set: { value: false },
+          })
+        await expect(
+          // placeOrder opens its transactions as savepoints inside this one.
+          placeOrder(
+            tx as unknown as typeof web,
+            { queue, razorpay },
+            buyer.context,
+            buyer.account,
+            { addressId: buyer.addressId, paymentMethod: 'cod' },
+          ),
+        ).rejects.toThrow(
+          new ConflictError(
+            'Cash on delivery is not available right now; please pay online',
+          ),
+        )
+        throw rolledBack
+      }),
+    ).rejects.toBe(rolledBack)
     expect(await stockOf(variant.id)).toBe(5)
   })
 })
