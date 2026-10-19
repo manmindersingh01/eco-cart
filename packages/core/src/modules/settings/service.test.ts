@@ -396,6 +396,7 @@ describe('seedDevelopmentData', () => {
     expect(filled).toEqual([
       'delivery_charge_paise',
       'free_delivery_threshold_paise',
+      'return_window_days',
       'company_details',
     ])
     expect(seededSellers).toEqual(

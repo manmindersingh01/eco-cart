@@ -1,4 +1,4 @@
-import { and, count, eq, ne } from 'drizzle-orm'
+import { and, count, eq, inArray, ne } from 'drizzle-orm'
 import type { Transaction } from '../../db/client.ts'
 import { orders } from '../../db/schema/index.ts'
 
@@ -36,4 +36,21 @@ export async function countOrdersAwaitingPayment(
     .from(orders)
     .where(and(eq(orders.userId, userId), eq(orders.status, 'pending_payment')))
   return row?.waiting ?? 0
+}
+
+/**
+ * The order numbers of `ids`, by id, for documents that name orders, such
+ * as a seller's settlement statement. The caller has already checked that
+ * its reader may see them.
+ */
+export async function getOrderNumbers(
+  tx: Transaction,
+  ids: readonly string[],
+): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map()
+  const rows = await tx
+    .select({ id: orders.id, orderNumber: orders.orderNumber })
+    .from(orders)
+    .where(inArray(orders.id, [...new Set(ids)]))
+  return new Map(rows.map((row) => [row.id, row.orderNumber]))
 }

@@ -285,15 +285,29 @@
     {
       "idx": 40,
       "version": "7",
-      "when": 1792444493757,
-      "tag": "0040_seller_applications",
+      "when": 1792444205372,
+      "tag": "0040_settlement_statements_and_payout_references",
       "breakpoints": true
     },
     {
       "idx": 41,
       "version": "7",
-      "when": 1792444494988,
-      "tag": "0041_buyer_seller_role",
+      "when": 1792444207078,
+      "tag": "0041_settlement_statement_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792444721844,
+      "tag": "0042_seller_applications",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792444722486,
+      "tag": "0043_buyer_seller_role",
       "breakpoints": true
     }
   ]

@@ -30,6 +30,7 @@ import {
   sellerDocumentRequests,
   sellerLedgerEntries,
   sellers,
+  settlementStatements,
 } from './schema/index.ts'
 
 /*
@@ -1201,5 +1202,110 @@ describe('return photos', () => {
         .returning({ id: returnPhotos.id }),
     )
     expect(sellerChange).toEqual([])
+  })
+})
+
+describe('settlement statements', () => {
+  let statementIds: string[]
+
+  beforeAll(async () => {
+    const rows = await owner
+      .insert(settlementStatements)
+      .values(
+        [sellerA, sellerB].map(({ seller }) => ({
+          sellerId: seller.id,
+          periodStart: '2026-10-01',
+          periodEnd: '2026-10-19',
+        })),
+      )
+      .returning({ id: settlementStatements.id })
+    statementIds = rows.map((row) => row.id)
+  })
+
+  const visibleSellers = (context: RequestContext) =>
+    withContext(web, context, async (tx) =>
+      (
+        await tx
+          .select({ sellerId: settlementStatements.sellerId })
+          .from(settlementStatements)
+          .where(inArray(settlementStatements.id, statementIds))
+      )
+        .map((row) => row.sellerId)
+        .toSorted(),
+    )
+
+  test('a seller sees only their own; buyers and visitors none', async () => {
+    expect(await visibleSellers(as.seller(sellerA))).toEqual([
+      sellerA.seller.id,
+    ])
+    expect(await visibleSellers(as.buyer(buyer1))).toEqual([])
+    expect(await visibleSellers(as.anonymous())).toEqual([])
+    expect(await visibleSellers(as.admin())).toEqual(
+      [sellerA.seller.id, sellerB.seller.id].toSorted(),
+    )
+  })
+
+  test('a seller asks only for their own, and only the worker fills it in', async () => {
+    await withContext(web, as.seller(sellerA), (tx) =>
+      tx.insert(settlementStatements).values({
+        sellerId: sellerA.seller.id,
+        periodStart: '2026-10-01',
+        periodEnd: '2026-10-01',
+      }),
+    )
+    for (const values of [
+      {
+        sellerId: sellerB.seller.id,
+        periodStart: '2026-10-01',
+        periodEnd: '2026-10-01',
+      },
+      {
+        sellerId: sellerA.seller.id,
+        periodStart: '2026-10-01',
+        periodEnd: '2026-10-01',
+        status: 'failed',
+        failureReason: 'Made up',
+      },
+    ]) {
+      const code = await errorCode(
+        withContext(web, as.seller(sellerA), (tx) =>
+          tx.insert(settlementStatements).values(values),
+        ),
+      )
+      expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    }
+    const code = await errorCode(
+      withContext(web, as.admin(), (tx) =>
+        tx
+          .update(settlementStatements)
+          .set({ status: 'failed', failureReason: 'Made up' })
+          .where(eq(settlementStatements.id, statementIds[0]!)),
+      ),
+    )
+    expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    const filled = await withContext(worker, { role: 'system' }, (tx) =>
+      tx
+        .update(settlementStatements)
+        .set({ status: 'failed', failureReason: 'Storage was down' })
+        .where(eq(settlementStatements.id, statementIds[1]!))
+        .returning({ id: settlementStatements.id }),
+    )
+    expect(filled).toHaveLength(1)
+  })
+
+  test('a period is at most 366 days and never backwards', async () => {
+    for (const [periodStart, periodEnd] of [
+      ['2026-10-02', '2026-10-01'],
+      ['2025-10-18', '2026-10-19'],
+    ]) {
+      const code = await errorCode(
+        owner.insert(settlementStatements).values({
+          sellerId: sellerA.seller.id,
+          periodStart: periodStart!,
+          periodEnd: periodEnd!,
+        }),
+      )
+      expect(code).toBe(CHECK_VIOLATION)
+    }
   })
 })

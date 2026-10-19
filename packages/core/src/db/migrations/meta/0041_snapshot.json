@@ -1,6 +1,6 @@
 {
-  "id": "9457e7d5-36ad-4197-8b3c-e30624256f3f",
-  "prevId": "1093ec29-947c-4225-84fd-ed5232275db5",
+  "id": "698d5ed9-9e9b-4165-bec9-f8f2f78bd4e7",
+  "prevId": "8db21691-fe57-4035-87a1-4c7519caf3e1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4007,6 +4007,28 @@
           "with": {},
           "method": "btree",
           "concurrently": false
+        },
+        "seller_ledger_entries_payout_reference_idx": {
+          "name": "seller_ledger_entries_payout_reference_idx",
+          "columns": [
+            {
+              "expression": "seller_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reference",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "where": "entry_type = 'payout'",
+          "concurrently": false
         }
       },
       "foreignKeys": {
@@ -4116,6 +4138,206 @@
         "seller_ledger_entries_sign_check": {
           "name": "seller_ledger_entries_sign_check",
           "value": "case entry_type\n        when 'sale' then amount_paise > 0\n        when 'commission_reversal' then amount_paise > 0\n        when 'commission' then amount_paise < 0\n        when 'refund_reversal' then amount_paise < 0\n        when 'payout' then amount_paise < 0\n        else amount_paise <> 0\n      end"
+        },
+        "seller_ledger_entries_payout_reference_check": {
+          "name": "seller_ledger_entries_payout_reference_check",
+          "value": "entry_type <> 'payout' or reference is not null"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.settlement_statements": {
+      "name": "settlement_statements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "seller_id": {
+          "name": "seller_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_by": {
+          "name": "requested_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "period_start": {
+          "name": "period_start",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period_end": {
+          "name": "period_end",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'processing'"
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "opening_balance_paise": {
+          "name": "opening_balance_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "closing_balance_paise": {
+          "name": "closing_balance_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entry_count": {
+          "name": "entry_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_reason": {
+          "name": "failure_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "settlement_statements_seller_id_created_at_idx": {
+          "name": "settlement_statements_seller_id_created_at_idx",
+          "columns": [
+            {
+              "expression": "seller_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "settlement_statements_seller_id_sellers_id_fk": {
+          "name": "settlement_statements_seller_id_sellers_id_fk",
+          "tableFrom": "settlement_statements",
+          "columnsFrom": [
+            "seller_id"
+          ],
+          "tableTo": "sellers",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "settlement_statements_requested_by_users_id_fk": {
+          "name": "settlement_statements_requested_by_users_id_fk",
+          "tableFrom": "settlement_statements",
+          "columnsFrom": [
+            "requested_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "web_select": {
+          "name": "web_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ecokart_web"
+          ],
+          "using": "seller_id = app.seller_id() or app.has_full_access()"
+        },
+        "web_insert": {
+          "name": "web_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "ecokart_web"
+          ],
+          "withCheck": "app.has_full_access() or (seller_id = app.seller_id() and status = 'processing')"
+        },
+        "worker_all": {
+          "name": "worker_all",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "ecokart_worker"
+          ],
+          "using": "true",
+          "withCheck": "true"
+        }
+      },
+      "checkConstraints": {
+        "settlement_statements_period_check": {
+          "name": "settlement_statements_period_check",
+          "value": "period_end >= period_start and period_end - period_start < 366"
+        },
+        "settlement_statements_status_check": {
+          "name": "settlement_statements_status_check",
+          "value": "status in ('processing', 'ready', 'failed')"
+        },
+        "settlement_statements_ready_check": {
+          "name": "settlement_statements_ready_check",
+          "value": "(status = 'ready') = (storage_key is not null and opening_balance_paise is not null and closing_balance_paise is not null and entry_count is not null)"
+        },
+        "settlement_statements_failure_check": {
+          "name": "settlement_statements_failure_check",
+          "value": "(status = 'failed') = (failure_reason is not null)"
         }
       },
       "isRLSEnabled": true
@@ -6970,7 +7192,7 @@
       "checkConstraints": {
         "email_outbox_template_check": {
           "name": "email_outbox_template_check",
-          "value": "template in ('otp', 'order_placed', 'payment_received', 'dispatched', 'cancelled', 'refund_recorded', 'seller_application')"
+          "value": "template in ('otp', 'order_placed', 'payment_received', 'dispatched', 'cancelled', 'refund_recorded')"
         },
         "email_outbox_status_check": {
           "name": "email_outbox_status_check",
@@ -8030,12 +8252,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "rejection_reason": {
-          "name": "rejection_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8157,7 +8373,7 @@
           "to": [
             "ecokart_web"
           ],
-          "withCheck": "(owner_user_id = app.user_id() and status = 'pending' and approved_at is null) or app.has_full_access()"
+          "withCheck": "app.has_full_access()"
         },
         "web_update": {
           "name": "web_update",
@@ -8183,7 +8399,7 @@
       "checkConstraints": {
         "sellers_status_check": {
           "name": "sellers_status_check",
-          "value": "status in ('pending', 'approved', 'suspended', 'rejected')"
+          "value": "status in ('pending', 'approved', 'suspended')"
         },
         "sellers_gstin_check": {
           "name": "sellers_gstin_check",

@@ -8,6 +8,7 @@ import { storefrontCacheQueues } from './modules/catalogue/storefront-cache.ts'
 import { videoQueues } from './modules/catalogue/videos.ts'
 import { importQueues } from './modules/imports/service.ts'
 import { invoiceQueues } from './modules/invoices/service.ts'
+import { ledgerQueues } from './modules/ledger/statements.ts'
 import { notificationQueues } from './modules/notifications/jobs.ts'
 import { orderQueues } from './modules/orders/jobs.ts'
 import { rateLimitQueues } from './modules/rate-limits/jobs.ts'
@@ -31,6 +32,7 @@ export const QUEUES: QueueDefinition[] = [
   ...sellerQueues,
   ...orderQueues,
   ...returnQueues,
+  ...ledgerQueues,
   ...cartQueues,
   ...rateLimitQueues,
 ]

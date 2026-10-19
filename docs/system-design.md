@@ -146,12 +146,19 @@ apps/
       api/account/seller-application/  a buyer applies to sell, reads the application, and changes it
       api/admin/settings/      administrators read and change platform settings
       api/admin/sellers/       administrators create, approve, reject, suspend, and reinstate sellers,
-                               ask a seller for verification documents, and enter their bank account
+                               ask a seller for verification documents, and enter their bank account;
+                               read a seller's ledger, record payouts and adjustments, and ask for
+                               settlement statements
+      api/admin/seller-balances/  sellers with money to settle, largest balance first
       api/admin/seller-documents/  administrators' queue of documents to review; one request's
                                history, file downloads, accepting, rejecting, and cancelling
       api/seller/profile/      a seller's own business details and support contacts
       api/seller/documents/    the documents asked of a seller, and uploading them
       api/seller/bank-account/ the bank account a seller's payouts go to, last 4 digits only
+      api/seller/ledger/       a seller's own ledger and balance
+      api/seller/settlement-statements/  a seller's settlement statements: ask for one, and list them
+      api/settlement-statements/[id]/  a statement, and its CSV through a short-lived link, for its
+                               seller and administrators
       api/seller/products/     a seller's listings, variants, stock, and photos; submitting
                                for review, moving back to draft, and archiving
       api/invoices/            an order's invoices and their PDF downloads, for its buyer and sellers
@@ -300,13 +307,13 @@ Three rules keep this maintainable.
 | Cart and promotions | `carts`, `cart_items`, `coupons` |
 | Orders | `orders`, `order_items`, `shipments`, `order_events`, `return_requests`, `return_photos`, `invoices` |
 | Payments | `payments`, `payment_events`, `refunds` |
-| Seller money | `seller_ledger_entries`, `seller_bank_accounts` |
+| Seller money | `seller_ledger_entries`, `seller_bank_accounts`, `settlement_statements` |
 | Reviews | `reviews` |
 | Imports | `catalogue_imports`, `catalogue_import_rows` |
 | AI and search | `ai_requests`, `search_queries` |
 | Platform | `platform_settings`, `content_pages`, `email_outbox`, `audit_logs`, `rate_limits`, `cache_invalidations` |
 
-That is 43 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
+That is 44 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
 Better Auth keeps its rate-limit counters in `auth_rate_limits`; our own `rate_limits` table, with a different shape, serves the per-address sign-in code limit, and later checkout, search, and AI.
 
 ### 5.3 Identity
@@ -809,7 +816,7 @@ seller_ledger_entries
   entry_type         text   sale | commission | refund_reversal | commission_reversal | payout | adjustment
   amount_paise       bigint   signed; sales are positive, commission and payouts are negative
   description        text
-  reference          text, nullable   bank transfer reference for payouts
+  reference          text, nullable   bank transfer reference, required on payouts and unique per seller
   created_by         uuid FK users, nullable
   created_at
   INDEX (seller_id, created_at, id)
@@ -817,11 +824,17 @@ seller_ledger_entries
 seller_bank_accounts   the account a seller's payouts go to, one per seller, entered by administrators:
                        account holder, IFSC, the account number sealed with MESSAGE_ENCRYPTION_KEY,
                        and its last 4 digits, the only part ever shown
+
+settlement_statements  a seller's statement for a period of India dates, asked for by the seller or an
+                       administrator, made by the worker as a private CSV (processing | ready | failed),
+                       with the opening and closing balance and the number of entries
 ```
 
 The ledger is append only.
 A seller's balance is the sum of their entries.
 A settlement statement is the CSV export of entries in a period, and a manual bank payment is recorded as a `payout` entry with the bank reference.
+A payout goes to the bank account on file and may not be more than the balance.
+TCS on sellers' sales (GST section 52) is not collected yet; when the client decides it, it becomes an entry type of its own, which balances and statements show with no other change.
 
 ### 5.10 Reviews
 
@@ -1180,7 +1193,7 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 - Sign-in codes waiting to be sent are encrypted with `MESSAGE_ENCRYPTION_KEY` and removed once sent.
 - Razorpay webhooks are verified with the webhook secret before anything is read from the payload, and the checkout return is verified with the key secret. No card data is ever received by EcoKart.
 - All prices, totals, stock, and permissions are recomputed on the server; the browser is never trusted.
-- Secrets live in environment variables in the hosting platform, never in the repository. Object storage buckets are private and every download of a private file (originals, imports, invoices, buyers' return photos) is a short-lived signed URL. Only the product photo sizes under `images/` and the converted product videos under `videos/` are public, served through CloudFront with origin access control.
+- Secrets live in environment variables in the hosting platform, never in the repository. Object storage buckets are private and every download of a private file (originals, imports, invoices, buyers' return photos, seller verification documents, settlement statements) is a short-lived signed URL. Only the product photo sizes under `images/` and the converted product videos under `videos/` are public, served through CloudFront with origin access control.
 - Uploads go straight from the browser to the bucket with a signed form that allows one key, one content type, and at most 10 MB for a photo or 50 MB for a video. The worker checks every photo and video and re-encodes it, which removes all metadata such as GPS locations, so nothing a browser sent is ever served as it arrived.
 - Standard Next.js protections cover cross-site scripting and request forgery; parameterised queries through Drizzle cover injection.
 - Every administrator action and every state change on an order is written to `audit_logs` or `order_events`.

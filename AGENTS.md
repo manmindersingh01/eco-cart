@@ -52,6 +52,9 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   The settings tests empty `platform_settings`, so they run against a database of their own (`ecokart_test_core_settings`); every other core test may rely on the commercial settings that `saveTestSettings` saves.
   In a linked git worktree the names end with the worktree's folder name (for example `ecokart_test_core_step_7`), so several checkouts can run their tests at the same time.
 - Example data for local development (platform settings, three approved sellers, a category tree, and brands): `pnpm db:seed`; it only fills what is missing and refuses production.
+- Walk the whole marketplace through the real HTTP APIs, as administrator, seller, and buyer, against a running `pnpm dev`: `pnpm demo:flow` (`DEMO_BASE_URL` for another address).
+  It prints each step with a pass or fail mark and the reason, reads sign-in codes from Mailpit, and uses new people and a new product on every run, so it runs again on the same local database.
+  Steps for features not built yet show as skipped; turn each one on when its feature merges.
 - Not set up yet: e2e tests.
   Add them here when they exist.
 
@@ -170,7 +173,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   `withContext` gets that one role, so the row-level security policies stay the same.
 - Email codes are stored hashed (`storeOTP: "hashed"`), and phone codes as a hash keyed with the auth secret: Better Auth's phone plugin has no such option, so a `databaseHooks.verification` hook hashes the code and the plugin's `verifyOTP` checks it (`modules/auth/auth.ts`, backend spec step 2).
   The OTP delivery callbacks only queue the email or SMS; they never send inline.
-- Object storage buckets are private, and every download of a private file (originals, imports, invoices, return photos, seller verification documents) is a short-lived signed URL.
+- Object storage buckets are private, and every download of a private file (originals, imports, invoices, return photos, seller verification documents, settlement statements) is a short-lived signed URL.
   Only the product photo sizes under `images/` and the converted product videos under `videos/` are public, served through CloudFront.
 
 ## AI features
