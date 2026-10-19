@@ -123,6 +123,12 @@ export interface AiCall<K extends keyof AiModels, T> {
    */
   cacheSeconds?: number | undefined
   /**
+   * False to log the call without its answer, for answers kept elsewhere,
+   * such as product embeddings in product_embeddings. Such an answer can
+   * never come from the cache.
+   */
+  storeResult?: boolean | undefined
+  /**
    * The answer's shape. A stored answer is checked against it again before
    * it is reused, so it must accept its own output.
    */
@@ -336,7 +342,11 @@ async function runAndRecord<K extends keyof AiModels, T>(
     db,
     context,
     requestId,
-    { status: 'succeeded', result: reply.value, usage: reply.usage },
+    {
+      status: 'succeeded',
+      result: call.storeResult === false ? null : reply.value,
+      usage: reply.usage,
+    },
     Math.round(performance.now() - started),
   )
   return reply.value
@@ -357,6 +367,9 @@ function prepare<K extends keyof AiModels>(
     throw new NotConfiguredError('AI features are switched off')
   }
   assertCanCallFor(context, call)
+  if (call.storeResult === false && call.cacheSeconds !== undefined) {
+    throw new Error('An answer that is not stored cannot come from the cache')
+  }
   const rule = LIMIT_RULES[call.feature]
   if (rule.seller && call.sellerId === undefined) {
     throw new Error(`${call.feature} calls must name the seller they are for`)

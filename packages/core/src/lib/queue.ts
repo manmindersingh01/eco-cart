@@ -51,10 +51,19 @@ export async function startJobQueue(
     console.error('Job queue error', error)
   })
   await boss.start()
+  return { ...jobQueueOf(boss), stop: () => boss.stop() }
+}
+
+/**
+ * Sends jobs through a pg-boss client that is already running, such as the
+ * worker's, for a job that queues more jobs. Stopping it is left to whoever
+ * started the client.
+ */
+export function jobQueueOf(boss: PgBoss): JobQueue {
   return {
     async send(tx, queue, data) {
       await boss.send(queue, data, { db: fromDrizzle(tx, sql) })
     },
-    stop: () => boss.stop(),
+    stop: async () => {},
   }
 }

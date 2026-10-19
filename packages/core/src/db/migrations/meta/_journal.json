@@ -218,6 +218,13 @@
       "when": 1792346632451,
       "tag": "0030_product_rating_function",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792347468154,
+      "tag": "0031_product_embeddings_image_cascade",
+      "breakpoints": true
     }
   ]
 }

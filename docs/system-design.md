@@ -548,7 +548,7 @@ product_embeddings
   id            uuid PK
   product_id    uuid FK products
   kind          text   text | image
-  image_id      uuid FK product_images, nullable, set when kind = image
+  image_id      uuid FK product_images ON DELETE CASCADE, nullable, set when kind = image
   model         text
   content_hash  text   hash of the text or image that was embedded
   embedding     vector(1024)   Voyage Multimodal 3.5 at 1024 dimensions; changing the model means a re-embed job

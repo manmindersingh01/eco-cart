@@ -76,6 +76,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Jobs call the same service functions as the web app, so every business rule has exactly one implementation.
 - Never do slow work inside a request.
   AI calls, embeddings, image resizing, PDFs, emails, and file imports go to a pg-boss job that the worker runs.
+  The one exception is buyer-facing search and the shopping assistant (design doc section 10): parsing a natural-language query, embedding a search query or photo, and the assistant's answer may call the model during the request, each with a timeout of a few seconds, and natural-language search falls back to keyword search when AI cannot answer.
 - Do not add Redis, Elasticsearch, a separate vector database, or another queue.
   Postgres covers all of these at launch, and section 9 of the design doc says when that changes.
 - Uploads go straight from the browser to object storage with a signed POST form (`ObjectStorage.createUploadForm`).

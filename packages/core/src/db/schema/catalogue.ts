@@ -479,7 +479,10 @@ export const productEmbeddings = pgTable(
       .notNull()
       .references(() => products.id),
     kind: text('kind').notNull(),
-    imageId: uuid('image_id').references(() => productImages.id),
+    // Removing a photo removes its embedding (backend spec step 18).
+    imageId: uuid('image_id').references(() => productImages.id, {
+      onDelete: 'cascade',
+    }),
     model: text('model').notNull(),
     contentHash: text('content_hash').notNull(),
     embedding: vector('embedding', { dimensions: 1024 }).notNull(),
