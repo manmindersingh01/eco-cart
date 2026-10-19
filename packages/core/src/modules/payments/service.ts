@@ -1,4 +1,5 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, sql, type SQL } from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import type { Database, Transaction } from '../../db/client.ts'
 import { withContext, type RequestContext } from '../../db/context.ts'
@@ -15,6 +16,7 @@ import {
   type Razorpay,
   type RazorpayPayment,
 } from '../../lib/razorpay.ts'
+import { qualified } from '../../lib/sql.ts'
 import { parseInput, strictObject } from '../../lib/validation.ts'
 import { queuePaymentReceivedEmail } from '../notifications/service.ts'
 import {
@@ -404,3 +406,53 @@ export async function confirmCheckoutPayment(
     }
   })
 }
+
+/* Orders after payment (backend spec step 13). */
+
+/**
+ * Records the cash collected for a cash on delivery order, once every line
+ * has been delivered (or cancelled). The caller holds the order's lock.
+ */
+export async function captureCashPayment(
+  tx: Transaction,
+  orderId: string,
+): Promise<boolean> {
+  const captured = await tx
+    .update(payments)
+    .set({ status: 'captured' })
+    .where(
+      and(
+        eq(payments.orderId, orderId),
+        eq(payments.provider, 'cod'),
+        eq(payments.status, 'created'),
+      ),
+    )
+    .returning({ id: payments.id })
+  return captured.length > 0
+}
+
+/** The order's payments, oldest first (one per order at launch). */
+export async function paymentsOfOrder(
+  tx: Transaction,
+  orderId: string,
+): Promise<PaymentRow[]> {
+  return tx
+    .select()
+    .from(payments)
+    .where(eq(payments.orderId, orderId))
+    .orderBy(asc(payments.createdAt), asc(payments.id))
+}
+
+/**
+ * A condition that the order in `orderId`, a column of another table, has an
+ * online payment that was captured and not refunded yet. On a cancelled
+ * order that means the administrator owes the buyer a refund.
+ */
+export const hasCapturedOnlinePayment = (orderId: AnyPgColumn): SQL =>
+  sql`exists (select 1 from ${payments} where ${payments.orderId} = ${qualified(orderId)} and ${payments.provider} = 'razorpay' and ${payments.status} = 'captured')`
+
+/** The status of the order's latest payment, for order lists. */
+export const latestPaymentStatus = (orderId: AnyPgColumn): SQL<string | null> =>
+  sql<
+    string | null
+  >`(select ${payments.status} from ${payments} where ${payments.orderId} = ${qualified(orderId)} order by ${payments.createdAt} desc, ${payments.id} desc limit 1)`

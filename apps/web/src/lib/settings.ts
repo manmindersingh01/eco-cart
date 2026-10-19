@@ -1,6 +1,7 @@
 import {
   loadAiConfig,
   loadAuthConfig,
+  loadLedgerConfig,
   loadRazorpayConfig,
   loadStorageConfig,
   requireEnv,
@@ -23,4 +24,6 @@ export function checkWebSettings(env: NodeJS.ProcessEnv = process.env): void {
   // Razorpay (backend spec step 12): all three keys, or none for cash on
   // delivery only.
   loadRazorpayConfig(env)
+  // Sealing sellers' bank account numbers (step 15).
+  loadLedgerConfig(env)
 }

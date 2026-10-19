@@ -74,6 +74,7 @@ describe('GET /api/admin/settings', () => {
       'delivery_charge_paise',
       'free_delivery_threshold_paise',
       'cod_enabled',
+      'return_window_days',
       'payment_timeout_minutes',
       'ai_daily_limit_platform',
       'ai_daily_limit_seller',

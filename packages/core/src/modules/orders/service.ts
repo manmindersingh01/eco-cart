@@ -23,7 +23,7 @@ import { queueOrderPlacedEmail } from '../notifications/service.ts'
 
 export type OrderRow = typeof orders.$inferSelect
 export type OrderItemRow = typeof orderItems.$inferSelect
-type ActorRole = 'buyer' | 'seller' | 'admin' | 'system'
+export type ActorRole = 'buyer' | 'seller' | 'admin' | 'system'
 
 const kolkataDate = new Intl.DateTimeFormat('en-GB', {
   year: '2-digit',
@@ -259,6 +259,51 @@ export async function markOrderPaid(
   return row!
 }
 
+/** Who changed an order, for its events. */
+export interface OrderActor {
+  role: ActorRole
+  userId: string | null
+}
+
+/**
+ * Cancels a locked order and every line: gives the stock and coupon use
+ * back and writes the `cancelled` event. The caller holds the order's lock
+ * and has checked that it may be cancelled; money, invoices, and emails are
+ * the caller's to handle.
+ */
+export async function markOrderCancelled(
+  tx: Transaction,
+  order: OrderRow,
+  lines: OrderItemRow[],
+  actor: OrderActor,
+  reason: string,
+): Promise<void> {
+  const open = lines.filter((line) => line.status !== 'cancelled')
+  await lockStock(
+    tx,
+    open.map((line) => line.variantId),
+  )
+  await giveBackStock(tx, open)
+  if (order.couponId) await giveBackCouponUse(tx, order.couponId)
+  await tx
+    .update(orders)
+    .set({ status: 'cancelled', cancelledAt: sql`now()`, cancelReason: reason })
+    .where(eq(orders.id, order.id))
+  await tx
+    .update(orderItems)
+    .set({ status: 'cancelled' })
+    .where(eq(orderItems.orderId, order.id))
+  await recordOrderEvent(tx, {
+    orderId: order.id,
+    actorUserId: actor.userId,
+    actorRole: actor.role,
+    eventType: 'cancelled',
+    fromStatus: order.status,
+    toStatus: 'cancelled',
+    note: reason,
+  })
+}
+
 /**
  * Cancels an order that was never paid: online payment could not be
  * started, or the buyer did not pay in time. Gives its stock and coupon use
@@ -272,28 +317,12 @@ export async function cancelUnpaidOrder(
 ): Promise<boolean> {
   const order = await lockOrder(tx, orderId)
   if (order.status !== 'pending_payment') return false
-  const lines = await orderLines(tx, orderId)
-  await lockStock(
+  await markOrderCancelled(
     tx,
-    lines.map((line) => line.variantId),
+    order,
+    await orderLines(tx, orderId),
+    { role: 'system', userId: null },
+    reason,
   )
-  await giveBackStock(tx, lines)
-  if (order.couponId) await giveBackCouponUse(tx, order.couponId)
-  await tx
-    .update(orders)
-    .set({ status: 'cancelled', cancelledAt: sql`now()`, cancelReason: reason })
-    .where(eq(orders.id, orderId))
-  await tx
-    .update(orderItems)
-    .set({ status: 'cancelled' })
-    .where(eq(orderItems.orderId, orderId))
-  await recordOrderEvent(tx, {
-    orderId,
-    actorRole: 'system',
-    eventType: 'cancelled',
-    fromStatus: 'pending_payment',
-    toStatus: 'cancelled',
-    note: reason,
-  })
   return true
 }

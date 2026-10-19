@@ -23,7 +23,7 @@ import {
 import { getStorage } from '@/lib/storage'
 
 export const metadata: Metadata = {
-  title: 'Products | EcoKart',
+  title: 'Products',
 }
 
 const filters: Array<{ label: string; status?: ProductStatus }> = [

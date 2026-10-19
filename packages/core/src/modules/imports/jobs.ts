@@ -12,7 +12,7 @@ import {
 import { AiProviderError, AiReplyError } from '../../lib/ai/client.ts'
 import type { AiModels } from '../../lib/ai/index.ts'
 import { toCsv } from '../../lib/csv.ts'
-import type { JobQueue } from '../../lib/queue.ts'
+import { jobQueueOf, type JobQueue } from '../../lib/queue.ts'
 import {
   readSpreadsheet,
   SpreadsheetRejectedError,
@@ -72,7 +72,10 @@ export interface ImportJobDependencies {
   storage: ObjectStorage
   /** Null when AI_ENABLED is false; the columns are then matched by name. */
   ai: AiModels | null
-  /** Adds the AI's look at the columns, in the read's transaction. */
+  /**
+   * Adds the AI's look at the columns, in the read's transaction;
+   * registerImportJobs makes it from the worker's own client.
+   */
   queue: JobQueue
 }
 
@@ -737,8 +740,10 @@ export async function runImport(
 
 export async function registerImportJobs(
   boss: PgBoss,
-  deps: ImportJobDependencies,
+  workerDeps: Omit<ImportJobDependencies, 'queue'>,
 ): Promise<void> {
+  // Reading a file queues the AI's look at its columns with this client.
+  const deps = { ...workerDeps, queue: jobQueueOf(boss) }
   await boss.work(
     READ_IMPORT_QUEUE,
     { includeMetadata: true },

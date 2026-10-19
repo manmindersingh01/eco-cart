@@ -7,7 +7,6 @@ import {
   registerNotificationJobs,
   registerOrderJobs,
   registerStorefrontCacheJobs,
-  sendingWith,
   type StorageConfig,
 } from '@ecokart/core'
 import {
@@ -15,6 +14,7 @@ import {
   registerCatalogueJobs,
   registerImportJobs,
   registerInvoiceJobs,
+  registerReturnJobs,
   registerSellerJobs,
   type VideoTools,
 } from '@ecokart/core/worker'
@@ -91,7 +91,6 @@ export async function startWorker(
     db,
     storage: createObjectStorage(options.storage),
     ai: options.ai ? createAiModels(options.ai) : null,
-    queue: sendingWith(boss),
   })
   await registerStorefrontCacheJobs(boss, { db })
   await registerSellerJobs(boss, {
@@ -99,6 +98,10 @@ export async function startWorker(
     storage: createObjectStorage(options.storage),
   })
   await registerOrderJobs(boss, { db })
+  await registerReturnJobs(boss, {
+    db,
+    storage: createObjectStorage(options.storage),
+  })
 
   return {
     boss,

@@ -222,8 +222,50 @@
     {
       "idx": 31,
       "version": "7",
-      "when": 1792441861074,
-      "tag": "0031_import_mapping_suggestion",
+      "when": 1792348120533,
+      "tag": "0031_bank_accounts_and_return_photos",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792348121872,
+      "tag": "0032_bank_account_and_return_photo_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792441784795,
+      "tag": "0033_order_list_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792442010108,
+      "tag": "0034_email_outbox_admin_retry",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792442015234,
+      "tag": "0035_email_outbox_update_grant",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792442169007,
+      "tag": "0036_product_embeddings_image_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792442579202,
+      "tag": "0037_import_mapping_suggestion",
       "breakpoints": true
     }
   ]

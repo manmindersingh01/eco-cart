@@ -12,6 +12,7 @@ import {
   productImages,
   productVariants,
   products,
+  returnRequests,
   sellers,
   users,
 } from '../db/schema/index.ts'
@@ -495,4 +496,43 @@ export async function createTestCoupon(
     })
     .returning()
   return coupon!
+}
+
+// Returns (step 15).
+
+/**
+ * A return request on a one-line order from `sellerId`, as if the buyer had
+ * opened it, for tests of what hangs off a return.
+ */
+export async function createTestReturnRequest(
+  db: Database,
+  options: { buyerId: string; sellerId: string },
+) {
+  const category = await createTestCategory(db)
+  const { product, variant } = await createTestProduct(db, {
+    sellerId: options.sellerId,
+    categoryId: category.id,
+  })
+  const { order, items } = await createTestOrder(db, {
+    buyerId: options.buyerId,
+    lines: [
+      {
+        sellerId: options.sellerId,
+        productId: product.id,
+        variantId: variant.id,
+      },
+    ],
+  })
+  const [returnRequest] = await db
+    .insert(returnRequests)
+    .values({
+      orderId: order.id,
+      orderItemId: items[0]!.id,
+      userId: options.buyerId,
+      sellerId: options.sellerId,
+      quantity: 1,
+      reasonCode: 'damaged',
+    })
+    .returning()
+  return { order, item: items[0]!, returnRequest: returnRequest! }
 }

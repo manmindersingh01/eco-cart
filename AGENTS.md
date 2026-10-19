@@ -76,6 +76,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Jobs call the same service functions as the web app, so every business rule has exactly one implementation.
 - Never do slow work inside a request.
   AI calls, embeddings, image resizing, PDFs, emails, and file imports go to a pg-boss job that the worker runs.
+  The one exception is buyer-facing search and the shopping assistant (design doc section 10): parsing a natural-language query, embedding a search query or photo, and the assistant's answer may call the model during the request, each with a timeout of a few seconds, and natural-language search falls back to keyword search when AI cannot answer.
 - Do not add Redis, Elasticsearch, a separate vector database, or another queue.
   Postgres covers all of these at launch, and section 9 of the design doc says when that changes.
 - Uploads go straight from the browser to object storage with a signed POST form (`ObjectStorage.createUploadForm`).
@@ -141,6 +142,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - `INSERT ... RETURNING` must also pass the table's read policy, so a context that may add rows but not read them (for example a visitor queueing an email in `email_outbox`) reserves the id with `nextval` and inserts without `RETURNING`.
 - Background jobs are sent with `JobQueue.send(tx, ...)` inside the business transaction, and every queue is listed in `packages/core/src/jobs.ts` so `pnpm db:migrate` creates it.
 - Short secrets that wait in the database, such as sign-in codes, are sealed with `sealSecret` (`MESSAGE_ENCRYPTION_KEY`) and removed once used.
+- Sellers' bank account numbers are sealed with `sealSecret` too, and only their last 4 digits are ever shown, returned by the API, or written to the audit log.
 - Status columns are `text` with a `CHECK` constraint listing allowed values.
   Adding a state means a new migration.
 - Every table has `created_at`, and mutable tables also have `updated_at`.
