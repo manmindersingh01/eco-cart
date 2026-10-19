@@ -21,6 +21,7 @@ import { uniqueViolation } from '../../lib/postgres.ts'
 import { isUuid, parseInput, strictObject } from '../../lib/validation.ts'
 import { recordAuditEntry } from '../audit/service.ts'
 import { invalidateStorefront } from '../catalogue/storefront-cache.ts'
+import { findVerifiedPurchase } from '../orders/views.ts'
 import {
   findProductOnSale,
   getProductLabels,
@@ -140,6 +141,8 @@ export async function writeReview(
   assertBuyer(context)
   const review = parseInput(newReview, input, INVALID)
   const product = await productAt(tx, productSlug)
+  // A buyer who has received the product writes a verified review.
+  const purchase = await findVerifiedPurchase(tx, context.userId, product.id)
   let row: ReviewRow | undefined
   try {
     ;[row] = await tx
@@ -148,9 +151,7 @@ export async function writeReview(
         productId: product.id,
         userId: context.userId,
         ...review,
-        // Step 13 (buyer lane) exports the lookup of the buyer's delivered
-        // order line for a product; until it merges, no review is verified.
-        orderItemId: null,
+        orderItemId: purchase?.orderItemId ?? null,
       })
       .returning()
   } catch (error) {

@@ -69,6 +69,20 @@ export async function readJsonBody(request: Request): Promise<unknown> {
   }
 }
 
+/**
+ * The request body as JSON, or `{}` when there is none, for actions whose
+ * every field is optional, such as a buyer cancelling without a reason.
+ */
+export async function readOptionalJsonBody(request: Request): Promise<unknown> {
+  const body = await request.text()
+  if (body.trim() === '') return {}
+  try {
+    return JSON.parse(body) as unknown
+  } catch {
+    throw new ValidationError('The request body must be JSON')
+  }
+}
+
 /** The visitor's address, for audit logs and per-address limits. */
 export function clientIp(request: Request): string | null {
   return clientAddress(request.headers)
