@@ -703,7 +703,8 @@ return_requests
 
 return_photos     a buyer's photo for a return: uploaded before the return is sent, checked and
                   re-encoded by the worker (processing | ready | failed), private, and attached
-                  to the return request it was sent with, whose images list its storage key
+                  to the return request it was sent with, whose images list its storage key;
+                  a photo can be sent within 24 hours, and one never sent is deleted after 48
 
 invoices
   id                          uuid PK

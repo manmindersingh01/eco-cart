@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
 import type { PgBoss } from 'pg-boss'
 import type { Database } from '../../db/client.ts'
 import { returnPhotos } from '../../db/schema/index.ts'
@@ -12,8 +12,10 @@ import type { ObjectStorage } from '../../lib/storage.ts'
 import {
   CHECK_RETURN_PHOTO_QUEUE,
   checkReturnPhotoJob,
+  DELETE_UNSENT_PHOTOS_QUEUE,
   returnPhotoStorageKey,
 } from './photos.ts'
+import { DELETE_UNSENT_PHOTO_AFTER_HOURS } from './types.ts'
 
 /*
  * The worker's return jobs (design doc 5.7). Only the worker loads this
@@ -126,6 +128,60 @@ export async function checkUploadedReturnPhoto(
   await finish(deps, photo, { status: 'ready', prepared })
 }
 
+/** Photos one round deletes; a run keeps going until none are left. */
+const DELETE_BATCH = 200
+
+/**
+ * Deletes the photos buyers added but never sent with a return, once they
+ * are DELETE_UNSENT_PHOTO_AFTER_HOURS old: first the checked copy, then the
+ * row. By then `attachReturnPhotos` refuses them, so no return can start
+ * pointing at a file this deletes. A file that cannot be deleted throws
+ * before its row goes, so the retry, or the next night, tries again.
+ * Returns how many photos it deleted.
+ */
+export async function deleteUnsentReturnPhotos(
+  deps: ReturnJobDependencies,
+): Promise<number> {
+  let deleted = 0
+  for (;;) {
+    const batch = await deps.db
+      .select({ id: returnPhotos.id })
+      .from(returnPhotos)
+      .where(
+        and(
+          isNull(returnPhotos.returnRequestId),
+          lt(
+            returnPhotos.createdAt,
+            sql`now() - make_interval(hours => ${DELETE_UNSENT_PHOTO_AFTER_HOURS})`,
+          ),
+        ),
+      )
+      .orderBy(asc(returnPhotos.createdAt), asc(returnPhotos.id))
+      .limit(DELETE_BATCH)
+    if (batch.length === 0) return deleted
+    // Every photo, not only ready ones: a check that ran late may have
+    // written a copy after the photo was marked failed. Deleting a file
+    // that is not there succeeds.
+    for (const { id } of batch) {
+      await deps.storage.remove(returnPhotoStorageKey(id))
+    }
+    const removed = await deps.db
+      .delete(returnPhotos)
+      .where(
+        and(
+          inArray(
+            returnPhotos.id,
+            batch.map(({ id }) => id),
+          ),
+          isNull(returnPhotos.returnRequestId),
+        ),
+      )
+      .returning({ id: returnPhotos.id })
+    deleted += removed.length
+    if (batch.length < DELETE_BATCH) return deleted
+  }
+}
+
 export async function registerReturnJobs(
   boss: PgBoss,
   deps: ReturnJobDependencies,
@@ -141,4 +197,14 @@ export async function registerReturnJobs(
       })
     },
   )
+  // Every night at 03:45 India time; a night the worker was down gets one
+  // run when it starts again.
+  await boss.schedule(DELETE_UNSENT_PHOTOS_QUEUE, '45 3 * * *', null, {
+    tz: 'Asia/Kolkata',
+    missed: 'once',
+  })
+  await boss.work(DELETE_UNSENT_PHOTOS_QUEUE, async () => {
+    const deleted = await deleteUnsentReturnPhotos(deps)
+    if (deleted > 0) console.info(`Deleted unsent return photos: ${deleted}`)
+  })
 }
