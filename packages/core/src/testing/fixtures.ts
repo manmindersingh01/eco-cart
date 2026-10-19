@@ -13,6 +13,7 @@ import {
   productVariants,
   products,
   returnRequests,
+  sellerLedgerEntries,
   sellers,
   users,
 } from '../db/schema/index.ts'
@@ -535,4 +536,48 @@ export async function createTestReturnRequest(
     })
     .returning()
   return { order, item: items[0]!, returnRequest: returnRequest! }
+}
+
+// Seller money (step 15).
+
+export interface TestLedgerEntry {
+  entryType:
+    | 'sale'
+    | 'commission'
+    | 'refund_reversal'
+    | 'commission_reversal'
+    | 'payout'
+    | 'adjustment'
+  amountPaise: number
+  description?: string
+  reference?: string
+  orderId?: string
+  createdAt?: Date
+}
+
+/**
+ * Ledger entries for `sellerId`, inserted together, so entries without a
+ * `createdAt` share the same time and are told apart only by id.
+ */
+export async function addTestLedgerEntries(
+  db: Database,
+  sellerId: string,
+  entries: TestLedgerEntry[],
+) {
+  return db
+    .insert(sellerLedgerEntries)
+    .values(
+      entries.map((entry) => ({
+        sellerId,
+        entryType: entry.entryType,
+        amountPaise: entry.amountPaise,
+        description: entry.description ?? `Test ${entry.entryType}`,
+        reference:
+          entry.reference ??
+          (entry.entryType === 'payout' ? `TEST-${uniqueSuffix()}` : null),
+        orderId: entry.orderId ?? null,
+        ...(entry.createdAt ? { createdAt: entry.createdAt } : {}),
+      })),
+    )
+    .returning()
 }

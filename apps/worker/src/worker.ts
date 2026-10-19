@@ -4,6 +4,7 @@ import {
   createPool,
   loadNotificationConfig,
   QUEUES,
+  registerLedgerJobs,
   registerNotificationJobs,
   registerOrderJobs,
   registerStorefrontCacheJobs,
@@ -98,6 +99,10 @@ export async function startWorker(
   })
   await registerOrderJobs(boss, { db })
   await registerReturnJobs(boss, {
+    db,
+    storage: createObjectStorage(options.storage),
+  })
+  await registerLedgerJobs(boss, {
     db,
     storage: createObjectStorage(options.storage),
   })

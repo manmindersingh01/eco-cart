@@ -17,14 +17,20 @@ describe('toCsv', () => {
     const cells = [
       '=HYPERLINK("http://evil.test")',
       '+91 98000 00000',
-      '-5',
+      '-5+cmd',
       '@SUM(A1)',
       '\t=1+1',
       '\r=1+1',
       '₹1,299',
     ]
     expect(toCsv([cells]).toString('utf8')).toBe(
-      '\ufeff"\'=HYPERLINK(""http://evil.test"")","\'+91 98000 00000","\'-5","\'@SUM(A1)","\'\t=1+1","\'\r=1+1","₹1,299"\r\n',
+      '\ufeff"\'=HYPERLINK(""http://evil.test"")","\'+91 98000 00000","\'-5+cmd","\'@SUM(A1)","\'\t=1+1","\'\r=1+1","₹1,299"\r\n',
+    )
+  })
+
+  test('leaves a plain negative number as a number', () => {
+    expect(toCsv([['-5', '-125.50', '-1.5e3', '-']]).toString('utf8')).toBe(
+      '\ufeff"-5","-125.50","\'-1.5e3","\'-"\r\n',
     )
   })
 })

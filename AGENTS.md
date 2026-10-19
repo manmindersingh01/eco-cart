@@ -164,7 +164,7 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - Seller accounts are made only by `createSeller`, together with their business; Better Auth's administrator endpoints refuse the `seller` role and refuse to change the role of an account that owns a business.
 - Email codes are stored hashed (`storeOTP: "hashed"`); phone codes are not yet, and must be before SMS goes live (backend spec step 2).
   The OTP delivery callbacks only queue the email or SMS; they never send inline.
-- Object storage buckets are private, and every download of a private file (originals, imports, invoices, return photos, seller verification documents) is a short-lived signed URL.
+- Object storage buckets are private, and every download of a private file (originals, imports, invoices, return photos, seller verification documents, settlement statements) is a short-lived signed URL.
   Only the product photo sizes under `images/` and the converted product videos under `videos/` are public, served through CloudFront.
 
 ## AI features

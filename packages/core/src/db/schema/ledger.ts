@@ -3,9 +3,12 @@ import {
   bigserial,
   char,
   check,
+  date,
   index,
+  integer,
   pgTable,
   text,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
 import { users } from './auth.ts'
@@ -68,6 +71,15 @@ export const sellerLedgerEntries = pgTable(
         else amount_paise <> 0
       end`,
     ),
+    // A payout carries the bank's transfer reference, and recording the same
+    // transfer twice (a double click) is refused.
+    check(
+      'seller_ledger_entries_payout_reference_check',
+      sql`entry_type <> 'payout' or reference is not null`,
+    ),
+    uniqueIndex('seller_ledger_entries_payout_reference_idx')
+      .on(t.sellerId, t.reference)
+      .where(sql`entry_type = 'payout'`),
     webSelect(sql`seller_id = ${currentSellerId} or ${fullAccess}`),
     webInsert(fullAccess),
     workerPolicy(),
@@ -115,6 +127,63 @@ export const sellerBankAccounts = pgTable(
     webSelect(sql`seller_id = ${currentSellerId} or ${fullAccess}`),
     webInsert(fullAccess),
     webUpdate(fullAccess),
+    workerPolicy(),
+  ],
+).enableRLS()
+
+/**
+ * A seller's settlement statement: the CSV of their ledger entries in a
+ * period of India dates, with the opening and closing balance (design doc
+ * 5.9). The seller or an administrator asks for it, and the worker makes the
+ * file and keeps it private.
+ */
+export const settlementStatements = pgTable(
+  'settlement_statements',
+  {
+    id: uuidPrimaryKey(),
+    sellerId: uuid('seller_id')
+      .notNull()
+      .references(() => sellers.id),
+    requestedBy: uuid('requested_by').references(() => users.id),
+    // India dates, both included.
+    periodStart: date('period_start', { mode: 'string' }).notNull(),
+    periodEnd: date('period_end', { mode: 'string' }).notNull(),
+    status: text('status').notNull().default('processing'),
+    storageKey: text('storage_key'),
+    openingBalancePaise: paise('opening_balance_paise'),
+    closingBalancePaise: paise('closing_balance_paise'),
+    entryCount: integer('entry_count'),
+    failureReason: text('failure_reason'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index('settlement_statements_seller_id_created_at_idx').on(
+      t.sellerId,
+      t.createdAt.desc(),
+      t.id.desc(),
+    ),
+    check(
+      'settlement_statements_period_check',
+      sql`period_end >= period_start and period_end - period_start < 366`,
+    ),
+    check(
+      'settlement_statements_status_check',
+      sql`status in ('processing', 'ready', 'failed')`,
+    ),
+    check(
+      'settlement_statements_ready_check',
+      sql`(status = 'ready') = (storage_key is not null and opening_balance_paise is not null and closing_balance_paise is not null and entry_count is not null)`,
+    ),
+    check(
+      'settlement_statements_failure_check',
+      sql`(status = 'failed') = (failure_reason is not null)`,
+    ),
+    webSelect(sql`seller_id = ${currentSellerId} or ${fullAccess}`),
+    // A seller asks for their own statements; only the worker makes them.
+    webInsert(
+      sql`${fullAccess} or (seller_id = ${currentSellerId} and status = 'processing')`,
+    ),
     workerPolicy(),
   ],
 ).enableRLS()
