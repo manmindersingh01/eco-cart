@@ -358,8 +358,8 @@ accounts                                core; for password and social sign-in, s
 verifications                           core; holds OTP codes while they are valid
   id            uuid PK
   identifier    text    the email or phone the code was sent to
-  value         text    email codes stored hashed (storeOTP: hashed); phone codes in plain
-                        text for their five minutes until SMS goes live (backend spec, step 2)
+  value         text    email codes stored hashed (storeOTP: hashed); phone codes as a hash
+                        keyed with the auth secret (backend spec, step 2)
   expires_at    timestamp (UTC)
   created_at, updated_at
   INDEX (identifier)
@@ -990,7 +990,7 @@ Login is handled by Better Auth, mounted in the web app at `/api/auth/*`.
 1. The user enters an email or mobile number and the browser calls Better Auth's email OTP or phone number plugin.
    Mobile numbers must be Indian (`+91` and ten digits starting with 6 to 9), and phone sign-in stays off until an SMS provider is configured.
 2. Before a code is made, two limits are checked: five code requests a minute from one IP address (Better Auth, counted in `auth_rate_limits`), and five codes an hour for one email address or number from anywhere (our `rate_limits`, with the address hashed).
-3. Better Auth generates a six-digit code with a five-minute expiry, stores it in `verifications` (hashed for email), and calls our callback.
+3. Better Auth generates a six-digit code with a five-minute expiry, stores it hashed in `verifications`, and calls our callback.
    The callback queues the email through `email_outbox`, or the SMS as a job, with the code encrypted; the worker decrypts it, sends the message, and then removes the code.
 4. The user enters the code.
    Better Auth verifies it, allows three attempts, creates the user on first sign-in (with the `buyer` role by default; a phone-only account gets a placeholder email under the reserved `.invalid` domain), and writes a `sessions` row.
@@ -1146,7 +1146,7 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 - The full list of row-level security rules is in `docs/backend-spec.md`, step 1.
 - Application code still checks permissions explicitly; row-level security is the safety net that makes a missed check a bug rather than a data leak.
   In the same spirit, a database trigger refuses any change by the web app without full access that approves or rejects a product or sets its GST rate, so a seller can never approve their own listing.
-- Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, email codes stored hashed (phone codes get the same before SMS goes live), three attempts per code, and suspension through Better Auth's ban, which revokes every session of that user.
+- Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, email and phone codes stored hashed, three attempts per code, and suspension through Better Auth's ban, which revokes every session of that user.
 - Better Auth rate limits its own endpoints (OTP sending and verification), with the counters in the database so the limits hold across web containers.
   A second limit caps the codes sent to any one email address or phone number.
   Checkout, search, and every AI endpoint use the `rate_limits` table with an upsert per window.
