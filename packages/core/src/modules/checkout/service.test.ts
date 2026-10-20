@@ -136,6 +136,28 @@ const addToCart = (buyer: TestBuyer, variantId: string, quantity = 1) =>
     addCartItem(tx, buyer.context, photos, { variantId, quantity }),
   )
 
+test('B06 B07 minimum 10 allows 11, but a later minimum blocks fresh checkout without taking stock', async () => {
+  const buyer = await newBuyer()
+  const { product, variant } = await newItem({ stock: 30 })
+  await owner
+    .update(products)
+    .set({ minOrderQuantity: 10 })
+    .where(eq(products.id, product.id))
+  await addToCart(buyer, variant.id, 11)
+  await owner
+    .update(products)
+    .set({ minOrderQuantity: 12 })
+    .where(eq(products.id, product.id))
+  await expect(checkout(buyer, 'cod')).rejects.toBeInstanceOf(ConflictError)
+  expect(await stockOf(variant.id)).toBe(30)
+  expect(
+    await owner
+      .select()
+      .from(orders)
+      .where(eq(orders.userId, buyer.context.userId)),
+  ).toHaveLength(0)
+})
+
 const checkout = (
   buyer: TestBuyer,
   paymentMethod: 'razorpay' | 'cod',
@@ -376,24 +398,40 @@ describe('cash on delivery', () => {
     const buyer = await newBuyer()
     const { variant } = await newItem()
     await addToCart(buyer, variant.id)
-    await owner
-      .insert(platformSettings)
-      .values({ key: 'cod_enabled', value: false })
-      .onConflictDoUpdate({
-        target: platformSettings.key,
-        set: { value: false },
-      })
-    try {
-      await expect(checkout(buyer, 'cod')).rejects.toThrow(
-        new ConflictError(
-          'Cash on delivery is not available right now; please pay online',
-        ),
-      )
-    } finally {
-      await owner
-        .delete(platformSettings)
-        .where(eq(platformSettings.key, 'cod_enabled'))
-    }
+    // The setting is switched off only inside a transaction that is always
+    // rolled back, and the order is placed in that same transaction. Saved
+    // for real, other test files placing cash on delivery orders at the same
+    // time were refused now and then.
+    const rolledBack = new Error('rolled back on purpose')
+    await expect(
+      web.transaction(async (tx) => {
+        await tx
+          .insert(platformSettings)
+          .values({ key: 'cod_enabled', value: false })
+          .onConflictDoUpdate({
+            target: platformSettings.key,
+            set: { value: false },
+          })
+        await expect(
+          placeOrder(
+            // placeOrder only opens transactions on it, which a transaction
+            // does as savepoints, and passes it to consumeRateLimit, which
+            // takes a transaction too.
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+            tx as unknown as typeof web,
+            { queue, razorpay },
+            buyer.context,
+            buyer.account,
+            { addressId: buyer.addressId, paymentMethod: 'cod' },
+          ),
+        ).rejects.toThrow(
+          new ConflictError(
+            'Cash on delivery is not available right now; please pay online',
+          ),
+        )
+        throw rolledBack
+      }),
+    ).rejects.toBe(rolledBack)
     expect(await stockOf(variant.id)).toBe(5)
   })
 })

@@ -6,6 +6,8 @@ export type CurrentAccount = {
   email: string | null
   phoneNumber: string | null
   role: AccountRole
+  /** Every role of the account, for example buyer and seller. */
+  roles: AccountRole[]
   sellerId: string | null
 }
 

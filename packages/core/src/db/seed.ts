@@ -13,6 +13,7 @@ import {
 } from '../modules/auth/accounts.ts'
 import { createAppAuth } from '../modules/auth/service.ts'
 import { createBrand, listAllBrands } from '../modules/catalogue/brands.ts'
+import { EMBED_PRODUCT_QUEUE } from '../modules/catalogue/embeddings.ts'
 import {
   createCategory,
   loadCategoryTree,
@@ -67,6 +68,7 @@ export const DEVELOPMENT_SETTINGS: { [K in SettingKey]?: SettingValue<K> } = {
   commission_bps: 1000,
   delivery_charge_paise: 4900,
   free_delivery_threshold_paise: 49_900,
+  return_window_days: 7,
   company_details: {
     legalName: 'EcoKart Example Private Limited',
     displayName: 'EcoKart (example data)',
@@ -663,6 +665,11 @@ async function seedProduct(
     send: async (_tx, name, data) => {
       jobs.push({ name, data })
     },
+    // The seed never looks after failed jobs.
+    counts: async () => [],
+    findJob: async () => null,
+    findJobsWithData: async () => [],
+    retry: async () => false,
     stop: async () => {},
   }
   const runJobs = async () => {
@@ -677,6 +684,9 @@ async function seedProduct(
           { db: worker, storage, ai: null },
           screenListingJob.parse(data).reviewId,
         )
+      } else if (name === EMBED_PRODUCT_QUEUE) {
+        // Never embedded here: once AI is on, the worker's catch-up job
+        // embeds every product on sale that has no embeddings.
       } else {
         throw new Error(`The seed cannot run ${name} jobs`)
       }
@@ -740,7 +750,7 @@ async function seedProduct(
   )
   await runJobs()
   await withContext(db, { role: 'system' }, (tx) =>
-    approveProduct(tx, storage, { role: 'system' }, product.id, {}),
+    approveProduct(tx, storage, queue, { role: 'system' }, product.id, {}),
   )
 }
 

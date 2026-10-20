@@ -23,7 +23,10 @@ import {
   workerPolicy,
 } from './rls.ts'
 
-/** A seller business, owned by one seller account (design doc 5.4). */
+/**
+ * A seller business, owned by one account (design doc 5.4): a seller
+ * account an administrator made, or a buyer who applied to sell.
+ */
 export const sellers = pgTable(
   'sellers',
   {
@@ -52,6 +55,8 @@ export const sellers = pgTable(
     status: text('status').notNull().default('pending'),
     approvedAt: timestamptz('approved_at'),
     suspendedReason: text('suspended_reason'),
+    // Why an administrator rejected the application; the applicant sees it.
+    rejectionReason: text('rejection_reason'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -65,7 +70,7 @@ export const sellers = pgTable(
     index('sellers_created_at_idx').on(t.createdAt.desc(), t.id.desc()),
     check(
       'sellers_status_check',
-      sql`status in ('pending', 'approved', 'suspended')`,
+      sql`status in ('pending', 'approved', 'suspended', 'rejected')`,
     ),
     check(
       'sellers_gstin_check',
@@ -102,7 +107,10 @@ export const sellers = pgTable(
     webSelect(
       sql`status = 'approved' or owner_user_id = ${currentUserId} or id = ${currentSellerId} or ${fullAccess}`,
     ),
-    webInsert(fullAccess),
+    // A buyer may apply to sell: one pending business of their own.
+    webInsert(
+      sql`(owner_user_id = ${currentUserId} and status = 'pending' and approved_at is null) or ${fullAccess}`,
+    ),
     webUpdate(sql`id = ${currentSellerId} or ${fullAccess}`),
     workerPolicy(),
   ],

@@ -23,10 +23,14 @@ import {
   productModeration,
   productVariants,
   products,
+  returnPhotos,
+  returnRequests,
+  sellerBankAccounts,
   sellerDocumentFiles,
   sellerDocumentRequests,
   sellerLedgerEntries,
   sellers,
+  settlementStatements,
 } from './schema/index.ts'
 
 /*
@@ -310,11 +314,13 @@ describe('catalogue', () => {
     expect(changed).toEqual([{ id: draftA.product.id }])
   })
 
-  test('only full access can create a seller', async () => {
-    const code = await errorCode(
+  // A buyer may add only their own pending application (design doc 5.4);
+  // an approved seller, or one for someone else, needs full access.
+  test('a buyer cannot create an approved seller or one for someone else', async () => {
+    const business = (ownerUserId: string, status: 'pending' | 'approved') =>
       withContext(web, as.buyer(buyer1), (tx) =>
         tx.insert(sellers).values({
-          ownerUserId: buyer1.id,
+          ownerUserId,
           slug: `self-made-${crypto.randomUUID()}`,
           displayName: 'Self made',
           legalName: 'Self made',
@@ -325,10 +331,16 @@ describe('catalogue', () => {
           supportEmail: 'self@example.test',
           supportPhone: '+919800000009',
           invoicePrefix: 'SELF',
+          status,
+          approvedAt: status === 'approved' ? new Date() : null,
         }),
-      ),
+      )
+    expect(await errorCode(business(buyer1.id, 'approved'))).toBe(
+      INSUFFICIENT_PRIVILEGE,
     )
-    expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    expect(await errorCode(business(buyer2.id, 'pending'))).toBe(
+      INSUFFICIENT_PRIVILEGE,
+    )
   })
 })
 
@@ -993,5 +1005,307 @@ describe('seller documents', () => {
         .values(fileFor(documents.requestA, sellerA.seller.id)),
     )
     expect(code).toBe(UNIQUE_VIOLATION)
+  })
+})
+
+/** Bank details as an administrator would enter them, sealed. */
+const bankAccountFor = (sellerId: string, last4: string) => ({
+  sellerId,
+  accountHolder: 'Test holder',
+  accountNumberSealed: 'v1.not-a-real-iv.not-real-data',
+  accountNumberLast4: last4,
+  ifsc: 'HDFC0001234',
+})
+
+/** A return photo the worker has checked. */
+const readyPhoto = (userId: string, returnRequestId: string | null = null) => {
+  const id = crypto.randomUUID()
+  return {
+    id,
+    userId,
+    returnRequestId,
+    uploadKey: `uploads/returns/${userId}/${crypto.randomUUID()}`,
+    storageKey: `returns/${id}`,
+    status: 'ready',
+    contentHash: 'hash',
+    width: 800,
+    height: 600,
+  }
+}
+
+/** A return photo as the buyer's browser adds it. */
+const unchecked = (userId: string) => ({
+  userId,
+  uploadKey: `uploads/returns/${userId}/${crypto.randomUUID()}`,
+})
+
+describe('seller bank accounts', () => {
+  let accountIds: string[]
+
+  beforeAll(async () => {
+    const rows = await owner
+      .insert(sellerBankAccounts)
+      .values([
+        bankAccountFor(sellerA.seller.id, '1111'),
+        bankAccountFor(sellerB.seller.id, '2222'),
+      ])
+      .returning({ id: sellerBankAccounts.id })
+    accountIds = rows.map((row) => row.id)
+  })
+
+  const visibleLast4 = (context: RequestContext) =>
+    withContext(web, context, async (tx) =>
+      (
+        await tx
+          .select({ last4: sellerBankAccounts.accountNumberLast4 })
+          .from(sellerBankAccounts)
+          .where(inArray(sellerBankAccounts.id, accountIds))
+      )
+        .map((row) => row.last4)
+        .toSorted(),
+    )
+
+  test('a seller sees only their own; buyers and visitors none', async () => {
+    expect(await visibleLast4(as.seller(sellerA))).toEqual(['1111'])
+    expect(await visibleLast4(as.buyer(buyer1))).toEqual([])
+    expect(await visibleLast4(as.anonymous())).toEqual([])
+    expect(await visibleLast4(as.admin())).toEqual(['1111', '2222'])
+  })
+
+  test('a seller cannot enter or change bank details', async () => {
+    const code = await errorCode(
+      withContext(web, as.seller(sellerA), (tx) =>
+        tx
+          .insert(sellerBankAccounts)
+          .values(bankAccountFor(sellerA.seller.id, '9999')),
+      ),
+    )
+    expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    const changed = await withContext(web, as.seller(sellerA), (tx) =>
+      tx
+        .update(sellerBankAccounts)
+        .set({ ifsc: 'SBIN0000001' })
+        .where(eq(sellerBankAccounts.sellerId, sellerA.seller.id))
+        .returning({ id: sellerBankAccounts.id }),
+    )
+    expect(changed).toEqual([])
+  })
+})
+
+describe('return photos', () => {
+  // Buyer 1 returns seller A's line of order 1, with one photo attached and
+  // one still waiting; buyer 2 has a waiting photo of their own.
+  const photos = { attached: '', waiting: '', otherBuyer: '' }
+  let returnId: string
+  let otherReturnId: string
+
+  beforeAll(async () => {
+    const lineOf = (order: typeof order1, sellerId: string) =>
+      order.items.find((item) => item.sellerId === sellerId)!
+    const [ownReturn, otherReturn] = await owner
+      .insert(returnRequests)
+      .values([
+        {
+          orderId: order1.order.id,
+          orderItemId: lineOf(order1, sellerA.seller.id).id,
+          userId: buyer1.id,
+          sellerId: sellerA.seller.id,
+          quantity: 1,
+          reasonCode: 'damaged',
+        },
+        {
+          orderId: order2.order.id,
+          orderItemId: lineOf(order2, sellerB.seller.id).id,
+          userId: buyer2.id,
+          sellerId: sellerB.seller.id,
+          quantity: 1,
+          reasonCode: 'damaged',
+        },
+      ])
+      .returning({ id: returnRequests.id })
+    returnId = ownReturn!.id
+    otherReturnId = otherReturn!.id
+    const rows = [
+      readyPhoto(buyer1.id, returnId),
+      readyPhoto(buyer1.id),
+      readyPhoto(buyer2.id),
+    ]
+    await owner.insert(returnPhotos).values(rows)
+    Object.assign(photos, {
+      attached: rows[0]!.id,
+      waiting: rows[1]!.id,
+      otherBuyer: rows[2]!.id,
+    })
+  })
+
+  const visiblePhotos = (context: RequestContext) =>
+    withContext(web, context, async (tx) =>
+      (
+        await tx
+          .select({ id: returnPhotos.id })
+          .from(returnPhotos)
+          .where(inArray(returnPhotos.id, Object.values(photos)))
+      )
+        .map((row) => row.id)
+        .toSorted(),
+    )
+
+  test('the buyer sees their own; the seller only those sent with their return', async () => {
+    expect(await visiblePhotos(as.buyer(buyer1))).toEqual(
+      [photos.attached, photos.waiting].toSorted(),
+    )
+    expect(await visiblePhotos(as.buyer(buyer2))).toEqual([photos.otherBuyer])
+    expect(await visiblePhotos(as.seller(sellerA))).toEqual([photos.attached])
+    expect(await visiblePhotos(as.seller(sellerB))).toEqual([])
+    expect(await visiblePhotos(as.anonymous())).toEqual([])
+    expect(await visiblePhotos(as.admin())).toHaveLength(3)
+  })
+
+  test('a buyer adds only unchecked photos of their own', async () => {
+    for (const values of [
+      unchecked(buyer2.id),
+      readyPhoto(buyer1.id),
+      { ...unchecked(buyer1.id), returnRequestId: returnId },
+    ]) {
+      const code = await errorCode(
+        withContext(web, as.buyer(buyer1), (tx) =>
+          tx.insert(returnPhotos).values(values),
+        ),
+      )
+      expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    }
+  })
+
+  test('a buyer attaches photos only to their own return', async () => {
+    const code = await errorCode(
+      withContext(web, as.buyer(buyer1), (tx) =>
+        tx
+          .update(returnPhotos)
+          .set({ returnRequestId: otherReturnId })
+          .where(eq(returnPhotos.id, photos.waiting)),
+      ),
+    )
+    expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    const changed = await withContext(web, as.buyer(buyer2), (tx) =>
+      tx
+        .update(returnPhotos)
+        .set({ returnRequestId: otherReturnId })
+        .where(eq(returnPhotos.id, photos.waiting))
+        .returning({ id: returnPhotos.id }),
+    )
+    expect(changed).toEqual([])
+    const sellerChange = await withContext(web, as.seller(sellerA), (tx) =>
+      tx
+        .update(returnPhotos)
+        .set({ returnRequestId: null })
+        .where(eq(returnPhotos.id, photos.attached))
+        .returning({ id: returnPhotos.id }),
+    )
+    expect(sellerChange).toEqual([])
+  })
+})
+
+describe('settlement statements', () => {
+  let statementIds: string[]
+
+  beforeAll(async () => {
+    const rows = await owner
+      .insert(settlementStatements)
+      .values(
+        [sellerA, sellerB].map(({ seller }) => ({
+          sellerId: seller.id,
+          periodStart: '2026-10-01',
+          periodEnd: '2026-10-19',
+        })),
+      )
+      .returning({ id: settlementStatements.id })
+    statementIds = rows.map((row) => row.id)
+  })
+
+  const visibleSellers = (context: RequestContext) =>
+    withContext(web, context, async (tx) =>
+      (
+        await tx
+          .select({ sellerId: settlementStatements.sellerId })
+          .from(settlementStatements)
+          .where(inArray(settlementStatements.id, statementIds))
+      )
+        .map((row) => row.sellerId)
+        .toSorted(),
+    )
+
+  test('a seller sees only their own; buyers and visitors none', async () => {
+    expect(await visibleSellers(as.seller(sellerA))).toEqual([
+      sellerA.seller.id,
+    ])
+    expect(await visibleSellers(as.buyer(buyer1))).toEqual([])
+    expect(await visibleSellers(as.anonymous())).toEqual([])
+    expect(await visibleSellers(as.admin())).toEqual(
+      [sellerA.seller.id, sellerB.seller.id].toSorted(),
+    )
+  })
+
+  test('a seller asks only for their own, and only the worker fills it in', async () => {
+    await withContext(web, as.seller(sellerA), (tx) =>
+      tx.insert(settlementStatements).values({
+        sellerId: sellerA.seller.id,
+        periodStart: '2026-10-01',
+        periodEnd: '2026-10-01',
+      }),
+    )
+    for (const values of [
+      {
+        sellerId: sellerB.seller.id,
+        periodStart: '2026-10-01',
+        periodEnd: '2026-10-01',
+      },
+      {
+        sellerId: sellerA.seller.id,
+        periodStart: '2026-10-01',
+        periodEnd: '2026-10-01',
+        status: 'failed',
+        failureReason: 'Made up',
+      },
+    ]) {
+      const code = await errorCode(
+        withContext(web, as.seller(sellerA), (tx) =>
+          tx.insert(settlementStatements).values(values),
+        ),
+      )
+      expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    }
+    const code = await errorCode(
+      withContext(web, as.admin(), (tx) =>
+        tx
+          .update(settlementStatements)
+          .set({ status: 'failed', failureReason: 'Made up' })
+          .where(eq(settlementStatements.id, statementIds[0]!)),
+      ),
+    )
+    expect(code).toBe(INSUFFICIENT_PRIVILEGE)
+    const filled = await withContext(worker, { role: 'system' }, (tx) =>
+      tx
+        .update(settlementStatements)
+        .set({ status: 'failed', failureReason: 'Storage was down' })
+        .where(eq(settlementStatements.id, statementIds[1]!))
+        .returning({ id: settlementStatements.id }),
+    )
+    expect(filled).toHaveLength(1)
+  })
+
+  test('a period is at most 366 days and never backwards', async () => {
+    for (const [periodStart, periodEnd] of [
+      ['2026-10-02', '2026-10-01'],
+      ['2025-10-18', '2026-10-19'],
+    ]) {
+      const code = await errorCode(
+        owner.insert(settlementStatements).values({
+          sellerId: sellerA.seller.id,
+          periodStart: periodStart!,
+          periodEnd: periodEnd!,
+        }),
+      )
+      expect(code).toBe(CHECK_VIOLATION)
+    }
   })
 })

@@ -15,6 +15,7 @@
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r --workspace-concurrency=1 run test",
     "test:e2e": "pnpm --filter @ecokart/web test:e2e",
+    "test:e2e:demo": "pnpm --filter @ecokart/web test:e2e:demo",
     "test:e2e:smoke": "pnpm --filter @ecokart/web test:e2e:smoke",
     "test:e2e:verify-harness": "pnpm --filter @ecokart/web test:e2e:verify-harness",
     "test:e2e:report": "pnpm --filter @ecokart/web test:e2e:report",
@@ -29,6 +30,7 @@
     "db:generate": "pnpm --filter @ecokart/core db:generate",
     "auth:schema": "pnpm --filter @ecokart/core auth:schema",
     "admin:create": "pnpm --filter @ecokart/web admin:create",
+    "demo:flow": "pnpm --filter @ecokart/web demo:flow",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {

@@ -163,3 +163,126 @@ export function renderPaymentReceivedEmail(payment: {
   ]
   return { text: lines.join('\n\n'), html: asHtml(lines) }
 }
+
+const lineName = (line: {
+  title: string
+  options: Record<string, string>
+  quantity: number
+}) => {
+  const options = Object.values(line.options)
+  const name = options.length
+    ? `${line.title} (${options.join(', ')})`
+    : line.title
+  return `${name} × ${line.quantity}`
+}
+
+export function dispatchedSubject(orderNumber: string): string {
+  return `Your EcoKart order ${orderNumber} is on its way`
+}
+
+export function renderDispatchedEmail(shipment: {
+  orderNumber: string
+  buyerName: string
+  lines: { title: string; options: Record<string, string>; quantity: number }[]
+  courierName: string
+  trackingNumber: string
+  trackingUrl: string | null
+  wholeOrder: boolean
+  firstParcel: boolean
+}): { text: string; html: string } {
+  const lines = [
+    `Hello ${shipment.buyerName},`,
+    !shipment.wholeOrder
+      ? `Part of your order ${shipment.orderNumber} is on its way. We will email you again when the rest is dispatched.`
+      : shipment.firstParcel
+        ? `Your order ${shipment.orderNumber} is on its way.`
+        : `The rest of your order ${shipment.orderNumber} is on its way.`,
+    shipment.lines.map(lineName).join('\n'),
+    [
+      `Courier: ${shipment.courierName}`,
+      `Tracking number: ${shipment.trackingNumber}`,
+      ...(shipment.trackingUrl ? [`Track it: ${shipment.trackingUrl}`] : []),
+    ].join('\n'),
+    'Thank you for shopping with EcoKart.',
+  ]
+  return { text: lines.join('\n\n'), html: asHtml(lines) }
+}
+
+export function cancelledSubject(orderNumber: string): string {
+  return `Your EcoKart order ${orderNumber} is cancelled`
+}
+
+export function renderCancelledEmail(order: {
+  orderNumber: string
+  buyerName: string
+  placedAt: string
+  cancelledBy: 'buyer' | 'ecokart'
+  reason: string
+  lines: { title: string; options: Record<string, string>; quantity: number }[]
+  money: { kind: 'refund'; amountPaise: number } | { kind: 'nothing_charged' }
+}): { text: string; html: string } {
+  const placed = orderDate.format(new Date(order.placedAt))
+  const lines = [
+    `Hello ${order.buyerName},`,
+    order.cancelledBy === 'buyer'
+      ? `As you asked, your order ${order.orderNumber}, placed on ${placed}, is cancelled.`
+      : `We are sorry: your order ${order.orderNumber}, placed on ${placed}, has been cancelled. Reason: ${order.reason}`,
+    order.lines.map(lineName).join('\n'),
+    order.money.kind === 'refund'
+      ? `We will refund ${rupees(order.money.amountPaise)} to the way you paid, and email you when the refund is made.`
+      : 'Nothing was charged for this order.',
+  ]
+  return { text: lines.join('\n\n'), html: asHtml(lines) }
+}
+
+export function refundRecordedSubject(orderNumber: string): string {
+  return `Your refund for EcoKart order ${orderNumber}`
+}
+
+export function renderRefundRecordedEmail(refund: {
+  orderNumber: string
+  buyerName: string
+  amountPaise: number
+  method: 'gateway' | 'bank_transfer'
+  lines: { title: string; options: Record<string, string>; quantity: number }[]
+}): { text: string; html: string } {
+  const lines = [
+    `Hello ${refund.buyerName},`,
+    `We have refunded ${rupees(refund.amountPaise)} for order ${refund.orderNumber}.`,
+    ...(refund.lines.length > 0
+      ? [['For your return of:', ...refund.lines.map(lineName)].join('\n')]
+      : []),
+    refund.method === 'gateway'
+      ? 'It goes back the way you paid. Your bank may take a few working days to show it.'
+      : 'We sent it to your bank account by bank transfer.',
+    'Thank you for shopping with EcoKart.',
+  ]
+  return { text: lines.join('\n\n'), html: asHtml(lines) }
+}
+
+export function sellerApplicationSubject(
+  decision: 'approved' | 'rejected',
+): string {
+  return decision === 'approved'
+    ? 'You can now sell on EcoKart'
+    : 'Your EcoKart seller application needs changes'
+}
+
+export function renderSellerApplicationEmail(application: {
+  displayName: string
+  decision: 'approved' | 'rejected'
+  reason: string | null
+}): { text: string; html: string } {
+  const lines =
+    application.decision === 'approved'
+      ? [
+          `Your application to sell as ${application.displayName} is approved.`,
+          'Sign in with the same account to open the seller portal and add your products. You can still shop on EcoKart as before.',
+        ]
+      : [
+          `Your application to sell as ${application.displayName} was not approved.`,
+          `Reason: ${application.reason ?? 'not given'}`,
+          'You can change your application and apply again from your account.',
+        ]
+  return { text: lines.join('\n\n'), html: asHtml(lines) }
+}

@@ -198,6 +198,31 @@ describe('uploading a video', () => {
 })
 
 describe('adding a video', () => {
+  test('B08 two concurrent registrations keep only one video and one job', async () => {
+    const product = await newProduct()
+    const first = await requestUpload(product)
+    const second = await requestUpload(product)
+    const results = await Promise.allSettled([
+      add(product, { uploadKey: first.key }),
+      add(product, { uploadKey: second.key }),
+    ])
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1)
+    const rejected = results.find((result) => result.status === 'rejected')
+    expect(
+      rejected?.status === 'rejected' ? rejected.reason : null,
+    ).toBeInstanceOf(ConflictError)
+    const rows = await owner
+      .select()
+      .from(productVideos)
+      .where(eq(productVideos.productId, product.id))
+    expect(rows).toHaveLength(1)
+    const queued = await owner.execute<{ count: number }>(
+      sql`select count(*)::int as count from pgboss.job where name = ${PROCESS_VIDEO_QUEUE} and data->>'videoId' = ${rows[0]!.id}`,
+    )
+    expect(queued.rows[0]).toEqual({ count: 1 })
+  })
   test('creates a processing video and queues its job in the same transaction', async () => {
     const product = await newProduct()
     const { id } = await addVideoFile(product)

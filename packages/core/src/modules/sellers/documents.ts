@@ -464,7 +464,7 @@ export async function listDocumentsToReview(
       seller: {
         ...seller,
         status: oneOf<SellerStatus>(
-          ['pending', 'approved', 'suspended'],
+          ['pending', 'approved', 'suspended', 'rejected'],
           seller.status,
           'seller status',
         ),

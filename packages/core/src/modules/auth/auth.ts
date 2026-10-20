@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { drizzleAdapter } from '@better-auth/drizzle-adapter'
 import { betterAuth } from 'better-auth'
 import {
@@ -5,7 +6,12 @@ import {
   createAuthMiddleware,
   getSessionFromCtx,
 } from 'better-auth/api'
-import { admin, emailOTP, phoneNumber } from 'better-auth/plugins'
+import {
+  admin,
+  emailOTP,
+  phoneNumber,
+  type PhoneNumberOptions,
+} from 'better-auth/plugins'
 import { createAccessControl } from 'better-auth/plugins/access'
 import { defaultStatements } from 'better-auth/plugins/admin/access'
 import { clientAddress } from '../../lib/client-address.ts'
@@ -14,8 +20,23 @@ import type { EmailOtpPurpose } from '../notifications/types.ts'
 
 export const OTP_EXPIRES_IN_SECONDS = 5 * 60
 
-/** One role per account (design doc 11). */
+/**
+ * What an account may be. An account has one or more roles, stored by
+ * Better Auth's admin plugin as one comma-separated value: a buyer whose
+ * seller application was approved is `buyer,seller` (design doc 11,
+ * decided 20 October 2026).
+ */
 export type AccountRole = 'buyer' | 'seller' | 'admin'
+
+const ACCOUNT_ROLES: readonly AccountRole[] = ['buyer', 'seller', 'admin']
+
+/** The roles in a stored role value; an account without one is a buyer. */
+export function rolesOf(role: string | null | undefined): AccountRole[] {
+  const roles = ACCOUNT_ROLES.filter((known) =>
+    (role ?? '').split(',').some((part) => part.trim() === known),
+  )
+  return roles.length > 0 ? roles : ['buyer']
+}
 
 const accessControl = createAccessControl(defaultStatements)
 
@@ -32,6 +53,113 @@ export const accountRoles = {
     user: ['create', 'list', 'get', 'set-role', 'ban'],
     session: ['list', 'revoke', 'delete'],
   }),
+}
+
+/*
+ * Phone sign-in codes are stored hashed, like email codes (backend spec
+ * step 2). Better Auth's phone plugin has no option for that, so a database
+ * hook replaces the code it is about to store with a keyed hash, and the
+ * plugin's verifyOTP option checks codes against it with the plugin's own
+ * rules: five minutes, three attempts, and one use. The hash is keyed with
+ * the auth secret, so reading the database alone never reveals a code, even
+ * though a code has only a million possible values.
+ */
+
+/** The request a phone code is checked in. */
+type PhoneCodeContext = Parameters<
+  NonNullable<PhoneNumberOptions['verifyOTP']>
+>[1]
+
+/** A code as the phone plugin stores it: the digits and the attempts so far. */
+const PLAIN_PHONE_CODE = /^(\d{6}):(\d+)$/
+const HASHED = 'hmac-sha256.'
+
+function phoneCodeHash(secret: string, number: string, code: string) {
+  const digest = createHmac('sha256', secret)
+    .update(`phone-sign-in-code:${number}:${code}`)
+    .digest('base64url')
+  return `${HASHED}${digest}`
+}
+
+/** The stored hash and attempts of `value`, or null when it is not ours. */
+function storedPhoneCode(value: string) {
+  const separator = value.lastIndexOf(':')
+  const hash = value.slice(0, separator)
+  if (separator < 0 || !hash.startsWith(HASHED)) return null
+  const attempts = Number(value.slice(separator + 1))
+  return {
+    hash,
+    attempts: Number.isSafeInteger(attempts) && attempts > 0 ? attempts : 0,
+  }
+}
+
+const sameText = (a: string, b: string) => {
+  const left = Buffer.from(a)
+  const right = Buffer.from(b)
+  return left.length === right.length && timingSafeEqual(left, right)
+}
+
+// The phone plugin's own answers, which it does not export.
+const phoneCodeError = {
+  notFound: () =>
+    new APIError('BAD_REQUEST', {
+      message: 'OTP not found',
+      code: 'OTP_NOT_FOUND',
+    }),
+  expired: () =>
+    new APIError('BAD_REQUEST', {
+      message: 'OTP expired',
+      code: 'OTP_EXPIRED',
+    }),
+  tooManyAttempts: () =>
+    new APIError('FORBIDDEN', {
+      message: 'Too many attempts',
+      code: 'TOO_MANY_ATTEMPTS',
+    }),
+}
+
+const PHONE_CODE_ATTEMPTS = 3
+
+/**
+ * Checks a phone sign-in code against its stored hash, the way the phone
+ * plugin checks a plain one: the row is taken in one step, so two requests
+ * with the same code cannot both succeed, and a wrong code puts it back with
+ * one more attempt counted.
+ */
+async function verifyPhoneCode(
+  ctx: PhoneCodeContext,
+  secret: string,
+  number: string,
+  code: string,
+): Promise<boolean> {
+  if (!ctx) throw new Error('A phone code is checked only during a request')
+  const verifications = ctx.context.internalAdapter
+  const existing = await verifications.findVerificationValue(number)
+  const stored = existing ? storedPhoneCode(existing.value) : null
+  if (!existing || !stored) throw phoneCodeError.notFound()
+  if (existing.expiresAt < new Date()) {
+    await verifications.deleteVerificationByIdentifier(number)
+    throw phoneCodeError.expired()
+  }
+  if (stored.attempts >= PHONE_CODE_ATTEMPTS) {
+    await verifications.deleteVerificationByIdentifier(number)
+    throw phoneCodeError.tooManyAttempts()
+  }
+  const consumed = await verifications.consumeVerificationValue(number)
+  const taken = consumed ? storedPhoneCode(consumed.value) : null
+  if (!consumed || !taken) return false
+  if (taken.attempts >= PHONE_CODE_ATTEMPTS) {
+    throw phoneCodeError.tooManyAttempts()
+  }
+  if (sameText(taken.hash, phoneCodeHash(secret, number, code))) {
+    return true
+  }
+  await verifications.createVerificationValue({
+    identifier: number,
+    value: `${taken.hash}:${taken.attempts + 1}`,
+    expiresAt: consumed.expiresAt,
+  })
+  return false
 }
 
 /** Indian mobile numbers only, the ones DLT-registered SMS can reach. */
@@ -135,7 +263,7 @@ function profileRefusal(
     'phoneNumber' in fields &&
     fields.phoneNumber === null
 
-  if ((addsPhone || addsEmail) && user.role !== 'buyer') {
+  if ((addsPhone || addsEmail) && !rolesOf(user.role).includes('buyer')) {
     return 'Only buyer accounts can add a phone number or an email address here'
   }
   if (addsPhone && user.phoneNumber) {
@@ -169,10 +297,14 @@ function requestedRoles(path: string, body: unknown): string[] {
     'data' in body && typeof body.data === 'object' ? body.data : null
   const fromData = data && 'role' in data ? data.role : undefined
   const role = 'role' in body ? body.role : fromData
-  if (typeof role === 'string') return [role]
-  return Array.isArray(role)
-    ? role.filter((r): r is string => typeof r === 'string')
-    : []
+  // One value may hold several roles, such as "buyer,seller".
+  const values =
+    typeof role === 'string'
+      ? [role]
+      : Array.isArray(role)
+        ? role.filter((r): r is string => typeof r === 'string')
+        : []
+  return values.flatMap((value) => value.split(',').map((part) => part.trim()))
 }
 
 export interface AuthDependencies {
@@ -246,6 +378,26 @@ export function createAuth(dependencies: AuthDependencies) {
     disabledPaths: dependencies.smsOtpEnabled
       ? UNUSED_PATHS
       : [...UNUSED_PATHS, ...PHONE_PATHS],
+    databaseHooks: {
+      verification: {
+        create: {
+          // The phone plugin stores its code as it is; the hash goes in
+          // instead. A row put back after a wrong code is already hashed.
+          before: async (verification) => {
+            const plain = PLAIN_PHONE_CODE.exec(verification.value)
+            if (!plain || !isIndianMobileNumber(verification.identifier)) {
+              return undefined
+            }
+            return {
+              data: {
+                ...verification,
+                value: `${phoneCodeHash(dependencies.secret, verification.identifier, plain[1]!)}:${plain[2]}`,
+              },
+            }
+          },
+        },
+      },
+    },
     advanced: {
       cookiePrefix: 'ecokart',
       database: {
@@ -273,13 +425,13 @@ export function createAuth(dependencies: AuthDependencies) {
       // ignores errors thrown from the email callback, so a refusal there
       // would never reach the caller.
       before: createAuthMiddleware(async (ctx) => {
-        // Seller accounts come only from the seller flow, which also creates
-        // the business, so a seller account always has one (backend spec
-        // step 4).
+        // The seller role comes only with a seller business: an
+        // administrator creates the seller, or approves the account's
+        // application, so a seller always has one (backend spec step 4).
         if (requestedRoles(ctx.path, ctx.body).includes('seller')) {
           throw new APIError('BAD_REQUEST', {
             message:
-              'Seller accounts are created together with their business in the seller onboarding',
+              'The seller role comes only with a seller business: create the seller, or approve the account’s seller application',
           })
         }
         if (
@@ -376,7 +528,9 @@ export function createAuth(dependencies: AuthDependencies) {
       phoneNumber({
         otpLength: 6,
         expiresIn: OTP_EXPIRES_IN_SECONDS,
-        allowedAttempts: 3,
+        allowedAttempts: PHONE_CODE_ATTEMPTS,
+        verifyOTP: ({ phoneNumber: number, code }, ctx) =>
+          verifyPhoneCode(ctx, dependencies.secret, number, code),
         phoneNumberValidator: isIndianMobileNumber,
         signUpOnVerification: {
           getTempEmail: (number) =>

@@ -90,6 +90,7 @@ const labels: Record<SettingKey, string> = {
   delivery_charge_paise: 'Delivery charge',
   free_delivery_threshold_paise: 'Free delivery threshold',
   cod_enabled: 'Cash on delivery',
+  return_window_days: 'Return window in days',
   payment_timeout_minutes: 'Payment timeout',
   ai_daily_limit_platform: 'Platform daily AI limit',
   ai_daily_limit_seller: 'Seller daily AI limit',
@@ -648,6 +649,20 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
         ))}
       </SettingSection>
       <SettingSection
+        id="returns"
+        title="Returns"
+        description="Set how many days after delivery a buyer may ask to return an item. Returns stay closed until this is set."
+      >
+        {settingsFor(settings, 'return_window_days').map((setting) => (
+          <WholeNumberEditor
+            key={setting.key}
+            initialSetting={setting}
+            minimum={1}
+            maximum={90}
+          />
+        ))}
+      </SettingSection>
+      <SettingSection
         id="ai-limits"
         title="AI limits"
         description="Limit daily AI requests for the platform and for each seller. Zero disables requests."
@@ -700,7 +715,7 @@ function SettingSection({
   children: ReactNode
 }) {
   return (
-    <section aria-labelledby={`${id}-title`} className="scroll-mt-6">
+    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-6">
       <h2 id={`${id}-title`} className="text-xl font-semibold">
         {title}
       </h2>

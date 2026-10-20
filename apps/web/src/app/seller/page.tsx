@@ -8,7 +8,7 @@ import { requireSellerPageContext } from '@/lib/page-auth'
 import { sellerStatusPresentation } from '@/lib/seller-profile'
 
 export const metadata: Metadata = {
-  title: 'Seller portal | EcoKart',
+  title: 'Seller portal',
 }
 
 export const instant = false

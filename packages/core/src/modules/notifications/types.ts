@@ -73,3 +73,58 @@ export const paymentReceivedPayload = z.object({
   paidAt: z.iso.datetime(),
 })
 export type PaymentReceivedPayload = z.infer<typeof paymentReceivedPayload>
+
+const shippedLine = z.object({
+  title: z.string(),
+  options: z.record(z.string(), z.string()),
+  quantity: z.number().int(),
+})
+
+export const dispatchedPayload = z.object({
+  orderNumber: z.string(),
+  buyerName: z.string(),
+  lines: z.array(shippedLine).min(1),
+  courierName: z.string(),
+  trackingNumber: z.string(),
+  trackingUrl: z.string().nullable(),
+  /** False while other lines of the order still wait to be dispatched. */
+  wholeOrder: z.boolean(),
+  /** False when an earlier parcel of the order has already gone. */
+  firstParcel: z.boolean(),
+})
+export type DispatchedPayload = z.infer<typeof dispatchedPayload>
+
+export const cancelledPayload = z.object({
+  orderNumber: z.string(),
+  buyerName: z.string(),
+  placedAt: z.iso.datetime(),
+  /** Who cancelled it: the buyer, or EcoKart (an administrator). */
+  cancelledBy: z.enum(['buyer', 'ecokart']),
+  reason: z.string(),
+  lines: z.array(shippedLine).min(1),
+  /** What happens to the money. */
+  money: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('refund'), amountPaise: z.number().int() }),
+    z.object({ kind: z.literal('nothing_charged') }),
+  ]),
+})
+export type CancelledPayload = z.infer<typeof cancelledPayload>
+
+export const refundRecordedPayload = z.object({
+  orderNumber: z.string(),
+  buyerName: z.string(),
+  amountPaise: z.number().int(),
+  method: z.enum(['gateway', 'bank_transfer']),
+  /** The returned items; empty for the refund of a cancelled order. */
+  lines: z.array(shippedLine),
+})
+export type RefundRecordedPayload = z.infer<typeof refundRecordedPayload>
+
+/** An administrator's decision on a seller application (design doc 5.4). */
+export const sellerApplicationPayload = z.object({
+  displayName: z.string(),
+  decision: z.enum(['approved', 'rejected']),
+  /** Why it was rejected; null when it was approved. */
+  reason: z.string().nullable(),
+})
+export type SellerApplicationPayload = z.infer<typeof sellerApplicationPayload>

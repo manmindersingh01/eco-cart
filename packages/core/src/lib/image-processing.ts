@@ -10,12 +10,13 @@ import {
 
 /*
  * Turns an uploaded photo into the fixed sizes the storefront shows (design
- * doc section 7: pre-sized images, no resizing on the fly). Runs only in the
- * worker. Every size is re-encoded as WebP, which also drops all metadata,
- * including any GPS location a phone wrote into the photo.
+ * doc section 7: pre-sized images, no resizing on the fly), and checks
+ * buyers' return photos. Runs only in the worker. Every photo is re-encoded,
+ * which also drops all metadata, including any GPS location a phone wrote
+ * into the photo.
  */
 
-/** A photo that cannot be used; the message is shown to the seller. */
+/** A photo that cannot be used; the message is shown to whoever sent it. */
 export class ImageRejectedError extends Error {
   override name = 'ImageRejectedError'
 }
@@ -109,5 +110,65 @@ export async function prepareProductImage(
     contentHash: createHash('sha256').update(bytes).digest('hex'),
     contentType,
     sizes: { thumb, card, gallery },
+  }
+}
+
+/** Return photos are kept at most this many pixels on their longer side. */
+export const RETURN_PHOTO_MAX_SIDE = 2000
+const RETURN_PHOTO_MIN_SIDE = 320
+
+export interface PreparedReturnPhoto {
+  /** The photo to store: upright, without metadata, as a JPEG. */
+  bytes: Buffer
+  /** Dimensions of `bytes`. */
+  width: number
+  height: number
+  /** SHA-256 of `bytes`, in hex. */
+  contentHash: string
+}
+
+/**
+ * Checks a buyer's return photo (design doc 5.7) and re-encodes it as one
+ * JPEG that administrators and the seller can open anywhere. Throws
+ * ImageRejectedError with a plain reason for a file that cannot be used.
+ */
+export async function prepareReturnPhoto(
+  bytes: Buffer,
+): Promise<PreparedReturnPhoto> {
+  const { width, height } = await detectType(sharp(bytes))
+  if (width * height > MAX_IMAGE_PIXELS) {
+    throw new ImageRejectedError(
+      `The image is too large; it can have at most ${MAX_IMAGE_PIXELS / 1_000_000} megapixels`,
+    )
+  }
+  if (Math.max(width, height) < RETURN_PHOTO_MIN_SIDE) {
+    throw new ImageRejectedError(
+      `The photo is too small to show the item; it needs at least ${RETURN_PHOTO_MIN_SIDE} pixels on its longer side`,
+    )
+  }
+  let photo: { data: Buffer; info: { width: number; height: number } }
+  try {
+    photo = await sharp(bytes, {
+      autoOrient: true,
+      limitInputPixels: MAX_IMAGE_PIXELS,
+    })
+      .resize({
+        width: RETURN_PHOTO_MAX_SIDE,
+        height: RETURN_PHOTO_MAX_SIDE,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      // JPEG has no transparency; see-through parts turn white, not black.
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: 85 })
+      .toBuffer({ resolveWithObject: true })
+  } catch {
+    throw new ImageRejectedError('The file is damaged and cannot be read')
+  }
+  return {
+    bytes: photo.data,
+    width: photo.info.width,
+    height: photo.info.height,
+    contentHash: createHash('sha256').update(photo.data).digest('hex'),
   }
 }

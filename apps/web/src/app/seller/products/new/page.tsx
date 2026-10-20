@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { ProductCreateForm } from '@/components/seller/product-create-form'
 
 export const metadata: Metadata = {
-  title: 'Create product draft | EcoKart',
+  title: 'Create product draft',
 }
 
 export const instant = false

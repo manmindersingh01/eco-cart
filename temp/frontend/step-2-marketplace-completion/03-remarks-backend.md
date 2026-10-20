@@ -2,10 +2,11 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Planned verification; existing document policy confirmed |
-| Implemented | No |
+| Status | complete |
+| Implemented | Yes |
+| Verified on | 21 October 2026, Asia/Kolkata |
 | Depends on | 02 |
-| Blocks | Only any changed mandatory-media rule; existing document UI can proceed |
+| Blocks | No policy decisions remain for this task |
 
 ## Required decisions before conflicting changes
 
@@ -14,11 +15,11 @@
 | D1 | Document workflow: confirmed by the user | Files belong to admin-created verification requests; open requests block approval | Keep existing workflow | Resolved; build frontend against current request/upload/review contracts |
 | D2 | Document size limit: confirmed by the user | 10 * 1024 * 1024 bytes, inclusive upper bound | Use the existing 10 MB policy | Resolved; retain existing limit and boundary, with no size-policy migration |
 | D3 | Document-related business fields: retain existing permissions | Application permits tax details; approved seller profile limits contact edits | Keep current contracts for this request | No expanded field permissions or re-verification workflow is planned |
-| D4 | Are four photos and a video required or allowed? | Up to four photos and one optional video; listing validation already requires a usable main photo | Wording could imply exact mandatory counts | Preserve current optional limits pending explicit confirmation |
+| D4 | Media counts: confirmed in the implementation plan | Up to four photos and one optional video; listing validation already requires a usable main photo | Keep existing limits | Resolved; no new mandatory photo count or mandatory video |
 
 The user has confirmed the existing administrator-requested workflow and 10 MB limit, superseding the earlier document recommendation.
 Keep existing business-field permissions as well; no new document-related backend feature is requested.
-Proceed with existing-policy frontend work while D4 remains open.
+All four decisions are resolved by retaining the existing contracts.
 If the project lead confirms that remarks supersede the design, update the design and backend spec/change log in the same implementation change.
 
 ## R1: Verify and reuse the existing administrator-requested document policy
@@ -61,14 +62,14 @@ The first ready photo in seller ordering is the public cover; preserve processin
 Use existing upload, register, delete, reorder and video conversion services.
 Keep video originals private and only converted MP4/poster public.
 The worker requires ffmpeg/ffprobe; no file bytes should pass through the Next.js request.
-Add mandatory counts only after D4, with coherent submission validation and treatment of older listings.
+Do not add mandatory counts; the approved plan retains the existing limits.
 
 ## Automated acceptance
 
 | ID | Scenario | Required assertion |
 | --- | --- | --- |
-| B01 | Document size 0, 10,485,759, 10,485,760 and 10,485,761 bytes | Empty and oversized files refused; both valid sizes accepted at signing, registration and worker stages when content is otherwise valid |
-| B02 | Fake MIME, wrong bytes, malformed/encrypted PDF, unsupported image | Validation failure; no public exposure or accepted document |
+| B01 | Document size 0, 10,485,759, 10,485,760 and 10,485,761 bytes | Signing rejects declared empty/oversized sizes; valid boundary PDFs register and pass the worker; forged actual empty/oversized objects register as processing and fail the asynchronous worker check |
+| B02 | Fake MIME, wrong bytes, malformed/encrypted PDF, unsupported image | The worker detects actual supported content and rejects unsupported or unreadable bytes; a supported actual image is not rejected merely because the browser declared PDF; no public exposure or automatic acceptance |
 | B03 | Buyer/applicant/seller/admin and another seller's identifiers | Correct ownership/status access; no cross-seller signed link |
 | B04 | Administrator request, seller upload, review and approval blocker | Only authorised actors perform each step; open requests block approval until accepted or cancelled; no seller self-acceptance |
 | B05 | Duplicate upload/review, stale signed form, concurrent final approval | Deterministic conflict or idempotent result; no approval bypass |
@@ -83,7 +84,9 @@ Record proposed cases as unrun until executed.
 
 ## Completion evidence
 
-Pending.
-Record D1 and D2 as resolved by the user's instruction to keep the existing administrator-requested workflow and 10 MB policy.
-Retain D3's existing field permissions and record any D4 answer, backend defect fixes, current API contract and actual command outputs.
-If no backend change is needed for R2/R3, mark those subparts verified with test evidence rather than inventing new implementation work.
+See [the shared implementation evidence](evidence/2026-10-20-onboarding.md) for commands, results, case mapping and the retained policies.
+New tests cover exact PDF size boundaries, forged actual object sizes, minimum 1000, minimum 10 allowing 11, separate variant minimums, stale checkout minimums and simultaneous video registration.
+Verification found one backend defect: a received document from a rejected application crashed the administrator review queue with `Unknown seller status rejected`.
+An API regression test reproduced the failure before the queue's DTO validation was updated to include the existing `rejected` state.
+The same route suite then passed all nine tests.
+No schema, document policy, quantity rule or media limit was changed.

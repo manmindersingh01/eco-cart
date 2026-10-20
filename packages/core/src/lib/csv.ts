@@ -6,9 +6,13 @@
  */
 
 const FORMULA_START = /^[=+\-@\t\r\n]/
+// A plain number such as -125.50 is no formula, and must stay a number the
+// spreadsheet can add up.
+const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/
 
 const cell = (value: string) => {
-  const safe = FORMULA_START.test(value) ? `'${value}` : value
+  const safe =
+    FORMULA_START.test(value) && !PLAIN_NUMBER.test(value) ? `'${value}` : value
   return `"${safe.replaceAll('"', '""')}"`
 }
 

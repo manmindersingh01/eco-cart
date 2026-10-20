@@ -14,7 +14,10 @@ export const POST = handleErrors(
     request: Request,
     route: RouteContext<'/api/seller/documents/[id]/uploads'>,
   ) => {
-    const { context } = await requireSeller(request.headers)
+    const { context } = await requireSeller(request.headers, {
+      // An applicant sends the documents an administrator asked for.
+      applicants: true,
+    })
     const { id } = await route.params
     const upload = await createDocumentUpload(
       { db: getDatabase(), storage: getStorage() },

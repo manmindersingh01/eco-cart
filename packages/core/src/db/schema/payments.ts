@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   index,
+  uniqueIndex,
   jsonb,
   pgTable,
   text,
@@ -122,6 +123,10 @@ export const refunds = pgTable(
   },
   (t) => [
     index('refunds_order_id_idx').on(t.orderId),
+    // A return is refunded once.
+    uniqueIndex('refunds_return_request_id_key')
+      .on(t.returnRequestId)
+      .where(sql`return_request_id is not null`),
     check('refunds_amount_paise_check', sql`amount_paise > 0`),
     check('refunds_method_check', sql`method in ('gateway', 'bank_transfer')`),
     webSelect(sql`${fullAccess} or ${isOrderBuyer('refunds.order_id')}`),

@@ -23,6 +23,7 @@ import {
   fullAccess,
   webInsert,
   webSelect,
+  webUpdate,
   workerPolicy,
 } from './rls.ts'
 
@@ -84,7 +85,7 @@ export const emailOutbox = pgTable(
     index('email_outbox_status_created_at_idx').on(t.status, t.createdAt),
     check(
       'email_outbox_template_check',
-      sql`template in ('otp', 'order_placed', 'payment_received', 'dispatched', 'cancelled', 'refund_recorded')`,
+      sql`template in ('otp', 'order_placed', 'payment_received', 'dispatched', 'cancelled', 'refund_recorded', 'seller_application')`,
     ),
     check(
       'email_outbox_status_check',
@@ -94,6 +95,8 @@ export const emailOutbox = pgTable(
     webSelect(fullAccess),
     // Any request may queue an email, including a login OTP before sign-in.
     webInsert(sql`true`),
+    // Administrators put a failed or stuck email back in the queue.
+    webUpdate(fullAccess),
     workerPolicy(),
   ],
 ).enableRLS()

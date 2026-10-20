@@ -19,8 +19,8 @@ export default function AdminPage() {
           <Card className="flex flex-col items-start">
             <h3 className="text-lg font-semibold">Platform settings</h3>
             <p className="mt-2 flex-1 text-sm text-muted">
-              Manage commerce values, payment options, AI limits, moderation
-              terms, and company details.
+              Manage commerce values, payment options, the return window, AI
+              limits, moderation terms, and company details.
             </p>
             <LinkButton href="/admin/settings" className="mt-5">
               Manage settings

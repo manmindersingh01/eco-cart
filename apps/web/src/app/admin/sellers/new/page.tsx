@@ -4,7 +4,7 @@ import { LinkButton } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
-  title: 'Create seller | EcoKart',
+  title: 'Create seller',
 }
 
 export const instant = false

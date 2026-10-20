@@ -22,6 +22,7 @@ import type { JobQueue, QueueDefinition } from '../../lib/queue.ts'
 import type { ObjectStorage } from '../../lib/storage.ts'
 import { isUuid, parseInput } from '../../lib/validation.ts'
 import {
+  columnSuggestions,
   IMPORT_CONTENT_TYPES,
   IMPORT_FIELD_INFO,
   IMPORT_FILE_TYPES,
@@ -30,6 +31,7 @@ import {
   importUploadRequest,
   MAX_IMPORT_BYTES,
   newImport,
+  type ColumnSuggestion,
   type ImportErrorReport,
   type ImportField,
   type ImportFileType,
@@ -47,15 +49,20 @@ import {
  * 1. The browser uploads the file straight to object storage with a signed
  *    form, and the seller adds it here as `uploaded`.
  * 2. The worker reads it: the column headings, and one stored row for each
- *    spreadsheet row (jobs.ts).
+ *    spreadsheet row (jobs.ts). It suggests a field for each column, by name
+ *    and, for the columns the names leave open, with the AI (mapping.ts,
+ *    step 19); the import moves to `mapping_suggested` once the suggestion
+ *    is complete.
  * 3. The seller says which column fills which field; the import moves to
- *    `mapping_confirmed`. (Step 19 adds an AI suggestion, `mapping_suggested`.)
+ *    `mapping_confirmed`. The seller may choose before the suggestion is
+ *    complete, and a suggestion is never applied without them.
  * 4. The worker checks every row with the same rules as a product made by
  *    hand (`validating`), makes a draft for each good row (`importing`), and
  *    writes a CSV of the rows that could not be imported (`completed`).
  */
 
 export const READ_IMPORT_QUEUE = 'imports.read-file'
+export const SUGGEST_MAPPING_QUEUE = 'imports.suggest-mapping'
 export const RUN_IMPORT_QUEUE = 'imports.create-drafts'
 
 export const importQueues: QueueDefinition[] = [
@@ -66,6 +73,18 @@ export const importQueues: QueueDefinition[] = [
       retryDelay: 30,
       retryBackoff: true,
       expireInSeconds: 300,
+      deleteAfterSeconds: 7 * 24 * 60 * 60,
+    },
+  },
+  {
+    name: SUGGEST_MAPPING_QUEUE,
+    options: {
+      // The seller is waiting, so a provider failure is tried again soon,
+      // and not for long; the names' suggestion stands meanwhile.
+      retryLimit: 2,
+      retryDelay: 10,
+      retryBackoff: true,
+      expireInSeconds: 180,
       deleteAfterSeconds: 7 * 24 * 60 * 60,
     },
   },
@@ -87,6 +106,11 @@ export const readImportJob = z.object({
   uploadKey: z.string(),
 })
 export const runImportJob = z.object({ importId: z.uuid() })
+export const suggestMappingJob = z.object({
+  importId: z.uuid(),
+  /** The queued `import_mapping` row in ai_requests. */
+  requestId: z.uuid(),
+})
 
 const UPLOAD_FORM_SECONDS = 30 * 60
 const DOWNLOAD_SECONDS = 5 * 60
@@ -161,6 +185,14 @@ export const storedMapping = (row: {
     ? null
     : importMapping.shape.columnMapping.parse(row.columnMapping)
 
+/** The worker's suggestion, checked again as it leaves the database. */
+export const storedSuggestion = (row: {
+  suggestedMapping: unknown
+}): Record<string, ColumnSuggestion> | null =>
+  row.suggestedMapping === null
+    ? null
+    : columnSuggestions.parse(row.suggestedMapping)
+
 async function toView(tx: Transaction, row: ImportRow): Promise<ImportView> {
   const sample = row.headers
     ? await tx
@@ -174,6 +206,12 @@ async function toView(tx: Transaction, row: ImportRow): Promise<ImportView> {
     ...toSummary(row),
     headers: row.headers,
     columnMapping: storedMapping(row),
+    suggestedMapping: storedSuggestion(row),
+    // The AI's part is queued until it moves the import on (jobs.ts).
+    suggestionPending:
+      row.status === 'uploaded' &&
+      row.headers !== null &&
+      row.aiRequestId !== null,
     sampleRows: sample.map((line) =>
       (row.headers ?? []).map((header) => line.raw[header] ?? ''),
     ),

@@ -7,6 +7,7 @@ import Loading from '../loading'
 const navigation = [
   { href: '/seller', label: 'Overview' },
   { href: '/seller/profile', label: 'Business profile' },
+  { href: '/seller/documents', label: 'Documents' },
   { href: '/seller/products', label: 'Products' },
 ] as const
 

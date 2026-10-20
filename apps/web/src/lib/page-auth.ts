@@ -1,6 +1,7 @@
 import {
   ForbiddenError,
   NotSignedInError,
+  rolesOf,
   type RequestContext,
 } from '@ecokart/core'
 import { headers } from 'next/headers'
@@ -32,6 +33,7 @@ function accountFromSession(
     email: user.email.endsWith('.invalid') ? null : user.email,
     phoneNumber: user.phoneNumber ?? null,
     role,
+    roles: rolesOf(user.role),
     sellerId,
   }
 }

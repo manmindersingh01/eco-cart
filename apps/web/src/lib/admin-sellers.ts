@@ -1,6 +1,6 @@
 import { parsePercentToBasisPoints } from './admin-settings'
 
-export type SellerStatus = 'pending' | 'approved' | 'suspended'
+export type SellerStatus = 'pending' | 'approved' | 'suspended' | 'rejected'
 
 export type SellerSummary = {
   id: string
@@ -32,6 +32,7 @@ export type SellerDetail = {
   commissionBps: number | null
   approvedAt: string | null
   suspendedReason: string | null
+  rejectionReason: string | null
   createdAt: string
   updatedAt: string
   owner: {
@@ -172,7 +173,12 @@ export function sellerDetailHref(id: string): `/admin/sellers/${string}` {
 }
 
 export function isSellerStatus(value: unknown): value is SellerStatus {
-  return value === 'pending' || value === 'approved' || value === 'suspended'
+  return (
+    value === 'pending' ||
+    value === 'approved' ||
+    value === 'suspended' ||
+    value === 'rejected'
+  )
 }
 
 export function lifecycleActions(

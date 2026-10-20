@@ -7,7 +7,7 @@ import { requireAdminPageContext } from '@/lib/page-auth'
 import { getSellerServices } from '@/lib/sellers'
 
 export const metadata: Metadata = {
-  title: 'Seller details | EcoKart',
+  title: 'Seller details',
 }
 
 export const instant = false

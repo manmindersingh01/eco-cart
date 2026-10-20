@@ -40,6 +40,7 @@ import {
   throwIfAny,
   type PhotoAddresses,
 } from './products.ts'
+import { queueProductEmbeddings } from './embeddings.ts'
 import { SCREEN_LISTING_QUEUE } from './screening.ts'
 import { invalidateStorefront } from './storefront-cache.ts'
 import { refreshProducts } from './summary.ts'
@@ -474,12 +475,14 @@ async function lockForDecision(
 
 /**
  * Approves a listing whose screening has finished: copies the category's GST
- * rate (or the administrator's) and the HSN code onto the product and puts
- * it on sale. Administrators only.
+ * rate (or the administrator's) and the HSN code onto the product, puts it
+ * on sale, and queues its embeddings for search (step 18). Administrators
+ * only.
  */
 export async function approveProduct(
   tx: Transaction,
   photos: PhotoAddresses,
+  queue: JobQueue,
   context: RequestContext,
   productId: string,
   input: unknown,
@@ -552,8 +555,7 @@ export async function approveProduct(
     },
     ip,
   })
-  // Step 18 (ai lane): queue the product's text and image embeddings here,
-  // in this transaction.
+  await queueProductEmbeddings(tx, queue, productId)
   return getProductForReview(tx, photos, context, productId)
 }
 

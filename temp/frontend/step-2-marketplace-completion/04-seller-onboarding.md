@@ -2,8 +2,9 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Planned |
-| Implemented | No |
+| Status | complete |
+| Implemented | Yes |
+| Verified on | 21 October 2026, Asia/Kolkata |
 | Depends on | 02 |
 | Blocks | Full seller onboarding journey |
 
@@ -51,7 +52,7 @@ Keep field input after a recoverable 400/409 and explain approval blocks from se
 | S07 | Approval, rejection and suspension for combined account | Capabilities/navigation refresh; buying permissions preserved as designed |
 | S08 | Different seller opens private file or document URL | No data or signed download returned |
 
-Add proposed `e2e/seller-onboarding.spec.ts` and `e2e/seller-documents.spec.ts` with real OTP sessions and isolated fixtures.
+The related journeys share `e2e/seller-onboarding.spec.ts`, with real OTP sessions, separate browser contexts for each account and isolated resources.
 Extend seller route/domain tests only for uncovered contract cases.
 Run lint, typecheck, relevant tests and proposed `pnpm test:e2e -- --grep 'S0'` after verifying the launcher forwards arguments.
 Use stable case IDs in test titles.
@@ -60,4 +61,8 @@ Use stable case IDs in test titles.
 
 After automated browser/a11y checks, confirm the UI clearly identifies administrator-requested documents and the existing 10 MB limit.
 Perform one real Safari upload on Apple hardware at release; record file type/size and status without uploading personal identity documents.
-Completion evidence is pending; use the shared template.
+See [the shared implementation evidence](evidence/2026-10-20-onboarding.md) for implemented paths, API contracts, automated case mapping, actual results and exact remaining manual steps.
+The account application, seller document screen, administrator request/rejection controls and document queue/detail pages are implemented.
+Existing administrator-created seller onboarding remains available.
+Forms preserve recoverable input, refresh authoritative state on conflicts, and accept interaction only after client handlers are ready.
+Downloads use protected relative routes that obtain a fresh signed link; private storage URLs are not persisted in the UI.

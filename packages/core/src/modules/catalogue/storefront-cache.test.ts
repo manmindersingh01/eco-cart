@@ -284,9 +284,11 @@ describe('changes that refresh the storefront', () => {
       .where(eq(sellers.id, seller.id))
     const accounts: AccountDirectory = {
       findByEmail: () => Promise.reject(new Error('not used')),
-      findById: () => Promise.reject(new Error('not used')),
+      // An owner who only sells, as administrators create them.
+      findById: async () => null,
       createSellerOwner: () => Promise.reject(new Error('not used')),
       remove: () => Promise.reject(new Error('not used')),
+      addRole: async () => {},
       ban: async () => {},
       unban: async () => {},
     }

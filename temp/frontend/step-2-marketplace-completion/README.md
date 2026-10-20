@@ -56,9 +56,9 @@ Confirm actual remote names again when implementation starts.
 | --- | --- | --- | --- | --- | --- |
 | 00 | [Investigation and gap inventory](00-investigation.md) | None | Documentation only | Yes, investigation only | Complete; source and documentation verified; runtime unverified |
 | 01 | [Automation prerequisites](01-automation-prerequisites.md) | 00 | Current `step-2-marketplace-completion` branch | Yes | Complete; 24 browser tests, harness verification and `pnpm check` passed |
-| 02 | [Backend integration and role compatibility](02-integration-and-roles.md) | 01 | `frontend/step-3-backend-alignment` | No | Planned |
-| 03 | [Remarks decisions and backend changes](03-remarks-backend.md) | 02 | No separate backend branch unless verification exposes a defect | No | Existing document workflow and 10 MB limit confirmed |
-| 04 | [Seller applications and verification](04-seller-onboarding.md) | 02 | `frontend/step-4-seller-onboarding` | No | Planned |
+| 02 | [Backend integration and role compatibility](02-integration-and-roles.md) | 01 | Current `step-2-marketplace-completion` branch | Yes | Complete; role, API demo, browser and full checks passed |
+| 03 | [Remarks decisions and backend changes](03-remarks-backend.md) | 02 | Current `step-2-marketplace-completion` branch | Yes | Complete; retained policies verified and reproduced defects fixed |
+| 04 | [Seller applications and verification](04-seller-onboarding.md) | 02 | Current `step-2-marketplace-completion` branch | Yes | Complete; application/document journeys and full checks passed |
 | 05 | [Catalogue lifecycle, quantity, media, imports](05-catalogue-operations.md) | 02; 04 for applicant journey | `frontend/step-5-catalogue-operations` | No | Planned |
 | 06 | [Public shop and keyword search](06-storefront.md) | 05 | `frontend/step-6-storefront` | No | Planned |
 | 07 | [Buyer account, addresses, cart, coupons](07-account-and-cart.md) | 06 | `frontend/step-7-account-cart` | No | Planned |
@@ -70,7 +70,8 @@ Confirm actual remote names again when implementation starts.
 
 Task numbers are a recommended chronological execution sequence.
 The dependency column is the actual blocking relationship.
-For example, any unresolved mandatory-media decision must not block the existing requested-document screen, catalogue work under current limits, or checkout.
+Tasks 02 through 04 were approved and completed together on the existing branch; their [shared evidence](evidence/2026-10-20-onboarding.md) records implementation, tests and remaining release checks.
+The current document and media policies are resolved; task 05 is the next implementation task.
 Prioritise payment integrity, order accuracy, catalogue, and the buyer journey over AI convenience.
 Reassess the 31 October launch scope after task 02; do not promise this whole programme fits the remaining days.
 

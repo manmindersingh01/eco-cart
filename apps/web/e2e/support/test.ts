@@ -57,6 +57,8 @@ export const test = base.extend<{ checkPage: () => Promise<void> }>({
     })
     await use(async () => {
       await expect(page.locator('body')).toBeVisible()
+      // Streamed pages can show their shell before the page heading arrives.
+      await expect(page.locator('h1')).toBeVisible()
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= window.innerWidth,

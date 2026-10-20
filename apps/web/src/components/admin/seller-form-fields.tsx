@@ -7,11 +7,13 @@ export function SellerBusinessFields({
   issues,
   disabled,
   onChange,
+  application = false,
 }: {
   values: BusinessFormValues
   issues: readonly string[]
   disabled: boolean
   onChange: (key: keyof BusinessFormValues, value: string) => void
+  application?: boolean
 }) {
   const error = (path: string) =>
     issuesFor(issues, path).join('. ') || undefined
@@ -138,7 +140,7 @@ export function SellerBusinessFields({
             onChange={(event) => onChange('pincode', event.target.value)}
             autoComplete="postal-code"
             inputMode="numeric"
-            maxLength={4}
+            maxLength={6}
             disabled={disabled}
           />
         </Field>
@@ -181,38 +183,44 @@ export function SellerBusinessFields({
 
       <fieldset className="grid gap-4 border-t pt-6 sm:grid-cols-2">
         <legend className="mb-3 font-semibold sm:col-span-2">
-          Invoicing and commission
+          {application ? 'Invoicing' : 'Invoicing and commission'}
         </legend>
         <Field
           label="Invoice prefix"
           htmlFor="seller-invoice-prefix"
-          hint="Use 1 to 4 capital letters or digits. It cannot change after the first invoice."
+          hint={
+            application
+              ? 'Optional. Leave blank for a suggested prefix, or use 1 to 4 capital letters or digits.'
+              : 'Use 1 to 4 capital letters or digits. It cannot change after the first invoice.'
+          }
           error={error('invoicePrefix')}
-          required
+          required={!application}
         >
           <Input
             value={values.invoicePrefix}
             onChange={(event) => onChange('invoicePrefix', event.target.value)}
-            maxLength={6}
+            maxLength={4}
             disabled={disabled}
           />
         </Field>
-        <Field
-          label="Seller commission percentage"
-          htmlFor="seller-commission"
-          hint="Leave blank to use the platform commission."
-          error={error('commissionBps')}
-        >
-          <Input
-            value={values.commissionPercent}
-            onChange={(event) =>
-              onChange('commissionPercent', event.target.value)
-            }
-            inputMode="decimal"
-            placeholder="10"
-            disabled={disabled}
-          />
-        </Field>
+        {!application ? (
+          <Field
+            label="Seller commission percentage"
+            htmlFor="seller-commission"
+            hint="Leave blank to use the platform commission."
+            error={error('commissionBps')}
+          >
+            <Input
+              value={values.commissionPercent}
+              onChange={(event) =>
+                onChange('commissionPercent', event.target.value)
+              }
+              inputMode="decimal"
+              placeholder="10"
+              disabled={disabled}
+            />
+          </Field>
+        ) : null}
       </fieldset>
     </div>
   )

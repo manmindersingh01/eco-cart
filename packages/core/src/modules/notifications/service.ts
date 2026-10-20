@@ -5,16 +5,22 @@ import { sealSecret } from '../../lib/encryption.ts'
 import type { JobQueue } from '../../lib/queue.ts'
 import { SEND_EMAIL_QUEUE, SEND_SMS_QUEUE } from './jobs.ts'
 import {
+  cancelledSubject,
+  dispatchedSubject,
   orderPlacedSubject,
   otpEmailSubject,
   paymentReceivedSubject,
+  refundRecordedSubject,
 } from './templates.ts'
 import type {
+  CancelledPayload,
+  DispatchedPayload,
   EmailOtpPurpose,
   OrderPlacedPayload,
   OtpEmailPayload,
   OtpSmsJob,
   PaymentReceivedPayload,
+  RefundRecordedPayload,
   SendEmailJob,
 } from './types.ts'
 
@@ -29,6 +35,7 @@ export interface OutboxEmail {
     | 'dispatched'
     | 'cancelled'
     | 'refund_recorded'
+    | 'seller_application'
   subject: string
   payload: Record<string, unknown>
 }
@@ -140,5 +147,53 @@ export async function queuePaymentReceivedEmail(
     template: 'payment_received',
     subject: paymentReceivedSubject(payment.orderNumber),
     payload: payment,
+  })
+}
+
+/** Queues the dispatched email for one shipment (backend spec step 13). */
+export async function queueDispatchedEmail(
+  tx: Transaction,
+  queue: JobQueue,
+  to: { userId: string; email: string },
+  shipment: DispatchedPayload,
+): Promise<number | null> {
+  return queueEmail(tx, queue, {
+    userId: to.userId,
+    to: to.email,
+    template: 'dispatched',
+    subject: dispatchedSubject(shipment.orderNumber),
+    payload: shipment,
+  })
+}
+
+/** Queues the order cancelled email (backend spec step 13). */
+export async function queueCancelledEmail(
+  tx: Transaction,
+  queue: JobQueue,
+  to: { userId: string; email: string },
+  order: CancelledPayload,
+): Promise<number | null> {
+  return queueEmail(tx, queue, {
+    userId: to.userId,
+    to: to.email,
+    template: 'cancelled',
+    subject: cancelledSubject(order.orderNumber),
+    payload: order,
+  })
+}
+
+/** Queues the refund recorded email (backend spec step 15). */
+export async function queueRefundRecordedEmail(
+  tx: Transaction,
+  queue: JobQueue,
+  to: { userId: string; email: string },
+  refund: RefundRecordedPayload,
+): Promise<number | null> {
+  return queueEmail(tx, queue, {
+    userId: to.userId,
+    to: to.email,
+    template: 'refund_recorded',
+    subject: refundRecordedSubject(refund.orderNumber),
+    payload: refund,
   })
 }

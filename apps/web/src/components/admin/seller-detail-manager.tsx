@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { SellerBusinessFields } from './seller-form-fields'
+import { SellerDocumentRequests } from './document-review-manager'
 import { Button, LinkButton } from '@/components/ui/button'
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
@@ -17,6 +18,7 @@ import {
   type SellerStatus,
 } from '@/lib/admin-sellers'
 import { ApiError, apiRequest } from '@/lib/api-client'
+import { useClientReady } from '@/lib/use-client-ready'
 import {
   formatBasisPoints,
   formatIndianDate,
@@ -41,7 +43,7 @@ const idleFeedback: MutationFeedback = {
 function statusTone(status: SellerStatus) {
   return status === 'approved'
     ? ('success' as const)
-    : status === 'suspended'
+    : status === 'suspended' || status === 'rejected'
       ? ('danger' as const)
       : ('warning' as const)
 }
@@ -52,14 +54,17 @@ export function SellerDetailManager({
   initialSeller: SellerDetail
 }) {
   const router = useRouter()
+  const ready = useClientReady()
   const [seller, setSeller] = useState(initialSeller)
   const [initialValues, setInitialValues] = useState(() =>
     businessValuesFromSeller(initialSeller),
   )
   const [values, setValues] = useState(initialValues)
   const [editPending, setEditPending] = useState(false)
-  const [actionPending, setActionPending] = useState(false)
+  const [actionInProgress, setActionPending] = useState(false)
+  const actionPending = actionInProgress || !ready
   const [suspensionReason, setSuspensionReason] = useState('')
+  const [rejectionReason, setRejectionReason] = useState('')
   const [feedback, setFeedback] = useState(idleFeedback)
   const actions = lifecycleActions(
     seller.status,
@@ -137,18 +142,28 @@ export function SellerDetailManager({
     }
   }
 
-  async function runLifecycle(action: 'approve' | 'suspend' | 'reinstate') {
+  async function runLifecycle(
+    action: 'approve' | 'suspend' | 'reinstate' | 'reject',
+  ) {
     setActionPending(true)
     setFeedback(idleFeedback)
     try {
       await apiRequest(`/api/admin/sellers/${seller.id}/${action}`, {
         method: 'POST',
-        ...(action === 'suspend'
-          ? { json: { reason: suspensionReason.trim() } }
+        ...(action === 'suspend' || action === 'reject'
+          ? {
+              json: {
+                reason: (action === 'reject'
+                  ? rejectionReason
+                  : suspensionReason
+                ).trim(),
+              },
+            }
           : {}),
       })
       const updated = await loadCurrentSeller()
       setSuspensionReason('')
+      setRejectionReason('')
       setFeedback({
         ...idleFeedback,
         success: `${updated.displayName} is now ${updated.status}.`,
@@ -202,10 +217,10 @@ export function SellerDetailManager({
           <StatusBadge tone={statusTone(seller.status)} className="mt-2">
             {formatStatusLabel(seller.status)}
           </StatusBadge>
-          {seller.suspendedReason ? (
+          {seller.suspendedReason || seller.rejectionReason ? (
             <p className="mt-3 text-sm">
               <span className="font-semibold">Reason:</span>{' '}
-              {seller.suspendedReason}
+              {seller.suspendedReason ?? seller.rejectionReason}
             </p>
           ) : null}
           <dl className="mt-4 grid gap-3 text-sm">
@@ -286,75 +301,109 @@ export function SellerDetailManager({
       </div>
 
       <Card>
-        <h2 className="text-lg font-semibold">Lifecycle controls</h2>
-        <p className="mt-1 text-sm text-muted">
-          Lifecycle changes take effect immediately and are recorded in the
-          audit log.
-        </p>
-        {actions.approveDisabledReason ? (
-          <Notice tone="warning" className="mt-4">
-            {actions.approveDisabledReason} Approval will show the exact missing
-            fields.
-          </Notice>
-        ) : null}
-        <div className="mt-5 flex flex-wrap gap-3">
-          {actions.approve ? (
-            <ConfirmationDialog
-              title="Approve this seller?"
-              description="The seller will be allowed to trade on EcoKart. GSTIN and PAN must both be valid."
-              trigger="Approve seller"
-              confirmLabel="Approve seller"
-              onConfirm={() => void runLifecycle('approve')}
-              triggerDisabled={actionPending}
-              confirmDisabled={actionPending}
-            />
+        <form autoComplete="off" onSubmit={(event) => event.preventDefault()}>
+          <h2 className="text-lg font-semibold">Lifecycle controls</h2>
+          <p className="mt-1 text-sm text-muted">
+            Lifecycle changes take effect immediately and are recorded in the
+            audit log.
+          </p>
+          {actions.approveDisabledReason ? (
+            <Notice tone="warning" className="mt-4">
+              {actions.approveDisabledReason} Approval will show the exact
+              missing fields.
+            </Notice>
           ) : null}
-          {actions.reinstate ? (
-            <ConfirmationDialog
-              title="Reinstate this seller?"
-              description="The owner account will be unbanned. The seller returns to its previous approved or pending state."
-              trigger="Reinstate seller"
-              confirmLabel="Reinstate seller"
-              onConfirm={() => void runLifecycle('reinstate')}
-              triggerDisabled={actionPending}
-              confirmDisabled={actionPending}
-            />
-          ) : null}
-        </div>
-        {actions.suspend ? (
-          <div className="mt-5 grid max-w-2xl gap-3 border-t pt-5">
-            <Field
-              label="Suspension reason"
-              htmlFor="seller-suspension-reason"
-              hint="This reason is stored on the seller and used when banning the owner account."
-              required
-            >
-              <Input
-                value={suspensionReason}
-                onChange={(event) => setSuspensionReason(event.target.value)}
-                maxLength={500}
-                disabled={actionPending}
-              />
-            </Field>
-            <div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            {actions.approve ? (
               <ConfirmationDialog
-                title="Suspend this seller?"
-                description={`The seller will lose portal and storefront access. Reason: ${suspensionReason.trim() || 'No reason entered'}`}
-                trigger="Suspend seller"
-                triggerVariant="danger"
-                confirmLabel="Suspend seller"
-                onConfirm={() => void runLifecycle('suspend')}
-                danger
-                triggerDisabled={actionPending || !suspensionReason.trim()}
-                confirmDisabled={actionPending || !suspensionReason.trim()}
+                title="Approve this seller?"
+                description="The seller will be allowed to trade on EcoKart. GSTIN and PAN must both be valid."
+                trigger="Approve seller"
+                confirmLabel="Approve seller"
+                onConfirm={() => void runLifecycle('approve')}
+                triggerDisabled={actionPending}
+                confirmDisabled={actionPending}
               />
-            </div>
+            ) : null}
+            {actions.reinstate ? (
+              <ConfirmationDialog
+                title="Reinstate this seller?"
+                description="Selling access is restored. Seller-only accounts are unbanned; combined accounts keep their buying access."
+                trigger="Reinstate seller"
+                confirmLabel="Reinstate seller"
+                onConfirm={() => void runLifecycle('reinstate')}
+                triggerDisabled={actionPending}
+                confirmDisabled={actionPending}
+              />
+            ) : null}
           </div>
-        ) : null}
+          {actions.suspend ? (
+            <div className="mt-5 grid max-w-2xl gap-3 border-t pt-5">
+              <Field
+                label="Suspension reason"
+                htmlFor="seller-suspension-reason"
+                hint="The business is suspended. A combined buyer/seller account can still shop; a seller-only account is also banned."
+                required
+              >
+                <Input
+                  value={suspensionReason}
+                  onChange={(event) => setSuspensionReason(event.target.value)}
+                  maxLength={500}
+                  disabled={actionPending}
+                />
+              </Field>
+              <div>
+                <ConfirmationDialog
+                  title="Suspend this seller?"
+                  description={`Selling access and storefront listings will be suspended. Combined accounts can still shop. Reason: ${suspensionReason.trim() || 'No reason entered'}`}
+                  trigger="Suspend seller"
+                  triggerVariant="danger"
+                  confirmLabel="Suspend seller"
+                  onConfirm={() => void runLifecycle('suspend')}
+                  danger
+                  triggerDisabled={actionPending || !suspensionReason.trim()}
+                  confirmDisabled={actionPending || !suspensionReason.trim()}
+                />
+              </div>
+            </div>
+          ) : null}
+        </form>
       </Card>
 
+      {seller.status === 'pending' ? (
+        <Card>
+          <form autoComplete="off" onSubmit={(event) => event.preventDefault()}>
+            <h2 className="text-lg font-semibold">Reject application</h2>
+            <Field
+              className="my-4"
+              label="Application rejection reason"
+              htmlFor="application-rejection-reason"
+              required
+              hint="The applicant sees this reason and can correct and resubmit."
+            >
+              <Input
+                value={rejectionReason}
+                maxLength={500}
+                disabled={actionPending}
+                onChange={(event) => setRejectionReason(event.target.value)}
+              />
+            </Field>
+            <ConfirmationDialog
+              title="Reject this application?"
+              description="The applicant can correct the details and resubmit. Buying access remains available."
+              trigger="Reject application"
+              confirmLabel="Reject application"
+              danger
+              onConfirm={() => void runLifecycle('reject')}
+              triggerDisabled={actionPending || !rejectionReason.trim()}
+            />
+          </form>
+        </Card>
+      ) : null}
+      <SellerDocumentRequests sellerId={seller.id} />
+
       <Card className="p-0">
-        <form onSubmit={saveBusiness} noValidate>
+        <form autoComplete="off" onSubmit={saveBusiness} noValidate>
           <div className="border-b p-5 sm:p-6">
             <h2 className="text-lg font-semibold">Edit business details</h2>
             <p className="mt-1 text-sm text-muted">

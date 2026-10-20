@@ -149,6 +149,27 @@ export const importMapping = strictObject({
   ),
 })
 
+/** Who suggested a column's field: its name, or the AI (step 19). */
+export const SUGGESTION_SOURCES = ['name', 'ai'] as const
+export type SuggestionSource = (typeof SUGGESTION_SOURCES)[number]
+
+/** What the worker suggests for one column, before the seller chooses. */
+export interface ColumnSuggestion {
+  field: ImportField
+  /** From 0 to 1: 1 for an exact field name, lower for a guess. */
+  confidence: number
+  source: SuggestionSource
+}
+
+export const columnSuggestions = z.record(
+  z.string(),
+  z.object({
+    field: z.enum(IMPORT_FIELDS),
+    confidence: z.number().min(0).max(1),
+    source: z.enum(SUGGESTION_SOURCES),
+  }),
+)
+
 export interface ImportListOptions {
   cursor?: string | undefined
   limit?: number | undefined
@@ -170,7 +191,19 @@ export interface ImportSummary {
 export interface ImportView extends ImportSummary {
   /** The file's column headings; null until the worker has read it. */
   headers: string[] | null
+  /** The columns the seller chose; null until they confirm. */
   columnMapping: Record<string, ImportField> | null
+  /**
+   * The worker's suggestion for the mapping screen, never applied by
+   * itself; null until the file is read. A column left out has no
+   * suggestion.
+   */
+  suggestedMapping: Record<string, ColumnSuggestion> | null
+  /**
+   * True while the AI is still looking at the columns the names did not
+   * settle. The seller may choose the columns meanwhile.
+   */
+  suggestionPending: boolean
   /**
    * The first few rows as uploaded, each in the order of `headers`, for the
    * mapping screen.

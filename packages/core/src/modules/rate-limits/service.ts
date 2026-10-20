@@ -10,6 +10,13 @@ export interface RateLimitRule {
   windowSeconds: number
 }
 
+/**
+ * The longest window a rule may count over. The nightly clean-up removes
+ * windows that started longer ago than this, so it never removes one still
+ * counting. The longest in use today is an hour.
+ */
+export const LONGEST_WINDOW_SECONDS = 24 * 60 * 60
+
 export interface RateLimitResult {
   allowed: boolean
   /** When the current window ends and the count starts again. */
@@ -28,6 +35,11 @@ export async function consumeRateLimit(
   rule: RateLimitRule,
   now: Date = new Date(),
 ): Promise<RateLimitResult> {
+  if (rule.windowSeconds > LONGEST_WINDOW_SECONDS) {
+    throw new Error(
+      `A rate limit window may be at most ${LONGEST_WINDOW_SECONDS} seconds`,
+    )
+  }
   const windowMs = rule.windowSeconds * 1000
   const windowStart = new Date(Math.floor(now.getTime() / windowMs) * windowMs)
 

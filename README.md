@@ -75,6 +75,7 @@ Run these from the repository root.
 | `pnpm test` | Runs every package's tests against fresh `ecokart_test_*` databases and `ecokart-test-*` buckets (needs `pnpm db:up`) |
 | `pnpm test:e2e:smoke` | Runs isolated Chromium desktop and phone browser journeys |
 | `pnpm test:e2e` | Runs isolated Chromium, Firefox and WebKit browser journeys |
+| `pnpm test:e2e:demo` | Runs the real API story with disposable local database, storage and worker |
 | `pnpm test:e2e:verify-harness` | Verifies resource isolation, deliberate failures, artifacts and cleanup |
 | `pnpm test:e2e:report` | Opens the latest local browser report |
 | `pnpm build` | Builds the web app for production |

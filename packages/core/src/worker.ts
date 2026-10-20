@@ -11,6 +11,7 @@ export {
   readImportFile,
   registerImportJobs,
   runImport,
+  suggestImportMapping,
   type ImportJobDependencies,
 } from './modules/imports/jobs.ts'
 // Runs ffmpeg and ffprobe.
@@ -34,3 +35,10 @@ export {
   registerSellerJobs,
   type SellerJobDependencies,
 } from './modules/sellers/jobs.ts'
+// Loads the image library.
+export {
+  checkUploadedReturnPhoto,
+  deleteUnsentReturnPhotos,
+  registerReturnJobs,
+  type ReturnJobDependencies,
+} from './modules/returns/jobs.ts'

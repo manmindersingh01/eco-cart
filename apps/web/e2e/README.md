@@ -30,12 +30,21 @@ Only loopback database/storage targets are accepted.
 ```powershell
 pnpm test:e2e:smoke
 pnpm test:e2e
+pnpm test:e2e:demo
 pnpm test:e2e:verify-harness
 pnpm test:e2e:report
 ```
 
 The smoke command runs Chromium desktop and phone projects.
 The full command runs Chromium, Firefox and WebKit at 1440 by 900 and 390 by 844 CSS pixels.
+Run `pnpm check` and browser/demo launchers sequentially in the same checkout.
+Next.js regenerates route type files while serving pages; a concurrent typecheck can read an incomplete generated file.
+
+`pnpm test:e2e:demo` runs the API walk-through with its own database, bucket, web server and worker, using the same ownership checks and cleanup as browser runs.
+It also seeds example products because the combined seller/buyer story purchases another seller's product.
+The demo now exercises applying to sell and combined-account shopping rather than skipping them.
+Required-feature skips fail the isolated demo gate; an AI-disabled step is reported explicitly as skipped.
+The redacted command summary belongs in task evidence, while raw local output is saved in that run's `demo.txt` and remains ignored.
 WebKit is automated engine coverage, not proof of actual Safari on Apple hardware.
 Phone projects exercise responsive widths without claiming physical-device emulation.
 
@@ -106,6 +115,8 @@ Commit only redacted results and reproducible command summaries.
 ## Coverage boundary
 
 The foundation covers the public shell, signed-out redirects, real buyer/admin/seller OTP sign-in, buyer role refusal, administrator settings reads after reload, and a direct browser-to-storage photo upload processed by the worker.
+Seller onboarding adds application correction/resubmission, administrator requests, real PDF/PNG worker processing, review/replacement, approval/cancellation blockers and combined-role suspension/ownership checks.
+Each separate browser identity receives its own synthetic test address for authentication limits; the production limits remain enabled.
 It also checks accessibility, keyboard focus, document overflow, browser exceptions and unexpected failed requests.
 The administrator test checks existing settings persistence through reads and refresh; it does not change a setting.
 Later task files add the remaining commerce and portal journeys.

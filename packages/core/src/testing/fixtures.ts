@@ -12,6 +12,8 @@ import {
   productImages,
   productVariants,
   products,
+  returnRequests,
+  sellerLedgerEntries,
   sellers,
   users,
 } from '../db/schema/index.ts'
@@ -495,4 +497,87 @@ export async function createTestCoupon(
     })
     .returning()
   return coupon!
+}
+
+// Returns (step 15).
+
+/**
+ * A return request on a one-line order from `sellerId`, as if the buyer had
+ * opened it, for tests of what hangs off a return.
+ */
+export async function createTestReturnRequest(
+  db: Database,
+  options: { buyerId: string; sellerId: string },
+) {
+  const category = await createTestCategory(db)
+  const { product, variant } = await createTestProduct(db, {
+    sellerId: options.sellerId,
+    categoryId: category.id,
+  })
+  const { order, items } = await createTestOrder(db, {
+    buyerId: options.buyerId,
+    lines: [
+      {
+        sellerId: options.sellerId,
+        productId: product.id,
+        variantId: variant.id,
+      },
+    ],
+  })
+  const [returnRequest] = await db
+    .insert(returnRequests)
+    .values({
+      orderId: order.id,
+      orderItemId: items[0]!.id,
+      userId: options.buyerId,
+      sellerId: options.sellerId,
+      quantity: 1,
+      reasonCode: 'damaged',
+    })
+    .returning()
+  return { order, item: items[0]!, returnRequest: returnRequest! }
+}
+
+// Seller money (step 15).
+
+export interface TestLedgerEntry {
+  entryType:
+    | 'sale'
+    | 'commission'
+    | 'refund_reversal'
+    | 'commission_reversal'
+    | 'payout'
+    | 'adjustment'
+  amountPaise: number
+  description?: string
+  reference?: string
+  orderId?: string
+  createdAt?: Date
+}
+
+/**
+ * Ledger entries for `sellerId`, inserted together, so entries without a
+ * `createdAt` share the same time and are told apart only by id.
+ */
+export async function addTestLedgerEntries(
+  db: Database,
+  sellerId: string,
+  entries: TestLedgerEntry[],
+) {
+  return db
+    .insert(sellerLedgerEntries)
+    .values(
+      entries.map((entry) => ({
+        sellerId,
+        entryType: entry.entryType,
+        amountPaise: entry.amountPaise,
+        description: entry.description ?? `Test ${entry.entryType}`,
+        reference:
+          entry.reference ??
+          (entry.entryType === 'payout' ? `TEST-${uniqueSuffix()}` : null),
+        orderId: entry.orderId ?? null,
+        ...(entry.createdAt ? { createdAt: entry.createdAt } : {}),
+      })),
+    )
+    .returning()
 }

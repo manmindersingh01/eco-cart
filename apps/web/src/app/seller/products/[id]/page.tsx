@@ -10,7 +10,7 @@ import type { SellerProduct } from '@/lib/product-editor'
 import { getStorage } from '@/lib/storage'
 
 export const metadata: Metadata = {
-  title: 'Product editor | EcoKart',
+  title: 'Product editor',
 }
 
 export const instant = false

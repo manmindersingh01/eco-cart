@@ -38,7 +38,7 @@ Use bounded worker/provider timeouts and artifact retention appropriate to failu
 4. Install the committed lockfile and test browsers; verify service/tool prerequisites.
 5. Run `pnpm check` once on the final code.
 6. Run `pnpm test:e2e:smoke` and full `pnpm test:e2e` on isolated resources.
-7. Run `pnpm demo:flow --base-url http://127.0.0.1:3211` against the prepared isolated stack after verifying the launcher-selected URL.
+7. Run `pnpm test:e2e:demo`, which prepares its isolated stack, runs the real API story and cleans it up.
 8. Inspect failures, unexpected skips, screenshots, accessibility findings and console errors.
 9. Complete only the narrow manual checks below.
 10. Fill every task's evidence table with actual results; publish a release summary inside this folder and update README tracking.

@@ -142,14 +142,23 @@ apps/
       admin/                   admin console
       api/health/route.ts      health check for the load balancer and smoke tests
       api/auth/[...all]/route.ts   Better Auth: sign-in codes, sessions, administrator account endpoints
-      api/me/route.ts          the signed-in account, its role, and its seller id
+      api/me/route.ts          the signed-in account, its roles, and its seller id
+      api/account/seller-application/  a buyer applies to sell, reads the application, and changes it
       api/admin/settings/      administrators read and change platform settings
-      api/admin/sellers/       administrators create, approve, suspend, and reinstate sellers,
-                               and ask a seller for verification documents
+      api/admin/sellers/       administrators create, approve, reject, suspend, and reinstate sellers,
+                               ask a seller for verification documents, and enter their bank account;
+                               read a seller's ledger, record payouts and adjustments, and ask for
+                               settlement statements
+      api/admin/seller-balances/  sellers with money to settle, largest balance first
       api/admin/seller-documents/  administrators' queue of documents to review; one request's
                                history, file downloads, accepting, rejecting, and cancelling
       api/seller/profile/      a seller's own business details and support contacts
       api/seller/documents/    the documents asked of a seller, and uploading them
+      api/seller/bank-account/ the bank account a seller's payouts go to, last 4 digits only
+      api/seller/ledger/       a seller's own ledger and balance
+      api/seller/settlement-statements/  a seller's settlement statements: ask for one, and list them
+      api/settlement-statements/[id]/  a statement, and its CSV through a short-lived link, for its
+                               seller and administrators
       api/seller/products/     a seller's listings, variants, stock, and photos; submitting
                                for review, moving back to draft, and archiving
       api/invoices/            an order's invoices and their PDF downloads, for its buyer and sellers
@@ -163,6 +172,9 @@ apps/
       api/admin/products/      administrators review one listing, approve or reject it, and
                                take down a listing on sale
       api/account/addresses/   a signed-in buyer's saved delivery addresses
+      api/account/return-photos/  a buyer's return photos: upload, add, and follow the check
+      api/return-photos/[id]/file/  a return photo through a short-lived link, for its buyer,
+                               the seller of the return, and administrators
       api/admin/ai/usage/      administrators see AI calls, tokens, and cost per day, and today's calls against the limit
       api/home/                the home page: new arrivals and a row per top-level category
       api/products/[slug]/     one product page, for anyone
@@ -193,13 +205,14 @@ packages/
       auth/  catalogue/  cart/  checkout/  orders/  payments/  ledger/
       invoices/  returns/  search/  ai/  imports/  notifications/
       settings/  audit/  sellers/  rate-limits/
-      addresses/  reviews/  content/
+      addresses/  reviews/  content/  assistant/
         (each module has service.ts, plus jobs.ts, types.ts, or config.ts where needed; the
          catalogue splits its services by topic: categories.ts, brands.ts,
          tree.ts for the in-memory category tree, products.ts, images.ts,
          summary.ts for the summary fields on products, moderation.ts for
          submitting, reviewing, and archiving listings, screening.ts for the
-         screening job, storefront.ts and storefront-types.ts for the public
+         screening job, embeddings.ts for the product embeddings that
+         search uses, storefront.ts and storefront-types.ts for the public
          product, category, and home pages and the product list they share
          with search, storefront-cache.ts for the cache tags and
          invalidateStorefront, and jobs.ts; search/ turns a request into
@@ -292,15 +305,15 @@ Three rules keep this maintainable.
 | Sellers | `sellers`, `seller_document_requests`, `seller_document_files` |
 | Catalogue | `categories`, `brands`, `products`, `product_variants`, `product_images`, `product_videos`, `product_moderation`, `product_embeddings` |
 | Cart and promotions | `carts`, `cart_items`, `coupons` |
-| Orders | `orders`, `order_items`, `shipments`, `order_events`, `return_requests`, `invoices` |
+| Orders | `orders`, `order_items`, `shipments`, `order_events`, `return_requests`, `return_photos`, `invoices` |
 | Payments | `payments`, `payment_events`, `refunds` |
-| Seller money | `seller_ledger_entries` |
+| Seller money | `seller_ledger_entries`, `seller_bank_accounts`, `settlement_statements` |
 | Reviews | `reviews` |
 | Imports | `catalogue_imports`, `catalogue_import_rows` |
 | AI and search | `ai_requests`, `search_queries` |
 | Platform | `platform_settings`, `content_pages`, `email_outbox`, `audit_logs`, `rate_limits`, `cache_invalidations` |
 
-That is 41 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
+That is 44 tables, five of them owned by Better Auth, plus the schema that pg-boss creates for itself.
 Better Auth keeps its rate-limit counters in `auth_rate_limits`; our own `rate_limits` table, with a different shape, serves the per-address sign-in code limit, and later checkout, search, and AI.
 
 ### 5.3 Identity
@@ -311,7 +324,7 @@ They use UUID ids (`advanced.database.generateId: "uuid"`) and plural snake_case
 They carry no row-level security policies, because Better Auth is the only code that touches them.
 Better Auth also creates `auth_rate_limits` for its rate-limit counters.
 Their time columns are `timestamp` without a time zone holding UTC, because that is what the Better Auth CLI generates; every other table uses `timestamptz`.
-A CHECK constraint on `users.role` allows only `buyer`, `seller`, and `admin`.
+A CHECK constraint on `users.role` allows only `buyer`, `seller`, `admin`, and `buyer,seller`.
 
 ```
 users                                   core + phone number plugin + admin plugin
@@ -322,7 +335,7 @@ users                                   core + phone number plugin + admin plugi
   image                   text, nullable
   phone_number            text UNIQUE, nullable, E.164 format
   phone_number_verified   boolean
-  role                    text   buyer | seller | admin
+  role                    text   buyer | seller | admin | buyer,seller (the admin plugin's comma-separated roles)
   banned                  boolean       our "suspended"
   ban_reason              text
   ban_expires             timestamp (UTC)
@@ -354,8 +367,8 @@ accounts                                core; for password and social sign-in, s
 verifications                           core; holds OTP codes while they are valid
   id            uuid PK
   identifier    text    the email or phone the code was sent to
-  value         text    email codes stored hashed (storeOTP: hashed); phone codes in plain
-                        text for their five minutes until SMS goes live (backend spec, step 2)
+  value         text    email codes stored hashed (storeOTP: hashed); phone codes as a hash
+                        keyed with the auth secret (backend spec, step 2)
   expires_at    timestamp (UTC)
   created_at, updated_at
   INDEX (identifier)
@@ -382,11 +395,16 @@ A buyer keeps up to 20 addresses, and always has exactly one default while they 
 The delivery phone must be an Indian mobile number, and the state code must be one of the 36 GST state codes; the database checks only the broader formats.
 Deleting an address sets `deleted_at`, and nothing refers to an address by foreign key, because an order copies the address into `orders.shipping_address` at checkout (backend spec, step 10).
 
-One account has one role.
-A seller account is created by an administrator through the seller onboarding, which creates the owner's account with the `seller` role through Better Auth (its internal `createUser`) and the linked `sellers` row together.
-If the business cannot be saved, the new account is removed again, and Better Auth's own administrator endpoints refuse to hand out the `seller` role, so a seller account always has a business.
-Suspending a buyer or seller is Better Auth's ban (its `banUser` endpoint, or the same calls through its internal adapter for sellers), which also revokes every session; the reason is kept in `ban_reason`.
-If a person needs to be both a buyer and a seller they use two accounts at launch; the admin plugin can hold several roles on one account, so this can be relaxed later without a schema change.
+One account can be both buyer and seller (decided 20 October 2026); an administrator has only the `admin` role.
+A seller account comes about in one of two ways.
+An administrator creates it through the seller onboarding, which creates the owner's account with the `seller` role through Better Auth (its internal `createUser`) and the linked `sellers` row together; if the business cannot be saved, the new account is removed again.
+Or a signed-in buyer applies to sell (section 5.4), and approving the application adds the `seller` role to their account through Better Auth's internal adapter, keeping `buyer`.
+Better Auth's own administrator endpoints refuse to hand out the `seller` role, so an account with that role always has a business.
+An account that both buys and sells picks the role it acts in by the area of each request: the seller portal and its APIs act as the seller, everything else as the buyer, and shared routes (an order's invoices, return photos and settlement statement status/downloads) take `?as=seller` from the seller portal.
+Each request still runs with one role in its row-level security context, so the policies are the same as for two separate accounts.
+Suspending a buyer is Better Auth's ban (its `banUser` endpoint), which also revokes every session; the reason is kept in `ban_reason`.
+Suspending a seller suspends the business (section 5.4): its listings leave the storefront and the seller portal refuses it.
+An account that only sells, which an administrator created, is banned as well, as before; an account that also buys keeps signing in and shopping, and banning that login stays a separate administrator action.
 
 ### 5.4 Sellers
 
@@ -405,8 +423,9 @@ sellers
   invoice_prefix    text UNIQUE     1 to 4 capital letters or digits, used in GST invoice numbers
   invoice_seq       int default 0
   invoice_seq_fy    text            financial year the sequence belongs to, e.g. 2026-27
-  status            text   pending | approved | suspended
+  status            text   pending | approved | suspended | rejected
   approved_at, suspended_reason
+  rejection_reason  text, nullable   why an administrator rejected the application, shown to the applicant
   created_at, updated_at
   INDEX (status, created_at DESC, id DESC)     the administrators' seller list
   INDEX (created_at DESC, id DESC)
@@ -419,6 +438,13 @@ seller_document_files           each file the seller uploads for a request (PDF,
                                 with the worker's check (photos re-encoded) and the administrator's
                                 acceptance or rejection reason, kept as the request's history
 ```
+
+A signed-in buyer applies to sell with the business details: display name, legal name, GSTIN, PAN, address, support email, and support phone.
+The application is their own `sellers` row, `pending`, with `owner_user_id` set to their account, so each account has at most one; an invoice prefix is suggested from the display name when they leave it out, and an administrator can change it until the first invoice.
+While it waits, the applicant reads its status, changes the details, and uploads the documents an administrator asks for through the same document flow as any seller, and keeps shopping as a buyer.
+Administrators see applications in the seller list filtered to `pending`, and approve them with the same rules as any seller.
+Or they reject one with a reason: the status becomes `rejected`, and the applicant may change the details and apply again, which makes it `pending` once more.
+Each decision is written to `audit_logs` and emailed to the applicant through `email_outbox`.
 
 ### 5.5 Catalogue
 
@@ -548,7 +574,7 @@ product_embeddings
   id            uuid PK
   product_id    uuid FK products
   kind          text   text | image
-  image_id      uuid FK product_images, nullable, set when kind = image
+  image_id      uuid FK product_images ON DELETE CASCADE, nullable, set when kind = image
   model         text
   content_hash  text   hash of the text or image that was embedded
   embedding     vector(1024)   Voyage Multimodal 3.5 at 1024 dimensions; changing the model means a re-embed job
@@ -573,8 +599,9 @@ carts
   user_id      uuid FK users, UNIQUE, nullable
   guest_token  text UNIQUE, nullable   cookie token for guests, merged on login
   coupon_code  text, nullable
-  created_at, updated_at
+  created_at, updated_at   every change to the cart or its items moves updated_at
   CHECK (user_id IS NOT NULL OR guest_token IS NOT NULL)
+  INDEX (updated_at) WHERE user_id IS NULL   a nightly job removes guest carts unchanged for 31 days, after their 30-day cookie has run out
 
 cart_items
   id          uuid PK
@@ -625,6 +652,7 @@ orders
   created_at, updated_at
   INDEX (user_id, created_at DESC, id DESC)
   INDEX (status, created_at, id)
+  INDEX (created_at DESC, id DESC)     the administrators' list of every order
 
 order_items
   id                    uuid PK
@@ -692,8 +720,14 @@ return_requests
   refund_id      uuid FK refunds, nullable
   created_at, updated_at
   INDEX (status, created_at, id)
-  INDEX (user_id)
-  INDEX (seller_id)
+  INDEX (user_id, created_at DESC, id DESC)     the buyer's returns
+  INDEX (seller_id, created_at DESC, id DESC)   the seller's returns
+  UNIQUE (order_item_id) WHERE status is requested or approved: one open return per line
+
+return_photos     a buyer's photo for a return: uploaded before the return is sent, checked and
+                  re-encoded by the worker (processing | ready | failed), private, and attached
+                  to the return request it was sent with, whose images list its storage key;
+                  a photo can be sent within 24 hours, and one never sent is deleted after 48
 
 invoices
   id                          uuid PK
@@ -764,6 +798,7 @@ refunds
   recorded_at         timestamptz
   created_at
   INDEX (order_id)
+  UNIQUE (return_request_id) where it is set: a return is refunded once
 ```
 
 The unique constraint on `(provider, event_id)` is what makes webhook processing idempotent.
@@ -781,15 +816,25 @@ seller_ledger_entries
   entry_type         text   sale | commission | refund_reversal | commission_reversal | payout | adjustment
   amount_paise       bigint   signed; sales are positive, commission and payouts are negative
   description        text
-  reference          text, nullable   bank transfer reference for payouts
+  reference          text, nullable   bank transfer reference, required on payouts and unique per seller
   created_by         uuid FK users, nullable
   created_at
   INDEX (seller_id, created_at, id)
+
+seller_bank_accounts   the account a seller's payouts go to, one per seller, entered by administrators:
+                       account holder, IFSC, the account number sealed with MESSAGE_ENCRYPTION_KEY,
+                       and its last 4 digits, the only part ever shown
+
+settlement_statements  a seller's statement for a period of India dates, asked for by the seller or an
+                       administrator, made by the worker as a private CSV (processing | ready | failed),
+                       with the opening and closing balance and the number of entries
 ```
 
 The ledger is append only.
 A seller's balance is the sum of their entries.
 A settlement statement is the CSV export of entries in a period, and a manual bank payment is recorded as a `payout` entry with the bank reference.
+A payout goes to the bank account on file and may not be more than the balance.
+TCS on sellers' sales (GST section 52) is not collected yet; when the client decides it, it becomes an entry type of its own, which balances and statements show with no other change.
 
 ### 5.10 Reviews
 
@@ -823,7 +868,8 @@ catalogue_imports
   file_type          text   csv | xlsx
   status             text   uploaded | mapping_suggested | mapping_confirmed | validating | importing | completed | failed
   headers            text[]
-  column_mapping     jsonb   {"Product Name": "title", "Price (Rs)": "price", ...}
+  column_mapping     jsonb   {"Product Name": "title", "Price (Rs)": "price", ...}, set only when the seller confirms
+  suggested_mapping  jsonb, nullable   per column: the field, a confidence from 0 to 1, and whether the name or the AI chose it
   ai_request_id      uuid FK ai_requests, nullable
   total_rows, ok_rows, error_rows   int
   error_report_key   text, nullable   CSV of failed rows with reasons
@@ -904,7 +950,7 @@ platform_settings
   updated_by  uuid FK users, nullable
   updated_at
   keys: commission_bps, delivery_charge_paise, free_delivery_threshold_paise,
-        cod_enabled, payment_timeout_minutes, ai_daily_limit_platform,
+        cod_enabled, return_window_days, payment_timeout_minutes, ai_daily_limit_platform,
         ai_daily_limit_seller, prohibited_terms, company_details
 
 content_pages
@@ -920,7 +966,7 @@ email_outbox
   id                   bigserial PK
   user_id              uuid, nullable
   to_email             text
-  template             text   otp | order_placed | payment_received | dispatched | cancelled | refund_recorded
+  template             text   otp | order_placed | payment_received | dispatched | cancelled | refund_recorded | seller_application
   subject              text
   payload              jsonb
   status               text   queued | sent | failed
@@ -947,7 +993,7 @@ rate_limits
   key           text PK   e.g. otp:phone:+91..., checkout:user:<id>, ip:1.2.3.4:search
   window_start  timestamptz
   count         int
-  INDEX (window_start)   for clearing old windows
+  INDEX (window_start)   a nightly job removes windows that started over a day ago; no rule may count over a longer window
 
 cache_invalidations                     append only; no row-level security: only tags of public pages
   id            bigserial PK
@@ -963,6 +1009,9 @@ Every change is written to `audit_logs`, and `pnpm db:seed` fills in obvious exa
 
 Emails go through an outbox table rather than being sent inline.
 The row is written in the same transaction as the business change, so an email is never lost or sent for a change that was rolled back, and the worker retries failures.
+Administrators see the emails that failed and the ones that are stuck (still queued but unchanged for 30 minutes), and the background jobs that failed in each queue, newest first.
+They can retry one, which gives an email fresh attempts or a job one more attempt, and each retry is written to `audit_logs`.
+A sign-in code is never sent again, because it has expired by then; the person asks for a new one.
 
 ## 6. Main flows
 
@@ -973,16 +1022,17 @@ Login is handled by Better Auth, mounted in the web app at `/api/auth/*`.
 1. The user enters an email or mobile number and the browser calls Better Auth's email OTP or phone number plugin.
    Mobile numbers must be Indian (`+91` and ten digits starting with 6 to 9), and phone sign-in stays off until an SMS provider is configured.
 2. Before a code is made, two limits are checked: five code requests a minute from one IP address (Better Auth, counted in `auth_rate_limits`), and five codes an hour for one email address or number from anywhere (our `rate_limits`, with the address hashed).
-3. Better Auth generates a six-digit code with a five-minute expiry, stores it in `verifications` (hashed for email), and calls our callback.
+3. Better Auth generates a six-digit code with a five-minute expiry, stores it hashed in `verifications`, and calls our callback.
    The callback queues the email through `email_outbox`, or the SMS as a job, with the code encrypted; the worker decrypts it, sends the message, and then removes the code.
 4. The user enters the code.
    Better Auth verifies it, allows three attempts, creates the user on first sign-in (with the `buyer` role by default; a phone-only account gets a placeholder email under the reserved `.invalid` domain), and writes a `sessions` row.
+   It deletes the code once used, and every expired code whenever it checks one, so `verifications` needs no clean-up job.
 5. The browser receives the `ecokart.session_token` cookie: HttpOnly, SameSite Lax, and Secure on https.
 6. On every request the app reads the session through Better Auth, looks up the seller id for a seller account, and runs the request's queries through `withContext`, which sets the user id, role, and seller id with `SET LOCAL` for row-level security.
 
 A signed-in buyer can add the way of signing in they do not have yet, each confirmed with a code: a phone number to an email account (Better Auth's phone verification with `updatePhoneNumber`), or an email to a phone account (its email-change endpoints, with the code sent to the new address).
 Changing an email or number that is already there is not offered yet.
-A buyer can never remove the phone number that is their only way to sign in, and sellers and administrators cannot use these endpoints.
+A buyer can never remove the phone number that is their only way to sign in, and accounts that only sell, and administrators, cannot use these endpoints.
 
 The first administrator is created with `pnpm admin:create`.
 Administrators manage accounts through Better Auth's admin endpoints: create accounts, set roles, ban and unban, and revoke sessions, each written to `audit_logs`.
@@ -1035,7 +1085,7 @@ This is the flow that has to be correct under concurrency, so it is spelled out 
 7. `confirmOrderPayment` runs in one transaction: mark the payment captured, mark the order confirmed, write ledger entries for each seller (sale and commission), queue one invoice per seller, queue the order-placed and payment-received emails, and revalidate product caches.
 8. A scheduled job every five minutes cancels orders still `pending_payment` after the configured timeout and restores stock and coupon usage. If a capture webhook arrives for an order that was already cancelled, the payment is stored as captured and the order is flagged in the admin console for a manual refund.
 
-Cash on delivery skips steps 3 to 6 and confirms immediately. Its payment row is marked captured when the seller marks the shipment delivered.
+Cash on delivery skips steps 3 to 6 and confirms immediately. Its payment row is marked captured when the seller marks the shipment delivered; for an order from several sellers, when the last parcel is delivered and the order completes.
 
 ### 6.4 Dispatch, delivery, and cancellation
 
@@ -1066,9 +1116,13 @@ GST credit notes for returns are deferred, as quotation 4.0 says.
 ### 6.7 Catalogue import
 
 1. The seller uploads a CSV or XLSX file straight to object storage and a `catalogue_imports` row is created.
-2. A job reads the headers and the first few rows, asks the text model for a suggested mapping from the seller's column names to EcoKart fields, and stores it with a confidence per column.
-3. The seller reviews and confirms the mapping in the portal.
-   Until the AI suggestion arrives (step 19), the seller chooses every column by hand.
+2. A job reads the headers and the first few rows and suggests a field for each column, with a confidence.
+   Names settle most columns without any AI, such as "Product Name" for the title or "Price (Rs)" for the price.
+   Only the columns the names leave open go to the text model, in a second job, with a few sample values each; its answer is checked, and only columns and fields it was asked about are kept.
+   The call counts against the seller's daily AI calls from the moment the file is read.
+   With AI switched off, a daily limit used up, or an answer that cannot be used, the names' suggestion stands.
+3. The seller reviews and confirms the mapping in the portal, choosing any column the suggestion left open.
+   The seller may confirm before the AI has answered, and a suggestion is never applied without them.
    Each row becomes one draft with one variant, and a file has at most 5,000 rows and 10 MB.
 4. A job validates every row deterministically (required fields, price and MRP numeric and sane, stock non-negative, category resolvable), optionally asks the text model to propose missing descriptions or categories for rows that lack them, and creates draft products and variants for valid rows.
 5. Failed rows are written to an error report CSV with row numbers and reasons, and the seller submits the valid drafts for review.
@@ -1129,7 +1183,7 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 - The full list of row-level security rules is in `docs/backend-spec.md`, step 1.
 - Application code still checks permissions explicitly; row-level security is the safety net that makes a missed check a bug rather than a data leak.
   In the same spirit, a database trigger refuses any change by the web app without full access that approves or rejects a product or sets its GST rate, so a seller can never approve their own listing.
-- Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, email codes stored hashed (phone codes get the same before SMS goes live), three attempts per code, and suspension through Better Auth's ban, which revokes every session of that user.
+- Authentication is Better Auth: opaque session tokens in an HttpOnly cookie, email and phone codes stored hashed, three attempts per code, and suspending an account through Better Auth's ban, which revokes every session of that user.
 - Better Auth rate limits its own endpoints (OTP sending and verification), with the counters in the database so the limits hold across web containers.
   A second limit caps the codes sent to any one email address or phone number.
   Checkout, search, and every AI endpoint use the `rate_limits` table with an upsert per window.
@@ -1139,7 +1193,7 @@ Every call is logged in `ai_requests` and counted against the daily platform lim
 - Sign-in codes waiting to be sent are encrypted with `MESSAGE_ENCRYPTION_KEY` and removed once sent.
 - Razorpay webhooks are verified with the webhook secret before anything is read from the payload, and the checkout return is verified with the key secret. No card data is ever received by EcoKart.
 - All prices, totals, stock, and permissions are recomputed on the server; the browser is never trusted.
-- Secrets live in environment variables in the hosting platform, never in the repository. Object storage buckets are private and every download of a private file (originals, imports, invoices, buyers' return photos) is a short-lived signed URL. Only the product photo sizes under `images/` and the converted product videos under `videos/` are public, served through CloudFront with origin access control.
+- Secrets live in environment variables in the hosting platform, never in the repository. Object storage buckets are private and every download of a private file (originals, imports, invoices, buyers' return photos, seller verification documents, settlement statements) is a short-lived signed URL. Only the product photo sizes under `images/` and the converted product videos under `videos/` are public, served through CloudFront with origin access control.
 - Uploads go straight from the browser to the bucket with a signed form that allows one key, one content type, and at most 10 MB for a photo or 50 MB for a video. The worker checks every photo and video and re-encodes it, which removes all metadata such as GPS locations, so nothing a browser sent is ever served as it arrived.
 - Standard Next.js protections cover cross-site scripting and request forgery; parameterised queries through Drizzle cover injection.
 - Every administrator action and every state change on an order is written to `audit_logs` or `order_events`.
@@ -1189,7 +1243,7 @@ When measurements show pressure, the steps are, in order, and none of them chang
 | ORM | Open | Drizzle (Better Auth ships a Drizzle adapter; the schema, migrations, and services of steps 1 to 6 are built on it, so changing now means rewriting them) | Prisma |
 | Auth | Decided 2 October 2026 | Better Auth with the email OTP, phone number, and admin plugins, Drizzle adapter, UUID ids | Own OTP tables and sessions, or Auth.js |
 | Guest cart | Open | Yes, cookie-based, merged into the account on login | Require login before adding to cart |
-| Roles | Open | One role per account; a seller uses a separate seller account | One account can be both buyer and seller |
+| Roles | Decided 20 October 2026 | One account can be both buyer and seller: a buyer applies to sell, and approval adds the seller role (section 5.3) | One role per account, with a separate seller account |
 | Commission base | Open | Applied to the seller's line total after the coupon discount share | Applied before discounts |
 | Delivery revenue | Open | Delivery charge belongs to the platform | Passed through to sellers |
 | Page caching | Decided 12 October 2026 | Next.js caches public pages in each web container and expires them by tag, with changed tags shared through PostgreSQL; CloudFront caches only static files and photos | CloudFront caching page HTML, purged on every change |

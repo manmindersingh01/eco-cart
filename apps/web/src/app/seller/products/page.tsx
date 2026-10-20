@@ -22,7 +22,7 @@ import {
 import { getStorage } from '@/lib/storage'
 
 export const metadata: Metadata = {
-  title: 'Products | EcoKart',
+  title: 'Products',
 }
 
 export const instant = false

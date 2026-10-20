@@ -7,7 +7,7 @@ import { getDatabase } from '@/lib/db'
 import { requireAdminPageContext } from '@/lib/page-auth'
 
 export const metadata: Metadata = {
-  title: 'Categories | EcoKart',
+  title: 'Categories',
 }
 
 export const instant = false

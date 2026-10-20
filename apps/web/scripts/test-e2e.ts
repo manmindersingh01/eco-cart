@@ -11,7 +11,10 @@ import {
   prepareEnvironment,
   removeEnvironment,
 } from '../e2e/support/environment.ts'
-import { prepareFixtures } from '../e2e/support/fixtures.ts'
+import {
+  prepareFixtures,
+  prepareDemoFixtures,
+} from '../e2e/support/fixtures.ts'
 import {
   isRunning,
   pollUntil,
@@ -27,7 +30,10 @@ const args = process.argv.slice(2).filter((argument) => argument !== '--')
 const diagnostics = args
   .find((argument) => argument.startsWith('--probe='))
   ?.slice(8)
-const browserArgs = args.filter((argument) => !argument.startsWith('--probe='))
+const demo = args.includes('--demo')
+const browserArgs = args.filter(
+  (argument) => !argument.startsWith('--probe=') && argument !== '--demo',
+)
 if (diagnostics && !['setup', 'interrupt', 'assertion'].includes(diagnostics))
   throw new Error('Unknown harness probe')
 const resources = allocateEnvironment()
@@ -101,6 +107,7 @@ try {
   checkInterrupt()
   if (diagnostics === 'setup') throw new Error('Expected harness setup failure')
   env.E2E_FIXTURES = JSON.stringify(await prepareFixtures(env))
+  if (demo) await prepareDemoFixtures(env, resources.database.workerUrl)
   checkInterrupt()
   worker = startNode(
     join(cwd, 'e2e/support/worker.ts'),
@@ -166,8 +173,10 @@ try {
     checkInterrupt()
   }
   browsers = startNode(
-    require.resolve('@playwright/test/cli'),
-    ['test', ...browserArgs],
+    demo
+      ? join(cwd, 'scripts/demo-flow.ts')
+      : require.resolve('@playwright/test/cli'),
+    demo ? ['--base-url', origin] : ['test', ...browserArgs],
     env,
     cwd,
   )
@@ -186,6 +195,15 @@ try {
     })(),
   ])
   result = finished
+  if (demo) {
+    await writeFile(join(runDir, 'demo.txt'), browsers.output())
+    if (
+      /skipped: not built yet|not run: an earlier step failed/.test(
+        browsers.output(),
+      )
+    )
+      result = 1
+  }
 } catch (error) {
   console.error(error instanceof Error ? error.message : 'E2E setup failed')
   result = interrupted ? 130 : 1

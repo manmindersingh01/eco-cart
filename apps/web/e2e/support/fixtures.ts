@@ -6,13 +6,19 @@ import {
   createDatabase,
   createPool,
   createSeller,
+  createObjectStorage,
+  loadStorageConfig,
   ensureAdministrator,
   loadAuthConfig,
   updateSetting,
   withContext,
   type RequestContext,
 } from '@ecokart/core'
-import { DEVELOPMENT_SETTINGS } from '../../../../packages/core/src/db/seed.ts'
+import {
+  DEVELOPMENT_SETTINGS,
+  seedDevelopmentData,
+  seedExampleProducts,
+} from '../../../../packages/core/src/db/seed.ts'
 
 export const browserProjects = [
   'chromium-desktop',
@@ -88,5 +94,29 @@ export async function prepareFixtures(
     return { categoryId, accounts }
   } finally {
     await pool.end()
+  }
+}
+
+/** The API walk-through also buys another seller's seeded product. */
+export async function prepareDemoFixtures(
+  env: NodeJS.ProcessEnv,
+  workerUrl: string,
+) {
+  const webPool = createPool(env.DATABASE_URL!, 'demo-fixtures')
+  const workerPool = createPool(workerUrl, 'demo-fixtures-worker')
+  try {
+    const db = createDatabase(webPool)
+    await seedDevelopmentData(db, env)
+    await seedExampleProducts(
+      {
+        db,
+        worker: createDatabase(workerPool),
+        storage: createObjectStorage(loadStorageConfig(env)),
+      },
+      env,
+    )
+  } finally {
+    await webPool.end()
+    await workerPool.end()
   }
 }

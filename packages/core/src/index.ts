@@ -17,9 +17,15 @@ export { QUEUES } from './jobs.ts'
 export {
   startJobQueue,
   type JobQueue,
+  type QueueCounts,
   type QueueDefinition,
 } from './lib/queue.ts'
-export { isPlaceholderEmail, type Auth } from './modules/auth/auth.ts'
+export {
+  isPlaceholderEmail,
+  rolesOf,
+  type AccountRole,
+  type Auth,
+} from './modules/auth/auth.ts'
 export { loadAuthConfig, type AuthConfig } from './modules/auth/config.ts'
 export {
   createAppAuth,
@@ -27,6 +33,7 @@ export {
   resolveRequestContext,
   SellerAccountNotReadyError,
   SellerSuspendedError,
+  type RequestArea,
 } from './modules/auth/service.ts'
 export {
   createAccountDirectory,
@@ -35,6 +42,19 @@ export {
 } from './modules/auth/accounts.ts'
 export { loadNotificationConfig } from './modules/notifications/config.ts'
 export { registerNotificationJobs } from './modules/notifications/jobs.ts'
+export {
+  listUndeliveredEmails,
+  retryEmail,
+  STUCK_EMAIL_MINUTES,
+  type EmailState,
+  type OutboxEmailView,
+} from './modules/notifications/outbox.ts'
+export {
+  listFailedJobs,
+  listJobQueues,
+  retryFailedJob,
+  type FailedJobView,
+} from './modules/background-jobs/service.ts'
 export {
   settingKeys,
   type CompanyDetails,
@@ -54,6 +74,7 @@ export {
   getSeller,
   listSellers,
   reinstateSeller,
+  rejectSeller,
   suspendSeller,
   updateOwnContacts,
   updateSeller,
@@ -62,6 +83,12 @@ export {
   type SellerSummary,
 } from './modules/sellers/service.ts'
 export type { SellerStatus, SellerView } from './modules/sellers/types.ts'
+// A buyer applies to sell (decided 20 October 2026).
+export {
+  applyToSell,
+  getOwnApplication,
+  updateOwnApplication,
+} from './modules/sellers/applications.ts'
 export {
   acceptSellerDocument,
   addDocumentFile,
@@ -90,6 +117,61 @@ export {
   type DocumentType,
   type DocumentUpload,
 } from './modules/sellers/types.ts'
+export {
+  getOwnBankAccount,
+  getSellerBankAccount,
+  setSellerBankAccount,
+} from './modules/ledger/bank-accounts.ts'
+export { loadLedgerConfig, type LedgerConfig } from './modules/ledger/config.ts'
+export {
+  getOwnLedger,
+  getSellerLedger,
+  listSellerBalances,
+} from './modules/ledger/entries.ts'
+export {
+  recordAdjustment,
+  recordPayout,
+  type RecordedEntry,
+} from './modules/ledger/payouts.ts'
+export {
+  getSettlementStatement,
+  getSettlementStatementDownload,
+  listOwnStatements,
+  listSellerStatements,
+  MAKE_STATEMENT_QUEUE,
+  requestOwnStatement,
+  requestSellerStatement,
+} from './modules/ledger/statements.ts'
+export {
+  makeSettlementStatement,
+  registerLedgerJobs,
+  type LedgerJobDependencies,
+} from './modules/ledger/jobs.ts'
+export type {
+  BankAccountView,
+  LedgerEntryType,
+  LedgerEntryView,
+  SellerBalance,
+  SellerLedger,
+  SettlementStatementDownload,
+  SettlementStatementStatus,
+  SettlementStatementView,
+} from './modules/ledger/types.ts'
+export {
+  addReturnPhoto,
+  attachReturnPhotos,
+  CHECK_RETURN_PHOTO_QUEUE,
+  createReturnPhotoUpload,
+  getReturnPhoto,
+  getReturnPhotoDownload,
+} from './modules/returns/photos.ts'
+export {
+  MAX_PHOTOS_PER_RETURN,
+  type ReturnPhotoDownload,
+  type ReturnPhotoStatus,
+  type ReturnPhotoUpload,
+  type ReturnPhotoView,
+} from './modules/returns/types.ts'
 export type { Page } from './lib/pagination.ts'
 export {
   createCategory,
@@ -239,9 +321,14 @@ export {
   getPublicProduct,
   listingFilters,
   listPublicProducts,
+  listSimilarProducts,
   queryObject,
+  SIMILAR_PRODUCTS,
+  type ListMatch,
   type ListSort,
   type ProductListQuery,
+  type SimilarProducts,
+  type VectorMatch,
   type WordMatch,
 } from './modules/catalogue/storefront.ts'
 export type {
@@ -266,6 +353,37 @@ export {
   searchProducts,
 } from './modules/search/service.ts'
 export type { SearchGap, SearchResult } from './modules/search/types.ts'
+// Search by meaning and by photo, and product embeddings (backend spec step 18).
+export {
+  naturalSearch,
+  type NaturalSearchDependencies,
+  type NaturalSearchResult,
+  type UnderstoodQuery,
+} from './modules/search/natural.ts'
+export {
+  createSearchPhotoUpload,
+  MAX_SEARCH_PHOTO_BYTES,
+  searchByPhoto,
+  type PhotoSearchDependencies,
+  type SearchPhotoUpload,
+} from './modules/search/photos.ts'
+// The shopping assistant (backend spec step 20).
+export {
+  askAssistant,
+  ASSISTANT_LIMIT,
+  consumeAssistantAllowance,
+  type AssistantDependencies,
+} from './modules/assistant/service.ts'
+export type {
+  AssistantAnswer,
+  ComparisonPoint,
+} from './modules/assistant/types.ts'
+export {
+  EMBED_MISSING_QUEUE,
+  EMBED_PRODUCT_QUEUE,
+  embedProduct,
+  queueMissingEmbeddings,
+} from './modules/catalogue/embeddings.ts'
 export { clientAddress, trustedProxyCount } from './lib/client-address.ts'
 export { IMAGE_SIZES, type ImageSize } from './lib/images.ts'
 export {
@@ -361,6 +479,7 @@ export {
   updateCoupon,
 } from './modules/cart/coupons.ts'
 export {
+  GUEST_CART_DAYS,
   MAX_CART_LINES,
   MAX_LINE_QUANTITY,
   type CartCoupon,
@@ -390,6 +509,16 @@ export {
   expireUnpaidOrders,
   registerOrderJobs,
 } from './modules/orders/jobs.ts'
+export {
+  REMOVE_STALE_GUEST_CARTS_QUEUE,
+  registerCartJobs,
+  removeStaleGuestCarts,
+} from './modules/cart/jobs.ts'
+export {
+  REMOVE_EXPIRED_RATE_LIMITS_QUEUE,
+  registerRateLimitJobs,
+  removeExpiredRateLimits,
+} from './modules/rate-limits/jobs.ts'
 export {
   createRazorpay,
   loadRazorpayConfig,
@@ -434,3 +563,54 @@ export {
   getProductLabels,
   type ProductLabel,
 } from './modules/catalogue/storefront.ts'
+// Orders after checkout (backend spec step 13).
+export {
+  cancelOrderAsAdmin,
+  cancelOwnOrder,
+  recordCancellationRefund,
+  dispatchLines,
+  markShipmentDelivered,
+} from './modules/orders/fulfilment.ts'
+export {
+  findVerifiedPurchase,
+  getAdminOrder,
+  getBuyerOrder,
+  getSellerOrder,
+  listAdminOrders,
+  listBuyerOrders,
+  listSellerOrders,
+} from './modules/orders/views.ts'
+export type {
+  AdminOrderSummary,
+  AdminOrderView,
+  BuyerOrderSummary,
+  BuyerOrderView,
+  DispatchRequest,
+  OrderLineView,
+  OrderProgress,
+  PaymentState,
+  SellerOrderSummary,
+  SellerOrderTab,
+  SellerOrderView,
+  ShipmentView,
+  VerifiedPurchase,
+} from './modules/orders/types.ts'
+// Returns and refunds (backend spec step 15).
+export {
+  approveReturn,
+  getReturn,
+  listOwnReturns,
+  listReturns,
+  listSellerReturns,
+  openReturn,
+  recordReturnRefund,
+  rejectReturn,
+} from './modules/returns/service.ts'
+export {
+  RETURN_REASONS,
+  RETURN_STATUSES,
+  type RefundRecord,
+  type ReturnReason,
+  type ReturnStatus,
+  type ReturnView,
+} from './modules/returns/types.ts'

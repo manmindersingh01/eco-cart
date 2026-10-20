@@ -2,8 +2,9 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Planned |
-| Implemented | No |
+| Status | complete |
+| Implemented | Yes |
+| Verified on | 21 October 2026, Asia/Kolkata |
 | Depends on | 01 |
 | Blocks | Every feature relying on newer backend contracts |
 
@@ -11,9 +12,8 @@
 
 Create a reviewed integration containing the existing portal frontend and the newer backend before implementing screens against its APIs.
 Read both versions of `AGENTS.md`, the design's account/role decisions, auth services and request context helpers.
-The supplied local instructions still assume one role, while inspected upstream records the 20 October decision for combined buyer/seller accounts.
-Confirm that recorded upstream decision is the integration target with the project lead if it conflicts with instructions still in force.
-Do not silently overwrite instructions or implement a contradictory role model.
+The user approved integrating the recorded 20 October decision for combined buyer/seller accounts as part of the implementation plan.
+The integrated instructions and architecture now describe that decision, with one database context per request.
 
 ## Ordered implementation
 
@@ -65,11 +65,16 @@ Keep incoming `connection()` and `'use cache'` behaviour compatible with the ins
 
 Extend auth core tests, `/api/me` route tests and proposed `e2e/role-access.spec.ts`.
 Run `pnpm check` and `pnpm test:e2e:smoke` on the integrated commit.
-After integration, run `pnpm demo:flow --base-url http://127.0.0.1:3211` only against the prepared isolated running stack.
+After integration, run `pnpm test:e2e:demo` to launch the API demo against a prepared isolated stack and clean it up afterwards.
 The demo creates data and is not a substitute for browser coverage.
 Inspect skips: a zero exit code with skipped required capabilities is not proof they passed.
 
 ## Completion evidence
 
-Pending.
-Record both parent commits, resolved semantic differences, final commit, migration/worker output, actual tests, and any remaining decision using the evidence template.
+Implementation and verification are complete; results are recorded in [the shared implementation evidence](evidence/2026-10-20-onboarding.md).
+The starting frontend head was `d00339abf5febb5a87d60f614dd25f54b9652c80`.
+`git fetch origin` confirmed the reviewed backend head `8c73cd7751f38661ffafd8e31902aff9243ff388`.
+Both are integrated on the existing `step-2-marketplace-completion` branch, preserving task 01's scripts, browser dependencies, Suspense boundaries and protected-page settings.
+Conflicts in `AGENTS.md`, `apps/web/package.json` and `lib/page-auth.ts` were resolved by retaining the browser harness and incoming role contracts.
+The header uses `roles` for available portals; seller pages resolve seller identity through protected server context.
+The API demo now applies as a buyer and verifies combined-account shopping instead of skipping those steps.
