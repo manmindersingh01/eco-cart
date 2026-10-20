@@ -25,6 +25,8 @@ export const metadata: Metadata = {
   title: 'Products | EcoKart',
 }
 
+export const instant = false
+
 const filters: Array<{ label: string; status?: ProductStatus }> = [
   { label: 'All' },
   { label: 'Draft', status: 'draft' },

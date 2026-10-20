@@ -2,11 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Complete for source investigation |
+| Status | `complete` for source investigation and documentation verification |
 | Implemented | Yes, documentation only |
 | Runtime verified | No |
 | Depends on | None |
-| Evidence | Read-only inspection of the two Git snapshots in README and the working-tree remarks |
+| Evidence | Source snapshots, capability coverage and reproducible documentation checks recorded below |
+| Verified on | 20 October 2026, Asia/Kolkata |
+| Verification checkout | `901b685fdd74281966de5b13545a850b6d18ee6d` |
 
 ## Main finding
 
@@ -15,6 +17,18 @@ The current frontend branch contains the first admin/seller delivery plus a subs
 The locally available `origin/main` contains more backend work that has not yet been integrated.
 Even that newer backend has no buyer shopping pages beyond the existing home and sign-in shell.
 Do not interpret API existence as a completed user journey.
+
+The original application snapshot is `bf44e579ffcba709715e964f31dd917d8e3ce5b1`.
+At task 00 finalisation, HEAD is `901b685fdd74281966de5b13545a850b6d18ee6d` and the available `origin/main` reference is still `8c73cd7751f38661ffafd8e31902aff9243ff388`.
+The intervening commit changes documentation only; application code, workspace manifests, lockfile and CI configuration are unchanged.
+The inventory therefore remains valid for this checkout, subject to task 02's later integration.
+
+## Stage 2 boundary
+
+This folder covers local application development and its automated verification.
+Stage 3 covers final deployment and finalisation, including infrastructure, backups/restore, production monitoring and live provider configuration.
+Task 12 produces a local release result and records Stage 3 handover items; local development uses test data and existing provider stand-ins.
+No fetch, merge, app execution, dependency installation or production action is required to complete this investigation task.
 
 ## Capability matrix
 
@@ -46,6 +60,24 @@ The newer-backend column describes the inspected `origin/main` snapshot, without
 | Failed background work | Worker queues exist | Admin email/queue list and retry APIs | Operations dashboard with safe retry controls | Integrate existing admin services |
 | AI platform and usage | AI service/client, request log/limits, admin usage API | Embedding, natural/photo search, assistant, import mapping | Optional search, assistant, listing suggestions, usage and search-gap reports | Integrate and reuse local stand-ins |
 | Automation | Vitest integration tests and Linux CI with PostgreSQL, Mailpit, SeaweedFS and ffmpeg | `apps/web/scripts/demo-flow.ts`, root `demo:flow` script | Playwright browser journeys and accessibility checks | Isolated E2E launcher/fixtures and CI artifacts missing |
+
+## Coverage of remaining capabilities
+
+Every capability in the inventory has a delivery or verification task.
+Task numbers identify work to implement later; this mapping does not mark those capabilities tested or complete.
+
+| Capabilities | Delivery and verification tasks |
+| --- | --- |
+| Existing portal foundation, email/phone accounts, combined roles and backend integration | [01 automation](01-automation-prerequisites.md), [02 integration](02-integration-and-roles.md), [07 account](07-account-and-cart.md) |
+| Seller joining and administrator-requested documents | [03 existing-policy verification](03-remarks-backend.md), [04 onboarding](04-seller-onboarding.md) |
+| Minimum quantity, photos/video, moderation and CSV/XLSX imports | [03 contract verification](03-remarks-backend.md), [05 catalogue](05-catalogue-operations.md) |
+| Public catalogue, keyword search and public quantity/media presentation | [06 storefront](06-storefront.md) |
+| Addresses, guest/account cart and coupons | [07 account and cart](07-account-and-cart.md) |
+| Checkout/payment, orders, fulfilment and invoices | [08 checkout and orders](08-checkout-and-orders.md) |
+| Returns/refunds, bank details, seller ledger, payouts and statements | [09 returns and settlements](09-returns-and-settlements.md) |
+| Reviews, policy pages and failed background work | [10 content and operations](10-content-and-operations.md) |
+| AI platform/usage, listing suggestions, import mapping, meaning/photo search, similar products, assistant and search-gap reports | [11 AI features](11-ai-features.md) |
+| Automated infrastructure, browser regression and local release evidence | [01 automation](01-automation-prerequisites.md), [12 local release](12-release-and-evidence.md) |
 
 ## Remarks traceability
 
@@ -101,8 +133,61 @@ git ls-tree -r --name-only origin/main apps/web/src/app/api
 No output from environment files is required or appropriate.
 No network freshness or runtime correctness is implied by these commands.
 
-## Evidence
+## Completion evidence
 
-Implementation evidence is this inventory and its linked task briefs.
-Test evidence is not applicable to source inspection; no application tests were executed.
-Future implementation must replace assumptions with observed integration and browser results.
+Implementation evidence is this updated inventory, its capability-to-task mapping, and the README's verified source snapshots and Stage 2 boundary.
+Only documentation is changed by task 00 finalisation.
+
+| Check | Exact command or procedure | Observed result |
+| --- | --- | --- |
+| Snapshot identity | `git rev-parse HEAD origin/main` | Exit 0; checkout `901b685fdd74281966de5b13545a850b6d18ee6d`, available upstream `8c73cd7751f38661ffafd8e31902aff9243ff388` |
+| Application/configuration drift | `git diff --stat bf44e579ffcba709715e964f31dd917d8e3ce5b1 HEAD -- apps packages .github pnpm-workspace.yaml pnpm-lock.yaml package.json` | Exit 0; no differences |
+| Document contract | Read `packages/core/src/modules/sellers/types.ts` and its document service/routes | Administrator-requested workflow; PDF/JPEG/PNG; inclusive `10 * 1024 * 1024` byte maximum; open requests retain approval blockers |
+| Newer capabilities | `git ls-tree -r --name-only origin/main packages/core/src/modules apps/web/src/app/api` | Exit 0; applications, fulfilment, returns, statements, assistant, natural/photo search and background-work services present in upstream snapshot |
+| Automation availability | Read root/web manifests and workspace catalog; search for Playwright configuration | Vitest exists; declared Playwright/axe dependencies and browser-runner configuration are absent; task 01 remains necessary |
+| Capability coverage | Compare each capability matrix row with the coverage table above | All listed capabilities mapped to tasks 01 through 12 |
+| Formatting | `pnpm exec prettier --check temp/frontend/step-2-marketplace-completion` | Exit 0; `All matched files use Prettier code style!` |
+| Relative links | PowerShell procedure below | Exit 0; `PASS: 15 Markdown files; all relative link targets exist.` |
+| Whitespace | `git diff --check -- temp/frontend/step-2-marketplace-completion` | Exit 0; no whitespace errors; Git reported only its configured LF-to-CRLF conversion notices |
+| Section anchor | `rg -n '^## Completion evidence' temp/frontend/step-2-marketplace-completion/00-investigation.md` | Exit 0; heading exists for README's completion-evidence link |
+
+Run formatting and whitespace checks from the repository root:
+
+```powershell
+pnpm exec prettier --check temp/frontend/step-2-marketplace-completion
+git diff --check -- temp/frontend/step-2-marketplace-completion
+```
+
+Run this relative-link check from the repository root:
+
+```powershell
+$planFiles = Get-ChildItem -LiteralPath 'temp/frontend/step-2-marketplace-completion' -Filter '*.md'
+$brokenLinks = @()
+foreach ($planFile in $planFiles) {
+  $planText = Get-Content -Raw -LiteralPath $planFile.FullName
+  foreach ($planMatch in [regex]::Matches($planText, '\]\(([^)]+)\)')) {
+    $planTarget = $planMatch.Groups[1].Value.Split('#')[0]
+    if ($planTarget -and $planTarget -notmatch '^https?://') {
+      if (-not (Test-Path -LiteralPath (Join-Path $planFile.DirectoryName $planTarget))) {
+        $brokenLinks += "$($planFile.Name): $planTarget"
+      }
+    }
+  }
+}
+if ($brokenLinks.Count) {
+  $brokenLinks
+  throw 'Broken relative Markdown links'
+}
+Write-Output "PASS: $($planFiles.Count) Markdown files; all relative link targets exist."
+```
+
+The script checks target-file existence; the `completion-evidence` section anchor is checked against this document's heading separately.
+No application tests, lint/typecheck, build or browser journeys are needed for this documentation-only task, and none is claimed as run.
+Runtime correctness remains unverified here and is covered by the later implementation tasks.
+
+## Handover
+
+Task 00 is complete: source investigation and documentation checks passed.
+The next task is [01: Automation prerequisites](01-automation-prerequisites.md).
+It can rely on the verified source inventory, retained administrator-requested 10 MB document policy, capability coverage and local Stage 2 boundary.
+It must create the missing isolated browser-testing setup before later tasks claim end-to-end test coverage.

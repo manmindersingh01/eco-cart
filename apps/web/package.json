@@ -9,6 +9,11 @@
     "start": "next start",
     "typecheck": "next typegen && tsc",
     "test": "vitest run",
+    "test:harness": "vitest run --config vitest.harness.config.ts",
+    "test:e2e": "node scripts/test-e2e.ts",
+    "test:e2e:smoke": "node scripts/test-e2e.ts --project=chromium-desktop --project=chromium-phone --grep=@smoke",
+    "test:e2e:verify-harness": "vitest run --config vitest.harness.config.ts && node scripts/verify-e2e.ts",
+    "test:e2e:report": "node scripts/test-e2e-report.ts",
     "admin:create": "node --env-file-if-exists=.env scripts/create-admin.ts"
   },
   "dependencies": {
@@ -19,6 +24,8 @@
     "react-dom": "catalog:"
   },
   "devDependencies": {
+    "@axe-core/playwright": "catalog:",
+    "@playwright/test": "catalog:",
     "@tailwindcss/postcss": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",

@@ -2,6 +2,8 @@ import { LinkButton } from '@/components/ui/button'
 import { Card } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
 
+export const instant = false
+
 export default function AdminPage() {
   return (
     <div className="grid gap-8">

@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   title: 'Brands | EcoKart',
 }
 
+export const instant = false
+
 export default async function AdminBrandsPage({
   searchParams,
 }: PageProps<'/admin/brands'>) {

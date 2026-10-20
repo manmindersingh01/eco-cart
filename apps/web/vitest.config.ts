@@ -11,6 +11,7 @@ export default defineConfig({
     },
   },
   test: {
+    include: ['src/**/*.test.ts'],
     // These tests talk to a real PostgreSQL, Mailpit, and object storage.
     // On a busy laptop or a small CI runner a few take several seconds, so
     // Vitest's 5-second default made them fail at random; a real hang still

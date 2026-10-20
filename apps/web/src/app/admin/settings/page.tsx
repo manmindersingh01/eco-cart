@@ -1,5 +1,7 @@
 import { listSettings, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
+import AdminLoading from '../loading'
 import { SettingsEditor } from '@/components/admin/settings-editor'
 import { Notice } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
@@ -11,7 +13,17 @@ export const metadata: Metadata = {
   title: 'Platform settings | EcoKart',
 }
 
-export default async function AdminSettingsPage() {
+export const instant = false
+
+export default function AdminSettingsPage() {
+  return (
+    <Suspense fallback={<AdminLoading />}>
+      <AdminSettingsContent />
+    </Suspense>
+  )
+}
+
+async function AdminSettingsContent() {
   const context = await requireAdminPageContext('/admin/settings')
   const settings = await withContext(getDatabase(), context, (tx) =>
     listSettings(tx, context),

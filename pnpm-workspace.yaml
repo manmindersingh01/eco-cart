@@ -8,7 +8,9 @@ catalog:
   '@aws-sdk/client-s3': ^3.1146.0
   '@aws-sdk/s3-presigned-post': ^3.1146.0
   '@aws-sdk/s3-request-presigner': ^3.1146.0
+  '@axe-core/playwright': ^4.14.0
   '@better-auth/drizzle-adapter': ^1.7.7
+  '@playwright/test': ^1.64.1
   '@tailwindcss/postcss': ^4.3.3
   '@types/node': ^24.19.0
   '@types/pdfmake': ^0.3.3

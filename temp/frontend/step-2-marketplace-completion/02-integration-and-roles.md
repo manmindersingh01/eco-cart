@@ -64,7 +64,7 @@ Keep incoming `connection()` and `'use cache'` behaviour compatible with the ins
 | I08 | Existing admin settings/sellers/catalogue and seller edit journeys | No portal regression after integration |
 
 Extend auth core tests, `/api/me` route tests and proposed `e2e/role-access.spec.ts`.
-Run `pnpm check` and proposed `pnpm test:e2e:smoke` on the integrated commit.
+Run `pnpm check` and `pnpm test:e2e:smoke` on the integrated commit.
 After integration, run `pnpm demo:flow --base-url http://127.0.0.1:3211` only against the prepared isolated running stack.
 The demo creates data and is not a substitute for browser coverage.
 Inspect skips: a zero exit code with skipped required capabilities is not proof they passed.

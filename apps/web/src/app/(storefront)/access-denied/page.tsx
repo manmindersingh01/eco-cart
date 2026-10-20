@@ -1,4 +1,6 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
+import Loading from '../../loading'
 import { LinkButton } from '@/components/ui/button'
 import { Notice } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
@@ -18,9 +20,15 @@ function firstValue(value: string | string[] | undefined): string | null {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
 }
 
-export default async function AccessDeniedPage({
-  searchParams,
-}: AccessDeniedPageProps) {
+export default function AccessDeniedPage(props: AccessDeniedPageProps) {
+  return (
+    <Suspense fallback={<Loading />}>
+      <AccessDeniedContent {...props} />
+    </Suspense>
+  )
+}
+
+async function AccessDeniedContent({ searchParams }: AccessDeniedPageProps) {
   const query = await searchParams
   const area = firstValue(query.area) === 'seller' ? 'seller' : 'administrator'
   const sellerNotReady = firstValue(query.reason) === 'seller-not-ready'

@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   title: 'Categories | EcoKart',
 }
 
+export const instant = false
+
 function serialiseCategory(
   node: Awaited<ReturnType<typeof getFullCategoryTree>>[number],
 ): CategoryNode {

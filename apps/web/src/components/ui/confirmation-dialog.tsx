@@ -63,6 +63,24 @@ export function ConfirmationDialog({
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         onClose={restoreFocus}
+        onKeyDown={(event) => {
+          if (event.key !== 'Tab') return
+          // Native modal dialogs can send boundary Tab presses to browser
+          // chrome. Keep keyboard navigation within the decision controls.
+          const controls =
+            event.currentTarget.querySelectorAll<HTMLButtonElement>(
+              'button:not(:disabled)',
+            )
+          const first = controls[0]
+          const last = controls[controls.length - 1]
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault()
+            last?.focus()
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault()
+            first?.focus()
+          }
+        }}
         className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-xl border bg-surface p-0 text-foreground shadow-2xl backdrop:bg-black/55"
       >
         <div className="p-6">

@@ -1,6 +1,8 @@
 import { getOwnProduct, NotFoundError, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { Suspense } from 'react'
+import SellerLoading from '../../loading'
 import { ProductEditor } from '@/components/seller/product-editor'
 import { getDatabase } from '@/lib/db'
 import { requireSellerPageContext } from '@/lib/page-auth'
@@ -11,7 +13,19 @@ export const metadata: Metadata = {
   title: 'Product editor | EcoKart',
 }
 
-export default async function SellerProductPage({
+export const instant = false
+
+export default function SellerProductPage(
+  props: PageProps<'/seller/products/[id]'>,
+) {
+  return (
+    <Suspense fallback={<SellerLoading />}>
+      <SellerProductContent {...props} />
+    </Suspense>
+  )
+}
+
+async function SellerProductContent({
   params,
 }: PageProps<'/seller/products/[id]'>) {
   const { id } = await params

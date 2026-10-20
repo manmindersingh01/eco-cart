@@ -5,11 +5,12 @@
 | Status | Planned |
 | Implemented | No |
 | Depends on | 01 through 11, or an explicit reviewed scope deferral |
-| Blocks | Release sign-off |
+| Blocks | Stage 2 local application sign-off and handover to Stage 3 |
 
 ## Outcome
 
 Produce a repeatable release result with minimal routine manual verification.
+This is the local Stage 2 release gate; Stage 3 implements deployment and final production finalisation.
 Do not turn green unit tests into a claim that browser journeys, real Safari, production credentials or financial operations were checked.
 Carry pending decisions, skipped tests and missing client inputs as explicit release items.
 
@@ -36,14 +37,14 @@ Use bounded worker/provider timeouts and artifact retention appropriate to failu
 3. Confirm user remarks are traceable to implemented acceptance cases or explicit deferrals.
 4. Install the committed lockfile and test browsers; verify service/tool prerequisites.
 5. Run `pnpm check` once on the final code.
-6. Run proposed `pnpm test:e2e:smoke` and full `pnpm test:e2e` on isolated resources.
+6. Run `pnpm test:e2e:smoke` and full `pnpm test:e2e` on isolated resources.
 7. Run `pnpm demo:flow --base-url http://127.0.0.1:3211` against the prepared isolated stack after verifying the launcher-selected URL.
 8. Inspect failures, unexpected skips, screenshots, accessibility findings and console errors.
 9. Complete only the narrow manual checks below.
 10. Fill every task's evidence table with actual results; publish a release summary inside this folder and update README tracking.
 
-The E2E command names and port are proposed by task 01.
-Use their implemented equivalents and actual configured port when this step runs.
+The E2E commands are implemented by task 01 using an isolated local development server.
+The launcher probes port 3211 and falls back to an available port; use its actual configured origin when this step runs.
 The API demo may require seeded settings/accounts and supported fake-provider configuration; inspect its implementation and don't point it at production.
 Do not treat exit code 0 with skipped included functionality as success.
 
@@ -61,14 +62,15 @@ Do not treat exit code 0 with skipped included functionality as success.
 Automated WebKit, axe, focus and viewport tests replace repeated routine checks but do not prove real Safari/VoiceOver behaviour.
 Keep this manual pass once per release candidate unless a relevant fix requires repeating it.
 
-### Business and environment inputs
+### Stage 3 handover: business and production environment inputs
 
 Confirm approved policy/company text, document policy and tax/open design decisions with their owner.
 Confirm production email/SMS delivery, storage/CDN/private access, ffmpeg tooling, migration/queue readiness and worker configuration in the deployment runbook.
 The account owner must supply/approve production payment settings and the provider-specific sandbox/webhook check before online payments are enabled.
 Confirm payout/refund recording language matches the real operational procedure; no UI test proves an external bank transfer happened.
 Keep secrets out of evidence.
-These are explicit environment/business readiness items, not an instruction to deploy during this plan.
+Record these as Stage 3 handover items rather than blockers for local Stage 2 development using test data and provider stand-ins.
+They must be completed before production launch; this task does not implement deployment.
 
 ## Final completion gate
 
@@ -80,7 +82,8 @@ These are explicit environment/business readiness items, not an instruction to d
 - Guest/account and combined-role journeys keep ownership and session boundaries intact.
 - Public cache invalidation and uncached personal pages are verified in a production-like Next.js run.
 - CI and browser reports identify candidate commit, versions, environment and artifacts.
-- Remaining real Safari, accessibility and client/environment inputs are recorded honestly.
+- Remaining real Safari and accessibility checks have observed results or explicit outstanding items.
+- Production client/environment inputs are recorded as Stage 3 handover items, separate from local test results.
 
 ## Completion evidence
 

@@ -1,8 +1,15 @@
 # Marketplace completion: backend alignment and frontend delivery
 
 Prepared on 20 October 2026.
-This is an implementation plan, not an implementation report.
-Only documentation is delivered by this change.
+This folder tracks the implementation plan and each task's completion evidence.
+The initial delivery was documentation only; subsequent implementation and test results are recorded in the task files.
+
+## Stage boundary
+
+Stage 2 delivers and verifies the local application, including automated tests, against local services and provider stand-ins.
+Stage 3 is the final deployment and finalisation stage, covering AWS infrastructure, deployment automation, backups and restore, production monitoring, live provider configuration and final client sign-off.
+Task 12 is the Stage 2 local release gate and handover to Stage 3; it does not implement production deployment.
+Production inputs listed there are handover items, not prerequisites for completing local development with test data and stand-ins.
 
 ## Start here
 
@@ -21,13 +28,14 @@ Carry that discrepancy as historical evidence debt, not proof of a broken featur
 
 | Source | Snapshot | How used |
 | --- | --- | --- |
-| Local frontend checkout | `bf44e579ffcba709715e964f31dd917d8e3ce5b1` | Actual currently integrated frontend and backend |
+| Original application snapshot | `bf44e579ffcba709715e964f31dd917d8e3ce5b1` | Frontend and backend inspected for the original investigation |
+| Task 00 verification checkout | `901b685fdd74281966de5b13545a850b6d18ee6d` | Rechecked application code/configuration unchanged from the original snapshot; planning documents committed |
 | Locally available `origin/main` | `8c73cd7751f38661ffafd8e31902aff9243ff388` | Newer backend inspected with `git show` and `git ls-tree` |
 | User requests | Root `remarks.md`, read on 20 October 2026 | Requested documents, minimum quantity, and media presentation |
 | Architecture | `docs/system-design.md`, including the newer snapshot | Services, permissions, money, transactions, and caching |
 | Backend tracker | `docs/backend-spec.md` | Historical build order; status cells lag some code |
 
-No fetch, pull, merge, migration, dependency installation, app execution, or application test was performed for this documentation task.
+The original source investigation performed no fetch, pull, merge, migration, dependency installation, app execution or application test.
 `origin/main` means the local remote-tracking reference, not a claim about the live GitHub head.
 Your existing changes to `ADITYA.md` and `remarks.md` must be preserved.
 An upstream instruction or decision is not silently adopted into this checkout: task 02 reconciles it explicitly.
@@ -46,8 +54,8 @@ Confirm actual remote names again when implementation starts.
 
 | Order | Task | Dependencies | Proposed branch | Implemented | Status |
 | --- | --- | --- | --- | --- | --- |
-| 00 | [Investigation and gap inventory](00-investigation.md) | None | Documentation only | Yes, investigation only | Code inspected; runtime unverified |
-| 01 | [Automation prerequisites](01-automation-prerequisites.md) | 00 | `frontend/step-2-test-foundation` | No | Planned |
+| 00 | [Investigation and gap inventory](00-investigation.md) | None | Documentation only | Yes, investigation only | Complete; source and documentation verified; runtime unverified |
+| 01 | [Automation prerequisites](01-automation-prerequisites.md) | 00 | Current `step-2-marketplace-completion` branch | Yes | Complete; 24 browser tests, harness verification and `pnpm check` passed |
 | 02 | [Backend integration and role compatibility](02-integration-and-roles.md) | 01 | `frontend/step-3-backend-alignment` | No | Planned |
 | 03 | [Remarks decisions and backend changes](03-remarks-backend.md) | 02 | No separate backend branch unless verification exposes a defect | No | Existing document workflow and 10 MB limit confirmed |
 | 04 | [Seller applications and verification](04-seller-onboarding.md) | 02 | `frontend/step-4-seller-onboarding` | No | Planned |
@@ -96,7 +104,7 @@ Update architecture/specification documents in the same implementation change wh
 
 The investigation is based on read-only source and Git inspection.
 Formatting and relative-link checks are documentation checks only.
-Application tests remain unrun in this documentation delivery.
+Application tests were not run for the original documentation delivery; later task evidence records their own test runs.
 Record actual documentation check results in the final handover, without copying historical test counts as current proof.
 
 Documentation check evidence, 20 October 2026:
@@ -105,4 +113,10 @@ Documentation check evidence, 20 October 2026:
 - A PowerShell relative-link scan of all 15 Markdown files returned exit code 0 and `PASS: 15 Markdown files; all relative links resolve.`.
 - Repository-wide `git diff --check` reported existing trailing whitespace in the user's edited `remarks.md`, line 2.
   That file was left unchanged by this documentation task.
-- No application tests or browser journeys were run, and none of the implementation tasks is marked complete.
+- No application tests or browser journeys were run for that original documentation-only delivery.
+
+Task 00 finalisation evidence is recorded in [the investigation](00-investigation.md#completion-evidence).
+Task 01 implementation and verification are recorded in [the automation task](01-automation-prerequisites.md).
+It provides working root browser commands, real local OTP/upload journeys, automated accessibility/keyboard checks and CI configuration.
+The final local verification passed 24 browser tests, four harness unit tests, three expected-failure probes and the repository's 1,048 package tests plus production build.
+Tasks 02 through 12 remain planned.

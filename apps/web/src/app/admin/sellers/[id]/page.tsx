@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   title: 'Seller details | EcoKart',
 }
 
+export const instant = false
+
 export default async function SellerDetailPage({
   params,
 }: PageProps<'/admin/sellers/[id]'>) {

@@ -1,4 +1,6 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
+import Loading from '../../loading'
 import { SignInForm } from '@/components/auth/sign-in-form'
 import { Card } from '@/components/ui/feedback'
 import { safeReturnTo } from '@/lib/auth-routing'
@@ -18,7 +20,15 @@ function firstValue(value: string | string[] | undefined): string | null {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
 }
 
-export default async function SignInPage({ searchParams }: SignInPageProps) {
+export default function SignInPage(props: SignInPageProps) {
+  return (
+    <Suspense fallback={<Loading />}>
+      <SignInContent {...props} />
+    </Suspense>
+  )
+}
+
+async function SignInContent({ searchParams }: SignInPageProps) {
   const query = await searchParams
   const returnTo = safeReturnTo(firstValue(query.returnTo))
   const reason = firstValue(query.reason)

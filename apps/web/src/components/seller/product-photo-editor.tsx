@@ -246,6 +246,7 @@ export function ProductPhotoEditor({
           <input
             ref={inputRef}
             type="file"
+            aria-label="Product photos"
             accept="image/jpeg,image/png,image/webp,image/avif"
             multiple
             className="sr-only"

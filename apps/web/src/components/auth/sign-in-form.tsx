@@ -36,6 +36,7 @@ function authErrorMessage(error: {
 
 export function SignInForm({ returnTo, reason }: SignInFormProps) {
   const [step, setStep] = useState<'email' | 'code'>('email')
+  const [ready, setReady] = useState(false)
   const [email, setEmail] = useState('')
   const [otp, setOtp] = useState('')
   const [pending, setPending] = useState<PendingAction>(null)
@@ -61,6 +62,7 @@ export function SignInForm({ returnTo, reason }: SignInFormProps) {
       else emailInput.current?.focus()
     } else {
       hasChangedStep.current = true
+      setReady(true)
     }
   }, [step])
 
@@ -191,12 +193,12 @@ export function SignInForm({ returnTo, reason }: SignInFormProps) {
               value={email}
               autoComplete="email"
               required
-              disabled={pending !== null}
+              disabled={!ready || pending !== null}
               placeholder="you@example.com"
               onChange={(event) => setEmail(event.target.value)}
             />
           </Field>
-          <Button type="submit" disabled={pending !== null}>
+          <Button type="submit" disabled={!ready || pending !== null}>
             {pending === 'sending' ? 'Sending code...' : 'Send sign-in code'}
           </Button>
           <p className="text-sm text-muted">

@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   title: 'Business profile | EcoKart',
 }
 
+export const instant = false
+
 export default async function SellerProfilePage() {
   const context = await requireSellerPageContext('/seller/profile')
   const seller = await getOwnSeller(getDatabase(), context)
