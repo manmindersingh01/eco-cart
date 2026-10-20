@@ -68,7 +68,7 @@ export function BrandDiscovery({
     <div className="grid gap-5" aria-busy={pending}>
       <form
         onSubmit={submitSearch}
-        className="flex flex-col gap-3 sm:flex-row sm:items-end"
+        className="flex flex-col gap-3 sm:flex-row sm:items-center"
       >
         <Field
           label="Find a brand"
