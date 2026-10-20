@@ -12,6 +12,9 @@ Real Safari and assistive-technology checks remain explicit task 12 release work
 
 Starting frontend head: `d00339abf5febb5a87d60f614dd25f54b9652c80`.
 Fetched and reviewed backend head: `8c73cd7751f38661ffafd8e31902aff9243ff388`.
+Verified implementation merge: `a0ddc7c866d231e0e3a9cb2e7bf08aa5b82a0dcc`, with those two heads as its parents.
+The final check ran against that implementation's working tree before committing; only completion documentation changed afterwards.
+The merge is local and has not been pushed.
 The starting worktree was clean.
 The incoming migration journal and migrations 0031 through 0043 were retained without renaming or editing applied migrations.
 The merged instructions adopt the recorded 20 October combined buyer/seller decision, as approved in the implementation plan.
