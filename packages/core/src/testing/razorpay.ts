@@ -70,10 +70,24 @@ const orderRequest = z.object({
   notes: z.record(z.string(), z.string()),
 })
 
-export async function startFakeRazorpay(): Promise<FakeRazorpay> {
-  const keyId = `rzp_test_${randomBytes(6).toString('hex')}`
-  const keySecret = `test-key-secret-${randomBytes(8).toString('hex')}`
-  const webhookSecret = `test-webhook-secret-${randomBytes(8).toString('hex')}`
+/**
+ * Starts the stand-in with new keys on a free port, or, for a local run
+ * (`pnpm demo:flow`), with the keys and the port a running web app was given.
+ */
+export async function startFakeRazorpay(
+  fixed: {
+    keyId: string
+    keySecret: string
+    webhookSecret: string
+    port: number
+  } | null = null,
+): Promise<FakeRazorpay> {
+  const keyId = fixed?.keyId ?? `rzp_test_${randomBytes(6).toString('hex')}`
+  const keySecret =
+    fixed?.keySecret ?? `test-key-secret-${randomBytes(8).toString('hex')}`
+  const webhookSecret =
+    fixed?.webhookSecret ??
+    `test-webhook-secret-${randomBytes(8).toString('hex')}`
   const authorization = `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`
   const orders = new Map<string, FakeOrder>()
   const payments = new Map<string, FakePayment>()
@@ -114,7 +128,10 @@ export async function startFakeRazorpay(): Promise<FakeRazorpay> {
     }
     return error(404, 'The requested URL was not found on the server')
   })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(fixed?.port ?? 0, '127.0.0.1', resolve)
+  })
   const address = server.address()
   if (!address || typeof address === 'string') {
     throw new Error('The fake Razorpay is not listening on a port')

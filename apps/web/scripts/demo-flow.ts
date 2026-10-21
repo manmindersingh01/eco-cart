@@ -8,17 +8,27 @@ import {
   ensureAdministrator,
   formatRupees,
   loadAuthConfig,
+  loadRazorpayConfig,
   requireEnv,
 } from '@ecokart/core'
-import { createTestVideo, testPdf } from '@ecokart/core/testing'
+import {
+  createTestVideo,
+  startFakeRazorpay,
+  testPdf,
+  type FakeRazorpay,
+} from '@ecokart/core/testing'
 
 /*
  * Walks the whole marketplace story through the real HTTP APIs of a running
  * web app and worker, the way the frontend will:
  *   pnpm demo:flow [--base-url http://localhost:3000] [--mailpit-url http://localhost:8025]
- * An administrator sets up a seller, the seller lists a product, a buyer
- * orders it with cash on delivery, the seller delivers it, and the buyer
- * downloads the invoice and reviews it. Every run uses new people and a new
+ *                  [--seller-joins applies|created]
+ * A buyer applies to sell and an administrator approves them (or, with
+ * `--seller-joins created`, the administrator creates the seller), the
+ * seller lists a product, a buyer orders it with cash on delivery and
+ * online, the seller delivers it, and the money reaches the seller's ledger
+ * and a payout. Online payment runs against the stand-in Razorpay server
+ * when the web app's RAZORPAY_* settings point at a local address. Every run uses new people and a new
  * product, so it can run again and again on the same local database. Sign-in
  * codes are read from Mailpit, so it only works against the local services.
  */
@@ -33,8 +43,17 @@ const { values } = parseArgs({
       type: 'string',
       default: process.env.MAILPIT_URL ?? 'http://localhost:8025',
     },
+    'seller-joins': { type: 'string', default: 'applies' },
   },
 })
+if (
+  values['seller-joins'] !== 'applies' &&
+  values['seller-joins'] !== 'created'
+) {
+  console.error('--seller-joins must be applies or created')
+  process.exit(1)
+}
+const sellerApplies = values['seller-joins'] === 'applies'
 const baseUrl = values['base-url'].replace(/\/$/, '')
 const mailpitUrl = values['mailpit-url'].replace(/\/$/, '')
 
@@ -45,6 +64,32 @@ const emails = {
   admin: `demo-admin-${tag}@ecokart.test`,
   seller: `demo-seller-${tag}@ecokart.test`,
   buyer: `demo-buyer-${tag}@example.test`,
+}
+
+/*
+ * Online payment. The web app reads its Razorpay settings when it starts, so
+ * a local run gives it and this script the same stand-in settings, for
+ * example:
+ *   RAZORPAY_KEY_ID=rzp_test_ecokartdemo RAZORPAY_KEY_SECRET=demo-razorpay-key-secret
+ *   RAZORPAY_WEBHOOK_SECRET=demo-razorpay-webhook-secret RAZORPAY_API_URL=http://127.0.0.1:4790
+ * The script then plays Razorpay on that port. It never talks to a real one.
+ */
+const razorpayConfig = loadRazorpayConfig()
+const razorpayUrl = razorpayConfig ? new URL(razorpayConfig.apiUrl) : null
+let razorpayOff: string | null = null
+let razorpay: FakeRazorpay | null = null
+if (!razorpayConfig || !razorpayUrl) {
+  razorpayOff =
+    'online payment is off: start the web app and this run with RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, and RAZORPAY_API_URL=http://127.0.0.1:<port> for the stand-in'
+} else if (!['127.0.0.1', 'localhost'].includes(razorpayUrl.hostname)) {
+  razorpayOff = `RAZORPAY_API_URL is ${razorpayUrl.origin}, not a local stand-in; the demo never pays a real Razorpay`
+} else {
+  razorpay = await startFakeRazorpay({
+    keyId: razorpayConfig.keyId,
+    keySecret: razorpayConfig.keySecret,
+    webhookSecret: razorpayConfig.webhookSecret,
+    port: Number(razorpayUrl.port),
+  })
 }
 
 /* ---------- Output ---------- */
@@ -257,7 +302,7 @@ async function emailSentTo(
  * email becomes a buyer account. Waits out the one-minute limit on codes from
  * one address if an earlier run used it up.
  */
-async function signIn(browser: Browser, email: string): Promise<string> {
+async function signIn(browser: Browser, email: string): Promise<string[]> {
   const since = Date.now() - 1000
   let sent = await browser.post('/api/auth/email-otp/send-verification-otp', {
     email,
@@ -280,7 +325,9 @@ async function signIn(browser: Browser, email: string): Promise<string> {
     otp: await codeSentTo(email, since),
   })
   expectStatus(signedIn, 200, 'Signing in with the code')
-  return text(await browser.get('/api/me'), 'role')
+  const me = await browser.get('/api/me')
+  const roles = pick(me, 'roles')
+  return Array.isArray(roles) ? roles.map(String) : [text(me, 'role')]
 }
 
 /* ---------- Files the people upload ---------- */
@@ -356,26 +403,75 @@ interface Step {
   skip?: string
 }
 
-const NOT_BUILT = 'skipped: not built yet'
-
 const capitalLetter = () => String.fromCodePoint(65 + randomInt(26))
+
+/** The stock of the demo product's first variant, as its seller sees it. */
+async function stockNow(): Promise<number> {
+  const answer = await seller.get(`/api/seller/products/${story.productId}`)
+  const variant = list(answer, 'product.variants').find(
+    (item) => item.id === story.variantId,
+  )
+  return Number(variant?.stock)
+}
+
+/** How many sale entries the seller's ledger has for one order. */
+async function salesOf(orderId: string): Promise<number> {
+  const ledger = await seller.get('/api/seller/ledger?limit=100')
+  return list(ledger, 'items').filter(
+    (entry) => entry.orderId === orderId && entry.entryType === 'sale',
+  ).length
+}
+
+/** The business details a seller gives, the same on both ways in. */
+function businessDetails() {
+  const pan = `DEMO${capitalLetter()}${String(randomInt(10_000)).padStart(4, '0')}${capitalLetter()}`
+  return {
+    displayName: `Demo Steelworks ${tag}`,
+    legalName: `Demo Steelworks ${tag} Private Limited`,
+    gstin: `27${pan}1Z5`,
+    pan,
+    line1: '12 MG Road',
+    city: 'Pune',
+    stateCode: '27',
+    pincode: '411001',
+    supportEmail: `support-${tag}@example.test`,
+    supportPhone: '+919800000000',
+    invoicePrefix: randomBytes(2).toString('hex').toUpperCase(),
+  }
+}
+
+/** A buyer signs up and applies to sell, keeping their buyer account. */
+async function applyAsBuyer(): Promise<string> {
+  const roles = await signIn(seller, emails.seller)
+  if (roles.join() !== 'buyer')
+    fail(`signed up as ${roles.join(' and ')}, not a buyer`)
+  expectStatus(
+    await seller.post('/api/auth/update-user', { name: 'Demo Seller Owner' }),
+    200,
+    'Saving the applicant’s name',
+  )
+  const applied = expectStatus(
+    await seller.post('/api/account/seller-application', businessDetails()),
+    201,
+    'Applying to sell',
+  )
+  story.sellerId = text(applied, 'application.id')
+  const pending = expectStatus(
+    await admin.get('/api/admin/sellers?status=pending&limit=100'),
+    200,
+    'The administrator’s pending sellers',
+  )
+  if (!list(pending, 'items').some((item) => item.id === story.sellerId)) {
+    fail('the application is not in the administrator’s pending list')
+  }
+  return `${emails.seller} applied for ${text(applied, 'application.displayName')}; it is ${text(applied, 'application.status')} in the administrator’s list`
+}
 
 /** The administrator creates the seller's business and sign-in account. */
 async function createSellerAsAdministrator(): Promise<string> {
-  const pan = `DEMO${capitalLetter()}${String(randomInt(10_000)).padStart(4, '0')}${capitalLetter()}`
   const created = expectStatus(
     await admin.post('/api/admin/sellers', {
-      displayName: `Demo Steelworks ${tag}`,
-      legalName: `Demo Steelworks ${tag} Private Limited`,
-      gstin: `27${pan}1Z5`,
-      pan,
-      line1: '12 MG Road',
-      city: 'Pune',
-      stateCode: '27',
-      pincode: '411001',
-      supportEmail: `support-${tag}@example.test`,
-      supportPhone: '+919800000000',
-      invoicePrefix: randomBytes(2).toString('hex').toUpperCase(),
+      ...businessDetails(),
       owner: { email: emails.seller, name: 'Demo Seller Owner' },
     }),
     201,
@@ -405,8 +501,9 @@ const steps: Step[] = [
       } finally {
         await pool.end()
       }
-      const role = await signIn(admin, emails.admin)
-      if (role !== 'admin') fail(`signed in as ${role}, not admin`)
+      const roles = await signIn(admin, emails.admin)
+      if (!roles.includes('admin'))
+        fail(`signed in as ${roles.join(' and ')}, not admin`)
       return `${emails.admin} signed in with the code from Mailpit`
     },
   },
@@ -486,18 +583,16 @@ const steps: Step[] = [
       return `${windowNote}; ${name} (GST ${Number(category.gstRateBps) / 100}%) and ${brandName} are ready`
     },
   },
-  // How the seller joins. Once seller applications land
-  // (backend/seller-applications), the skipped step below replaces the one
-  // after it: the seller signs in as a buyer and applies, and the rest of the
-  // story stays the same.
-  {
-    name: 'A buyer applies to become a seller',
-    skip: `${NOT_BUILT}: seller applications are on their way (backend/seller-applications), so the administrator creates the seller`,
-  },
-  {
-    name: 'The administrator creates a seller',
-    run: createSellerAsAdministrator,
-  },
+  // How the seller joins; the rest of the story is the same either way.
+  sellerApplies
+    ? {
+        name: 'A buyer signs up and applies to become a seller',
+        run: applyAsBuyer,
+      }
+    : {
+        name: 'The administrator creates a seller',
+        run: createSellerAsAdministrator,
+      },
   {
     name: 'The administrator asks for the seller’s GST certificate',
     async run() {
@@ -526,10 +621,15 @@ const steps: Step[] = [
     },
   },
   {
-    name: 'The seller signs in and uploads the GST certificate',
+    name: 'The seller uploads the GST certificate',
     async run() {
-      const role = await signIn(seller, emails.seller)
-      if (role !== 'seller') fail(`signed in as ${role}, not seller`)
+      // An applicant is signed in already; a seller the administrator made
+      // signs in for the first time here.
+      if (seller.cookies.size === 0) {
+        const roles = await signIn(seller, emails.seller)
+        if (!roles.includes('seller'))
+          fail(`signed in as ${roles.join(' and ')}, not seller`)
+      }
       const pdf = testPdf()
       const form = expectStatus(
         await seller.post(`/api/seller/documents/${story.documentId}/uploads`, {
@@ -577,7 +677,15 @@ const steps: Step[] = [
       )
       const status = text(approved, 'seller.status')
       if (status !== 'approved') fail(`the seller is ${status}`)
-      return 'document accepted, seller approved'
+      if (!sellerApplies) return 'document accepted, seller approved'
+      // The applicant's one login now buys and sells.
+      const roles = pick(await seller.get('/api/me'), 'roles')
+      const both = Array.isArray(roles)
+        ? roles.map(String).toSorted().join(' and ')
+        : ''
+      if (both !== 'buyer and seller')
+        fail(`the applicant's login is ${both || 'unknown'}`)
+      return 'document accepted, seller approved; the same login is now buyer and seller'
     },
   },
   {
@@ -862,8 +970,9 @@ const steps: Step[] = [
   {
     name: 'A buyer signs up with an email code',
     async run() {
-      const role = await signIn(buyer, emails.buyer)
-      if (role !== 'buyer') fail(`signed up as ${role}, not buyer`)
+      const roles = await signIn(buyer, emails.buyer)
+      if (roles.join() !== 'buyer')
+        fail(`signed up as ${roles.join(' and ')}, not a buyer`)
       expectStatus(
         await buyer.post('/api/auth/update-user', { name: 'Asha Verma' }),
         200,
@@ -960,6 +1069,7 @@ const steps: Step[] = [
         201,
         'Saving the address',
       )
+      story.addressId = text(address, 'address.id')
       const options = expectStatus(
         await buyer.get('/api/checkout'),
         200,
@@ -1147,7 +1257,7 @@ const steps: Step[] = [
       })
       if (added.status === 403) {
         skip(
-          `${NOT_BUILT}: one login cannot both buy and sell yet (backend/seller-applications); the cart answered ${describe(added)}`,
+          `a seller the administrator made has no buyer account (run with --seller-joins applies); the cart answered ${describe(added)}`,
         )
       }
       expectStatus(added, 200, 'Adding to the cart')
@@ -1173,6 +1283,96 @@ const steps: Step[] = [
         'Placing the order',
       )
       return `${emails.seller} bought ${text(product, 'product.title')} as order ${text(placed, 'order.orderNumber')}`
+    },
+  },
+  {
+    name: 'The buyer pays online through Razorpay, and a replayed webhook changes nothing',
+    async run() {
+      if (!razorpay) skip(razorpayOff ?? 'online payment is off')
+
+      const stockBefore = await stockNow()
+      const added = expectStatus(
+        await buyer.post('/api/cart/items', {
+          variantId: story.variantId,
+          quantity: 2,
+        }),
+        200,
+        'Adding 2 to the cart again',
+      )
+      const placed = expectStatus(
+        await buyer.post('/api/checkout', {
+          addressId: story.addressId,
+          paymentMethod: 'razorpay',
+          expectedTotalPaise: Number(text(added, 'cart.totalPaise')),
+        }),
+        201,
+        'Placing the online order',
+      )
+      const orderId = text(placed, 'order.id')
+      const orderNumber = text(placed, 'order.orderNumber')
+      if (text(placed, 'order.status') !== 'pending_payment') {
+        fail(`the order is ${text(placed, 'order.status')} before payment`)
+      }
+
+      // The buyer pays on Razorpay's checkout, and Razorpay tells EcoKart.
+      const payment = razorpay.pay(text(placed, 'payment.razorpayOrderId'))
+      const delivery = razorpay.webhook('payment.captured', payment)
+      const deliver = async (signature: string) => {
+        const response = await fetch(`${baseUrl}/api/webhooks/razorpay`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-razorpay-signature': signature,
+            'x-razorpay-event-id': delivery.eventId,
+          },
+          body: delivery.rawBody,
+        })
+        const body: unknown = await response.json()
+        return {
+          status: response.status,
+          outcome: isRecord(body) ? String(body.outcome ?? body.error) : '',
+        }
+      }
+      const first = await deliver(delivery.signature)
+      if (first.status !== 200)
+        fail(`the webhook answered ${first.status} ${first.outcome}`)
+      const order = expectStatus(
+        await buyer.get(`/api/account/orders/${orderId}`),
+        200,
+        'The paid order',
+      )
+      const paymentState = text(order, 'order.paymentState')
+      if (
+        text(order, 'order.status') !== 'confirmed' ||
+        paymentState !== 'paid'
+      ) {
+        fail(
+          `after the webhook the order is ${text(order, 'order.status')} and ${paymentState}`,
+        )
+      }
+      const stockPaid = await stockNow()
+      const salesPaid = await salesOf(orderId)
+
+      const replay = await deliver(delivery.signature)
+      if (replay.status !== 200)
+        fail(`the replay answered ${replay.status} ${replay.outcome}`)
+      const stockAfter = await stockNow()
+      const salesAfter = await salesOf(orderId)
+      if (stockAfter !== stockBefore - 2 || stockPaid !== stockAfter) {
+        fail(
+          `stock went ${stockBefore} -> ${stockPaid} -> ${stockAfter}, expected one drop of 2`,
+        )
+      }
+      if (salesPaid !== 1 || salesAfter !== 1) {
+        fail(
+          `the ledger has ${salesAfter} sale entries for the order, expected 1`,
+        )
+      }
+      const forged = await deliver('0'.repeat(64))
+      if (forged.status < 400 || forged.status >= 500) {
+        fail(`a forged signature answered ${forged.status}`)
+      }
+      return `${orderNumber} ${first.outcome} and ${paymentState}; the replay answered ${replay.outcome}; stock ${stockBefore} -> ${stockAfter} once, 1 sale in the ledger; a forged signature got ${forged.status}`
     },
   },
   {
@@ -1370,6 +1570,7 @@ for (const step of steps) {
     )
   }
 }
+await razorpay?.close()
 console.info(
   `\n${counts.pass} passed, ${counts.fail} failed, ${counts.skip} skipped`,
 )
