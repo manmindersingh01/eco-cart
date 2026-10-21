@@ -263,18 +263,14 @@ test('S01 S02 S03 S04 S05 S06 S07 S08 I02 I03 I04 @smoke applicant documents, de
       ).status(),
     ).toBe(403)
     await page.getByRole('button', { name: 'Refresh documents' }).click()
-    const upload = page.getByLabel('Upload Gst certificate', { exact: true })
+    const upload = page.getByLabel('Upload GST certificate', { exact: true })
     await expect(upload).toBeVisible()
     await upload.setInputFiles({
       name: 'empty.pdf',
       mimeType: 'application/pdf',
       buffer: Buffer.alloc(0),
     })
-    await expect(
-      page.getByText(
-        'Choose a non-empty file of at most 10 MB (10,485,760 bytes).',
-      ),
-    ).toBeVisible()
+    await expect(page.getByText('Choose a file of up to 10 MB.')).toBeVisible()
     expect(
       (
         await page.request.post(`/api/seller/documents/${requestId}/uploads`, {

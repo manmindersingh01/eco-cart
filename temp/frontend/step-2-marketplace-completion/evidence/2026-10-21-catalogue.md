@@ -204,3 +204,21 @@ No later application code changes were needed.
 | `pnpm check` on `3f65582` | Exit 0: formatting, lint, typecheck, 996 core + 264 web + 11 worker tests (1,271 total), and the Next.js 16.3.7 production build passed; local log `apps/web/.e2e/task05-latest-main-check.log` |
 | `pnpm test:e2e:smoke` on `3f65582` | Exit 0: 14 passed across Chromium desktop and phone, zero failures/skips/retries; run `a85024a208d7` cleaned its resources; includes the main detail-display changes and responsive portal labels |
 | `pnpm test:e2e -- --project=webkit-desktop --project=webkit-phone --grep=C01` on `3f65582` | Exit 0: two passed, zero failures/skips/retries; run `7101c3811951` cleaned its resources; verifies the updated product details, quantity and publication journey in WebKit |
+
+The verified detail-screen evidence was committed as `fa388c2`.
+Main advanced to `889928f` during verification, fixing the application layout, lifecycle feedback placement, page titles, document labels, portal links and sidebar behaviour.
+The next main pull produced merge `bd95c0e` without unresolved conflicts and retains all those upstream changes.
+The existing onboarding assertions were updated for main's `Upload GST certificate` label and `Choose a file of up to 10 MB.` message.
+The inclusive 10 MB policy and application behaviour were not changed locally.
+The moved application page left two ignored development route validators referencing its old filesystem path.
+After confirming no Next development server was running, only `.next/dev/types/validator.ts` and `.next-e2e/dev/types/validator.ts` were removed so the next build/server could regenerate them.
+No application route or configuration was reverted.
+
+| Final merged candidate command | Result |
+| --- | --- |
+| `pnpm check` on `bd95c0e` with the updated onboarding assertions | Exit 0: formatting, lint, typecheck, 996 core + 264 web + 11 worker tests (1,271 total) and production build passed; local log `apps/web/.e2e/task05-final-main-check.log` |
+| `pnpm test:e2e:smoke` on the same candidate | Exit 0: 14 passed, zero failures/skips/retries across Chromium desktop and phone; run `a655b7184ad9` cleaned its resources; validates the application layout, updated document labels, decisions, combined accounts and catalogue flow |
+
+Task 05 remains complete after integration.
+Actual Safari, screen-reader and browser zoom checks remain the documented task 12 release work.
+The final follow-up changes only the onboarding test's expected wording and this evidence; main's application changes remain intact.
