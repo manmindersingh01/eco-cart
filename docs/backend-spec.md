@@ -198,7 +198,7 @@ The five Better Auth tables (including `auth_rate_limits`) also have none, as th
 ### Done when
 
 - `pnpm db:up` then `pnpm db:migrate` builds every table on an empty database, and running `pnpm db:migrate` again reports that nothing changed.
-- `pnpm dev` starts the web app and the worker with their own database users, and `http://localhost:3000/api/health` reports the database as ok.
+- `pnpm dev` starts the web app and the worker with their own database users, and `http://localhost:3210/api/health` reports the database as ok.
 - The tests prove the row-level security rules for anonymous visitors, buyers, sellers, administrators, guests, and the worker, and that every table follows the schema rules.
 - `pnpm check` passes.
 
@@ -267,7 +267,7 @@ When she opens her orders, the database is asked as `ecokart_web` with `app.role
    Every successful administrator call (create user, set role, ban, unban, revoke sessions) writes an `audit_logs` row with the administrator, the action, the target user, and the IP address.
 8. **The first administrator.**
    `pnpm admin:create --email <email> --name <name>` creates an account with the role `admin`, or promotes an existing one, and writes an audit entry as `system`.
-   It refuses an account that owns a seller business (step 4), because one account has one role.
+   It refuses an account that owns a seller business (step 4), because administrator accounts must stay separate from buyer/seller accounts.
    That person then signs in with an email code like everyone else.
 
 ### Environment variables
@@ -414,11 +414,13 @@ Status: Done (6 October 2026).
 
 An administrator creates a seller business together with its owner's sign-in account, approves it, and can suspend and reinstate it.
 The seller signs in with an email code, sees their own business details, and can update their support contacts.
-A suspended seller can no longer sign in or act, and their listings disappear from the storefront.
+A suspended business cannot sell, and its listings disappear from the storefront.
+Seller-only accounts are also banned; combined buyer/seller accounts keep shopping (decision of 20 October 2026).
 
 For example, the client's pilot seller Green Basket is created by an administrator with the owner's email `ravi@greenbasket.in`.
 Ravi signs in with a code, and his requests run as `seller` with Green Basket's seller id.
-If Green Basket is suspended for fake listings, Ravi is signed out everywhere, cannot sign in again, and buyers stop seeing Green Basket's products, until an administrator reinstates it.
+If Green Basket is suspended for fake listings, buyers stop seeing its products and Ravi loses selling access until an administrator reinstates it.
+If Ravi also has the buyer role, he keeps shopping; a seller-only login is also banned.
 
 ### What gets built
 
@@ -433,12 +435,13 @@ If Green Basket is suspended for fake listings, Ravi is signed out everywhere, c
      Creating answers 201.
      It creates the owner's Better Auth account with the role `seller` and the `sellers` row with status `pending`.
      If the business row cannot be saved, the new account is removed again, so there is never a seller account without a business.
-     An email that already has an account is refused, because one account has one role.
+     An email that already has an account is refused by this administrator-created flow; an existing buyer uses the seller application flow instead.
    - **Approve** (administrators): `pending` to `approved`, recording `approved_at`.
      Approval needs a GSTIN and a PAN, because every sale needs a GST invoice from the seller.
-   - **Suspend** (administrators, with a reason): `approved` or `pending` to `suspended`, keeping the reason in `suspended_reason`, and Better Auth's ban on the owner's account, which also ends all their sessions.
+   - **Suspend** (administrators, with a reason): `approved` or `pending` to `suspended`, keeping the reason in `suspended_reason`.
+     Only a seller-only owner is also banned through Better Auth, ending their sessions; combined accounts keep buying.
    - **Reinstate** (administrators): `suspended` back to `approved`, or back to `pending` for a seller suspended before it was ever approved, clearing the reason and lifting the ban.
-     It always lifts the ban, which also repairs a ban left over from an earlier reinstatement that failed halfway.
+     For seller-only owners it lifts the ban, repairing an earlier partial reinstatement; a combined account's separate administrator ban is preserved.
    - **Repeating an action** (approving an approved seller, suspending a suspended one, reinstating one that is not suspended) changes nothing and answers 200.
      Approving a suspended seller answers 409.
    - **Edit** (administrators): any business detail, except that the invoice prefix is fixed once the first invoice exists (changing it then answers 409), and the GSTIN and PAN cannot be removed once the seller has been approved, even while suspended (since step 14).
@@ -485,10 +488,31 @@ If Green Basket is suspended for fake listings, Ravi is signed out everywhere, c
 - **The page cursor keeps microseconds.**
   PostgreSQL records times to the microsecond and JavaScript only to the millisecond, so a cursor rounded to milliseconds would skip or repeat sellers created in the same millisecond; a test proves the cursor does neither.
 
+### Application and document extension (20 October 2026)
+
+A buyer applies through `GET`, `POST` and `PATCH /api/account/seller-application`.
+The existing business row records pending, rejected, approved or suspended status.
+Only the account's own pending/rejected application may be edited; POST resubmits a rejected application.
+Approval adds the seller role through Better Auth while preserving the buyer role.
+Applicants can access their own administrator-requested documents using the explicit applicant context, but cannot manage products.
+Every open document request blocks approval until accepted or cancelled.
+PDF, JPEG and PNG uploads retain the inclusive 10 * 1024 * 1024 byte limit.
+Signing checks the declared size, storage enforces the signed form, registration queues a check, and the worker checks the actual bytes before review.
+Registration does not synchronously read or validate file contents.
+Application decisions and administrator document actions use the existing audit and outbox services.
+The document review queue must recognise rejected applications too, since their checked files remain available for review.
+Task 03 adds a route regression test for this case and includes `rejected` in the existing queue DTO status validation.
+The shared settlement statement status and download routes must also use `areaOf(request)` so a combined account can select its seller context with `?as=seller`.
+Task 02 verifies that selection, buyer-context refusal and unrelated-seller refusal through the real handlers.
+
+The frontend adds `/account/seller-application`, `/seller/documents`, `/admin/seller-documents` and `/admin/seller-documents/[id]`, and extends administrator seller details with rejection and document requests.
+Application forms expose only the allowed business fields, excluding roles, owner ids and commission.
+Uploads go directly to storage and poll processing for at most two minutes before offering a refresh.
+Existing administrator-created onboarding stays available.
+Implementation and verification records live in tasks 02, 03 and 04 under `temp/frontend/step-2-marketplace-completion/`.
+
 ### Not in this step
 
-- Sellers signing themselves up; administrators create every seller at launch.
-- Emails telling a seller their account was created, approved, or suspended; the outbox templates for these are a post-launch suggestion.
 - What happens to a suspended seller's open orders; administrators handle those by hand, with the order tools from step 13.
 - Bank details for payouts, which are recorded by administrators in the ledger step (step 15).
 
@@ -1609,3 +1633,6 @@ Green Basket's 101st call of the day is refused with 429, "You have used todayâ€
   The end-to-end check after the merge found that every 404 and 400 from the cached readers answered 500; they are now cached as answers, with a product address tag so a cached "not found" ends when the product is approved.
 - 20 October 2026: The build order table now shows where each step really stands.
   Steps 8, 11, and 12 were finished without their sections, and steps 13, 15, 18, 19, and 20 are being built; the note under the table says why.
+- 20 October 2026: Integrated the recorded buyer/seller role decision and application/document services with the existing portals and browser harness.
+  Updated step 4's historical single-role wording and documented the onboarding screens and asynchronous document checks.
+  Existing administrator-requested documents, the inclusive 10 MB policy, product minimum quantities and optional media limits are retained.

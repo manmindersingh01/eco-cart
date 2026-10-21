@@ -11,6 +11,7 @@ export default defineConfig({
     },
   },
   test: {
+    include: ['src/**/*.test.ts'],
     // These tests talk to a real PostgreSQL, Mailpit, and object storage.
     // On a busy laptop or a small CI runner a few take several seconds, so
     // Vitest's 5-second default made them fail at random; a real hang still
@@ -26,7 +27,7 @@ export default defineConfig({
       DATABASE_URL: database.webUrl,
       // For test fixtures and reading queued codes back.
       MIGRATION_DATABASE_URL: database.migrationUrl,
-      BETTER_AUTH_URL: 'http://localhost:3000',
+      BETTER_AUTH_URL: 'http://localhost:3210',
       BETTER_AUTH_SECRET: 'development-only-secret-for-tests',
       // "development-only-encryption-key!" in base64.
       MESSAGE_ENCRYPTION_KEY: 'ZGV2ZWxvcG1lbnQtb25seS1lbmNyeXB0aW9uLWtleSE=',

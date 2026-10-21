@@ -233,6 +233,7 @@ export async function createBrand(
       })
       .returning()
     const view = toView(row!)
+    await invalidateStorefront(tx, 'everything')
     await recordAuditEntry(tx, {
       ...administratorActor(context),
       action: 'brand.create',

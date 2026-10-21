@@ -304,9 +304,23 @@ export async function prepareProductVideo(
  * failing every video.
  */
 export async function checkVideoTools(tools: VideoTools): Promise<void> {
+  return checkVideoToolsWith(tools, run)
+}
+
+type ProgramRunner = typeof run
+
+/** The injectable runner keeps the tool-capability check portable in tests. */
+export async function checkVideoToolsWith(
+  tools: VideoTools,
+  runProgram: ProgramRunner,
+): Promise<void> {
   const tryRun = async (name: string, path: string, setting: string) => {
     try {
-      return await run(path, ['-hide_banner', '-version'], PROBE_TIMEOUT_MS)
+      return await runProgram(
+        path,
+        ['-hide_banner', '-version'],
+        PROBE_TIMEOUT_MS,
+      )
     } catch (error) {
       throw new Error(
         `${name} cannot run from "${path}". Install ffmpeg, or set ${setting} to where ${name} is.`,
@@ -316,7 +330,7 @@ export async function checkVideoTools(tools: VideoTools): Promise<void> {
   }
   await tryRun('ffprobe', tools.ffprobePath, 'FFPROBE_PATH')
   await tryRun('ffmpeg', tools.ffmpegPath, 'FFMPEG_PATH')
-  const encoders = await run(
+  const encoders = await runProgram(
     tools.ffmpegPath,
     ['-hide_banner', '-encoders'],
     PROBE_TIMEOUT_MS,

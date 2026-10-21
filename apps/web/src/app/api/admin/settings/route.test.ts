@@ -14,7 +14,7 @@ const ownerPool = createPool(
   'settings-route-test',
 )
 const owner = createDatabase(ownerPool)
-const base = 'http://localhost:3000/api/admin/settings'
+const base = 'http://localhost:3210/api/admin/settings'
 
 let adminCookie: string
 let buyerCookie: string

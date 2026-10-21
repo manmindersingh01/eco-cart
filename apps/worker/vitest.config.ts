@@ -18,7 +18,7 @@ export default defineConfig({
       WEB_DATABASE_URL: database.webUrl,
       // For test fixtures, such as a seller and a category.
       MIGRATION_DATABASE_URL: database.migrationUrl,
-      BETTER_AUTH_URL: 'http://localhost:3000',
+      BETTER_AUTH_URL: 'http://localhost:3210',
       BETTER_AUTH_SECRET: 'development-only-secret-for-tests',
       // The Mailpit catcher from compose.yaml, or CI's service container.
       MAILPIT_URL: process.env.MAILPIT_URL ?? 'http://localhost:8025',

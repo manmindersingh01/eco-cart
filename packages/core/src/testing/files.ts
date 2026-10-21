@@ -7,7 +7,10 @@
  * A one-page PDF. With `locked`, it needs a password to open: its
  * encryption entry holds a check value no password matches.
  */
-export function testPdf({ locked = false }: { locked?: boolean } = {}): Buffer {
+export function testPdf({
+  locked = false,
+  size,
+}: { locked?: boolean; size?: number } = {}): Buffer {
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
@@ -18,6 +21,13 @@ export function testPdf({ locked = false }: { locked?: boolean } = {}): Buffer {
         ]
       : []),
   ]
+  // A legal comment before the trailer pads boundary files without moving
+  // the objects or cross-reference table.
+  const padding = size === undefined ? 0 : size - testPdf({ locked }).length
+  if (padding < 2) {
+    if (size !== undefined)
+      throw new Error('PDF size must allow a padding comment')
+  }
   let pdf = '%PDF-1.4\n'
   const offsets: number[] = []
   for (const [index, object] of objects.entries()) {
@@ -32,6 +42,7 @@ export function testPdf({ locked = false }: { locked?: boolean } = {}): Buffer {
   const encryption = locked
     ? ` /Encrypt 4 0 R /ID [<${'01'.repeat(16)}> <${'01'.repeat(16)}>]`
     : ''
+  if (size !== undefined) pdf += `%${' '.repeat(padding - 2)}\n`
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R${encryption} >>\nstartxref\n${xref}\n%%EOF\n`
   return Buffer.from(pdf, 'latin1')
 }

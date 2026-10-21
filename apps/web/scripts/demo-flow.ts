@@ -15,7 +15,7 @@ import { createTestVideo, testPdf } from '@ecokart/core/testing'
 /*
  * Walks the whole marketplace story through the real HTTP APIs of a running
  * web app and worker, the way the frontend will:
- *   pnpm demo:flow [--base-url http://localhost:3000] [--mailpit-url http://localhost:8025]
+ *   pnpm demo:flow [--base-url http://localhost:3210] [--mailpit-url http://localhost:8025]
  * An administrator sets up a seller, the seller lists a product, a buyer
  * orders it with cash on delivery, the seller delivers it, and the buyer
  * downloads the invoice and reviews it. Every run uses new people and a new
@@ -27,7 +27,7 @@ const { values } = parseArgs({
   options: {
     'base-url': {
       type: 'string',
-      default: process.env.DEMO_BASE_URL ?? 'http://localhost:3000',
+      default: process.env.DEMO_BASE_URL ?? 'http://localhost:3210',
     },
     'mailpit-url': {
       type: 'string',
@@ -356,15 +356,14 @@ interface Step {
   skip?: string
 }
 
-const NOT_BUILT = 'skipped: not built yet'
-
 const capitalLetter = () => String.fromCodePoint(65 + randomInt(26))
 
-/** The administrator creates the seller's business and sign-in account. */
-async function createSellerAsAdministrator(): Promise<string> {
+/** A buyer applies with the account that will also sell once approved. */
+async function applyAsSeller(): Promise<string> {
+  await signIn(seller, emails.seller)
   const pan = `DEMO${capitalLetter()}${String(randomInt(10_000)).padStart(4, '0')}${capitalLetter()}`
   const created = expectStatus(
-    await admin.post('/api/admin/sellers', {
+    await seller.post('/api/account/seller-application', {
       displayName: `Demo Steelworks ${tag}`,
       legalName: `Demo Steelworks ${tag} Private Limited`,
       gstin: `27${pan}1Z5`,
@@ -376,13 +375,12 @@ async function createSellerAsAdministrator(): Promise<string> {
       supportEmail: `support-${tag}@example.test`,
       supportPhone: '+919800000000',
       invoicePrefix: randomBytes(2).toString('hex').toUpperCase(),
-      owner: { email: emails.seller, name: 'Demo Seller Owner' },
     }),
     201,
-    'Creating the seller',
+    'Applying to sell',
   )
-  story.sellerId = text(created, 'seller.id')
-  return `${text(created, 'seller.displayName')} is ${text(created, 'seller.status')}, owned by ${emails.seller}`
+  story.sellerId = text(created, 'application.id')
+  return `${text(created, 'application.displayName')} is ${text(created, 'application.status')}, owned by ${emails.seller}`
 }
 
 const steps: Step[] = [
@@ -486,17 +484,9 @@ const steps: Step[] = [
       return `${windowNote}; ${name} (GST ${Number(category.gstRateBps) / 100}%) and ${brandName} are ready`
     },
   },
-  // How the seller joins. Once seller applications land
-  // (backend/seller-applications), the skipped step below replaces the one
-  // after it: the seller signs in as a buyer and applies, and the rest of the
-  // story stays the same.
   {
     name: 'A buyer applies to become a seller',
-    skip: `${NOT_BUILT}: seller applications are on their way (backend/seller-applications), so the administrator creates the seller`,
-  },
-  {
-    name: 'The administrator creates a seller',
-    run: createSellerAsAdministrator,
+    run: applyAsSeller,
   },
   {
     name: 'The administrator asks for the seller’s GST certificate',
@@ -528,8 +518,9 @@ const steps: Step[] = [
   {
     name: 'The seller signs in and uploads the GST certificate',
     async run() {
-      const role = await signIn(seller, emails.seller)
-      if (role !== 'seller') fail(`signed in as ${role}, not seller`)
+      const role = text(await seller.get('/api/me'), 'role')
+      if (role !== 'buyer')
+        fail(`the pending applicant acts as ${role}, not buyer`)
       const pdf = testPdf()
       const form = expectStatus(
         await seller.post(`/api/seller/documents/${story.documentId}/uploads`, {
@@ -1145,11 +1136,6 @@ const steps: Step[] = [
       const added = await seller.post('/api/cart/items', {
         variantId: text(product, 'product.variants.0.id'),
       })
-      if (added.status === 403) {
-        skip(
-          `${NOT_BUILT}: one login cannot both buy and sell yet (backend/seller-applications); the cart answered ${describe(added)}`,
-        )
-      }
       expectStatus(added, 200, 'Adding to the cart')
       const address = expectStatus(
         await seller.post('/api/account/addresses', {
@@ -1320,7 +1306,7 @@ const steps: Step[] = [
       const statementId = text(asked, 'statement.id')
       await waitFor('the worker to make the statement', async () => {
         const answer = await seller.get(
-          `/api/settlement-statements/${statementId}`,
+          `/api/settlement-statements/${statementId}?as=seller`,
         )
         const status = pick(answer, 'statement.status')
         if (status === 'failed') fail('the statement could not be made')
@@ -1328,7 +1314,7 @@ const steps: Step[] = [
       })
       const link = await seller.call(
         'GET',
-        `/api/settlement-statements/${statementId}/file`,
+        `/api/settlement-statements/${statementId}/file?as=seller`,
         undefined,
         { redirect: 'manual' },
       )

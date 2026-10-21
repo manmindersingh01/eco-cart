@@ -2,6 +2,10 @@ import { fileURLToPath } from 'node:url'
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  // Browser tests never share the developer's Next.js cache or server lock.
+  ...(process.env.ECOKART_E2E === '1'
+    ? { distDir: '.next-e2e', devIndicators: false }
+    : {}),
   poweredByHeader: false,
   typedRoutes: true,
   // Tag caching for the public storefront (backend spec step 9, design doc 7).

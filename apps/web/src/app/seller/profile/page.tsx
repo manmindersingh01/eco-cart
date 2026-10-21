@@ -1,21 +1,18 @@
 import { getOwnSeller } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
-import { Suspense } from 'react'
 import { SellerProfileManager } from '@/components/seller/profile-manager'
-import { PageLoading } from '@/components/ui/page-loading'
 import type { SellerProfile } from '@/lib/seller-profile'
 import { getDatabase } from '@/lib/db'
-import { requireSeller } from '@/lib/request-context'
+import { requireSellerPageContext } from '@/lib/page-auth'
 
 export const metadata: Metadata = {
   title: 'Business profile',
 }
 
-/** The business profile of the seller signed in. */
-async function BusinessProfile() {
-  const requestHeaders = await headers()
-  const { context } = await requireSeller(requestHeaders)
+export const instant = false
+
+export default async function SellerProfilePage() {
+  const context = await requireSellerPageContext('/seller/profile')
   const seller = await getOwnSeller(getDatabase(), context)
   const serialised: SellerProfile = {
     ...seller,
@@ -25,12 +22,4 @@ async function BusinessProfile() {
   }
 
   return <SellerProfileManager initialSeller={serialised} />
-}
-
-export default function SellerProfilePage() {
-  return (
-    <Suspense fallback={<PageLoading />}>
-      <BusinessProfile />
-    </Suspense>
-  )
 }

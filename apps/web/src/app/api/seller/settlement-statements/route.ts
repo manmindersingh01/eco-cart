@@ -21,7 +21,7 @@ export const GET = handleErrors(async (request: Request) => {
  * Asks for a statement of the seller's ledger:
  * `{ "from": "2026-10-01", "to": "2026-10-31" }`, India dates, both
  * included. Answers 202, because the worker makes the file; follow it with
- * GET /api/settlement-statements/{id}.
+ * GET /api/settlement-statements/{id}?as=seller.
  */
 export const POST = handleErrors(async (request: Request) => {
   const { context } = await requireSeller(request.headers)

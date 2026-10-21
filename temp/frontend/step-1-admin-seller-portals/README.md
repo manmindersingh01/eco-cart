@@ -9,7 +9,7 @@
 | Delivery shape | One branch and one pull request, implemented as nine ordered subtasks |
 | Overall status | `in_progress` |
 | Implemented | No |
-| Last reviewed | 10 October 2026 |
+| Last reviewed | 18 October 2026 |
 
 ## Decision
 
@@ -205,7 +205,7 @@ flowchart TD
 | T06 | Seller shell and profile | T01, T02 | No - final browser pass pending | [06-seller-profile.md](06-seller-profile.md) |
 | T07 | Seller product list and draft creation | T05, T06 | No - final browser pass pending | [07-seller-products.md](07-seller-products.md) |
 | T08 | Product editor, variants, and photos | T07 | No - final browser pass pending | [08-product-editor.md](08-product-editor.md) |
-| T09 | Public baseline, hardening, and release evidence | T04, T05, T08 | No | [09-release.md](09-release.md) |
+| T09 | Public baseline, hardening, and release evidence | T04, T05, T08 | No - final manual browser and accessibility pass pending | [09-release.md](09-release.md) |
 
 ## Working method
 
@@ -237,3 +237,5 @@ Use screenshots only as supporting evidence because they do not prove permission
 - Phone and desktop layouts have been checked in Chrome and Safari.
 - `pnpm check` passes.
 - The PR description identifies the base branch, routes delivered, explicit non-goals, and verification evidence.
+
+Prepared pull request notes are available in [pull-request.md](pull-request.md).

@@ -10,6 +10,10 @@ dist
 # Test output
 coverage
 .vitest
+.next-e2e
+.e2e
+playwright-report
+test-results
 
 # Environment files (commit only the examples)
 .env

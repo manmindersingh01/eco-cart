@@ -109,12 +109,31 @@ export function AccountControls({
 
   const label =
     account.name || account.email || account.phoneNumber || 'Account'
+  const portal = account.roles.includes('admin')
+    ? ({ href: '/admin', label: 'Administrator portal' } as const)
+    : account.roles.includes('seller')
+      ? ({ href: '/seller', label: 'Seller portal' } as const)
+      : null
   return (
-    <div className="flex flex-wrap items-center justify-end gap-3">
-      <div className={compact ? 'sr-only' : 'min-w-0 text-right'}>
+    <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-3">
+      <div className={compact ? 'sr-only' : 'min-w-0 max-w-full text-right'}>
         <p className="truncate text-sm font-medium">{label}</p>
         <p className="text-xs text-muted">{account.role}</p>
       </div>
+      {portal ? (
+        <LinkButton href={portal.href} variant="secondary">
+          {portal.label}
+        </LinkButton>
+      ) : compact ? (
+        <span className="min-w-0 max-w-full break-all text-sm font-medium">
+          {label}
+        </span>
+      ) : null}
+      {account.roles.includes('buyer') ? (
+        <LinkButton href="/account/seller-application" variant="quiet">
+          Seller application
+        </LinkButton>
+      ) : null}
       <Button
         variant="quiet"
         disabled={signingOut}

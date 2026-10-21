@@ -8,7 +8,7 @@ export const apiRequest = (
   path: string,
   options: { method?: string; cookie?: string; body?: unknown } = {},
 ) =>
-  new Request(`http://localhost:3000/api${path}`, {
+  new Request(`http://localhost:3210/api${path}`, {
     method: options.method ?? 'GET',
     headers: {
       'content-type': 'application/json',

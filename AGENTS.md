@@ -41,9 +41,9 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   For SQL that Drizzle cannot express (grants, triggers, functions), use `pnpm --filter @ecokart/core exec drizzle-kit generate --custom --name=<name>` and fill in the file.
 - Regenerate the Better Auth tables after changing its plugins: `pnpm auth:schema`, then `pnpm db:generate`
 - First administrator: `pnpm admin:create --email <email> --name <name>`, then sign in with the code that arrives in Mailpit
-- Web app and worker together: `pnpm dev` (web on http://localhost:3000)
+- Web app and worker together: `pnpm dev` (web on http://localhost:3210)
 - Worker only: `pnpm --filter @ecokart/worker dev`
-- Everything CI runs, in order: `pnpm check` (format check, lint, typecheck, test, build)
+- Main CI checks, in order: `pnpm check` (format check, lint, typecheck, test, build); browser CI runs separately as described below.
 - Single steps: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm format`
 - Tests in one package: `pnpm --filter @ecokart/core test`
 - Add a dependency: `pnpm --filter @ecokart/web add <name>`.
@@ -52,11 +52,14 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
   The settings tests empty `platform_settings`, so they run against a database of their own (`ecokart_test_core_settings`); every other core test may rely on the commercial settings that `saveTestSettings` saves.
   In a linked git worktree the names end with the worktree's folder name (for example `ecokart_test_core_step_7`), so several checkouts can run their tests at the same time.
 - Example data for local development (platform settings, three approved sellers, a category tree, and brands): `pnpm db:seed`; it only fills what is missing and refuses production.
+- Browser tests: `pnpm test:e2e:smoke` (Chromium phone/desktop), `pnpm test:e2e` (also Firefox and WebKit), `pnpm test:e2e:verify-harness` (isolation/failure/cleanup checks), and `pnpm test:e2e:report`.
+  Install browsers with `pnpm --filter @ecokart/web exec playwright install chromium firefox webkit`.
+  They start their own development web server and worker with disposable resources; see `apps/web/e2e/README.md`.
+- Isolated API walk-through: `pnpm test:e2e:demo` starts and cleans its own local stack, seeds example products and runs the real API story.
+  Run checks and browser/demo launchers sequentially in one checkout, because Next.js rewrites generated route types.
 - Walk the whole marketplace through the real HTTP APIs, as administrator, seller, and buyer, against a running `pnpm dev`: `pnpm demo:flow` (`DEMO_BASE_URL` for another address).
   It prints each step with a pass or fail mark and the reason, reads sign-in codes from Mailpit, and uses new people and a new product on every run, so it runs again on the same local database.
-  Steps for features not built yet show as skipped; turn each one on when its feature merges.
-- Not set up yet: e2e tests.
-  Add them here when they exist.
+  The isolated command reports an AI-disabled assistant step as skipped; required commerce and onboarding steps must pass.
 
 ## Architecture rules
 

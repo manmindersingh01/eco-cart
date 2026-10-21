@@ -1,27 +1,24 @@
 import { listAllBrands, ValidationError, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
-import { Suspense } from 'react'
 import { BrandManager } from '@/components/admin/brand-manager'
 import { PageHeader } from '@/components/ui/page-header'
-import { ContentLoading } from '@/components/ui/page-loading'
 import type { Brand } from '@/lib/admin-catalogue'
 import { getDatabase } from '@/lib/db'
-import { requireAdmin } from '@/lib/request-context'
+import { requireAdminPageContext } from '@/lib/page-auth'
 
 export const metadata: Metadata = {
   title: 'Brands',
 }
 
-/** The brand list, for the administrator and the search in the address. */
-async function BrandList({
+export const instant = false
+
+export default async function AdminBrandsPage({
   searchParams,
-}: Pick<PageProps<'/admin/brands'>, 'searchParams'>) {
+}: PageProps<'/admin/brands'>) {
   const params = await searchParams
   const query = typeof params.q === 'string' ? params.q : ''
   const cursor = typeof params.cursor === 'string' ? params.cursor : undefined
-  const requestHeaders = await headers()
-  const { context } = await requireAdmin(requestHeaders)
+  const context = await requireAdminPageContext('/admin/brands')
   let items: Brand[] = []
   let nextCursor: string | null = null
   let error: string | undefined
@@ -45,27 +42,17 @@ async function BrandList({
   }
 
   return (
-    <BrandManager
-      initialPage={{ items, nextCursor }}
-      initialQuery={query}
-      initialCursor={cursor}
-      initialError={error}
-    />
-  )
-}
-
-export default function AdminBrandsPage({
-  searchParams,
-}: PageProps<'/admin/brands'>) {
-  return (
     <div className="grid gap-7">
       <PageHeader
         title="Brands"
         description="Search, create, edit, deactivate, and remove brands available to seller listings."
       />
-      <Suspense fallback={<ContentLoading />}>
-        <BrandList searchParams={searchParams} />
-      </Suspense>
+      <BrandManager
+        initialPage={{ items, nextCursor }}
+        initialQuery={query}
+        initialCursor={cursor}
+        initialError={error}
+      />
     </div>
   )
 }

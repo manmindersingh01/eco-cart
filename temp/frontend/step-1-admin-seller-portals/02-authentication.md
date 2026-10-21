@@ -121,9 +121,9 @@ Manual evidence, 8 October 2026:
 
 ### Manual verification steps
 
-1. Run `pnpm dev` and open `http://localhost:3000` in a private browser window.
+1. Run `pnpm dev` and open `http://localhost:3210` in a private browser window.
 2. Open `/admin?tab=company` while signed out.
-3. Confirm the browser reaches `/sign-in` and the address contains the encoded `returnTo=/admin?tab=company` value. -> returned to http://localhost:3000/sign-in?returnTo=%2Fadmin%3Ftab%3Dcompany
+3. Confirm the browser reaches `/sign-in` and the address contains the encoded `returnTo=/admin?tab=company` value. -> returned to http://localhost:3210/sign-in?returnTo=%2Fadmin%3Ftab%3Dcompany
 4. Enter a new address such as `browser-check-<current-time>@ecokart.test` and select **Send sign-in code**.
 5. Open Mailpit at `http://localhost:8025`, find the newest message for that exact address, and confirm the page says the code expires after five minutes. -> yes `OTP expired`
 6. Enter a wrong six-digit code once. -> shows error as expected

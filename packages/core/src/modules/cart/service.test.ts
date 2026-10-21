@@ -295,6 +295,36 @@ describe('what a line may hold', () => {
     expect((await set(guest, variant.id, 6)).canCheckOut).toBe(true)
   })
 
+  test('B06 minimum quantity applies separately to each variant, without requiring multiples', async () => {
+    const guest = newGuest()
+    const { product, variant } = await newItem({ stock: 30 })
+    await owner
+      .update(products)
+      .set({ minOrderQuantity: 10 })
+      .where(eq(products.id, product.id))
+    const [other] = await owner
+      .insert(productVariants)
+      .values({
+        productId: product.id,
+        sku: `MIN-${randomUUID()}`,
+        pricePaise: 50_000,
+        mrpPaise: 60_000,
+        stock: 30,
+      })
+      .returning()
+    expect(
+      (await add(guest, { variantId: variant.id, quantity: 11 })).lines[0]
+        ?.quantity,
+    ).toBe(11)
+    await expect(
+      add(guest, { variantId: other!.id, quantity: 5 }),
+    ).rejects.toBeInstanceOf(ValidationError)
+    expect((await view(guest)).lines).toHaveLength(1)
+    expect(
+      (await add(guest, { variantId: other!.id, quantity: 10 })).lines,
+    ).toHaveLength(2)
+  })
+
   test('refuses what is not for sale', async () => {
     const guest = newGuest()
     const { variant, title } = await newItem()

@@ -1,10 +1,13 @@
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { AccountControls } from '@/components/auth/account-controls'
+import { CategoryNavigation } from '@/components/storefront/category-navigation'
+import { Skeleton } from '@/components/ui/feedback'
 
 export default function StorefrontLayout({ children }: LayoutProps<'/'>) {
   return (
-    <div className="flex min-h-full flex-1 flex-col">
-      <header className="border-b bg-surface">
+    <div className="flex min-h-full min-w-0 flex-1 flex-col overflow-x-clip">
+      <header className="min-w-0 border-b bg-surface">
         <div className="page-container flex min-h-16 items-center justify-between gap-4 py-3">
           <Link
             href="/"
@@ -22,6 +25,19 @@ export default function StorefrontLayout({ children }: LayoutProps<'/'>) {
           </Link>
           <AccountControls compact />
         </div>
+        <Suspense
+          fallback={
+            <div className="border-t">
+              <div className="page-container flex min-h-12 items-center gap-4">
+                <span className="sr-only">Loading catalogue navigation</span>
+                <Skeleton className="h-5 w-32" />
+                <Skeleton className="h-5 w-40" />
+              </div>
+            </div>
+          }
+        >
+          <CategoryNavigation />
+        </Suspense>
       </header>
       {children}
       <footer className="mt-auto border-t bg-surface">

@@ -136,6 +136,28 @@ const addToCart = (buyer: TestBuyer, variantId: string, quantity = 1) =>
     addCartItem(tx, buyer.context, photos, { variantId, quantity }),
   )
 
+test('B06 B07 minimum 10 allows 11, but a later minimum blocks fresh checkout without taking stock', async () => {
+  const buyer = await newBuyer()
+  const { product, variant } = await newItem({ stock: 30 })
+  await owner
+    .update(products)
+    .set({ minOrderQuantity: 10 })
+    .where(eq(products.id, product.id))
+  await addToCart(buyer, variant.id, 11)
+  await owner
+    .update(products)
+    .set({ minOrderQuantity: 12 })
+    .where(eq(products.id, product.id))
+  await expect(checkout(buyer, 'cod')).rejects.toBeInstanceOf(ConflictError)
+  expect(await stockOf(variant.id)).toBe(30)
+  expect(
+    await owner
+      .select()
+      .from(orders)
+      .where(eq(orders.userId, buyer.context.userId)),
+  ).toHaveLength(0)
+})
+
 const checkout = (
   buyer: TestBuyer,
   paymentMethod: 'razorpay' | 'cod',

@@ -1,0 +1,65 @@
+name: Browser tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg16
+        env:
+          POSTGRES_USER: ecokart
+          POSTGRES_PASSWORD: ecokart
+          POSTGRES_DB: ecokart
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ecokart -d ecokart"
+          --health-interval 2s --health-timeout 5s --health-retries 15
+      mailpit:
+        image: axllent/mailpit:v1.31.4
+        ports: ['8025:8025']
+      storage:
+        image: chrislusf/seaweedfs:4.48
+        env:
+          AWS_ACCESS_KEY_ID: ecokart
+          AWS_SECRET_ACCESS_KEY: development-only-storage-secret
+        ports: ['8333:8333']
+        options: >-
+          --health-cmd "wget -q -O /dev/null http://127.0.0.1:8333/healthz"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      TEST_DATABASE_SERVER_URL: postgres://ecokart:ecokart@localhost:5432/postgres
+      MAILPIT_URL: http://localhost:8025
+      TEST_STORAGE_ENDPOINT: http://localhost:8333
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
+        with:
+          cache: true
+          require-lockfile: true
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends ffmpeg
+      - run: pnpm --filter @ecokart/web exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm test:e2e:verify-harness
+      - if: github.event_name == 'pull_request'
+        run: pnpm test:e2e:smoke
+      - if: github.event_name != 'pull_request'
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-evidence-${{ github.run_attempt }}
+          path: apps/web/.e2e/runs/
+          retention-days: 7

@@ -1,4 +1,5 @@
 import {
+  createAccountDirectory,
   createDatabase,
   createObjectStorage,
   createPool,
@@ -12,6 +13,7 @@ import {
   createTestUser,
 } from '@ecokart/core/testing'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { z } from 'zod'
 import {
   GET as sellerStatements,
   POST as askForSeller,
@@ -19,6 +21,7 @@ import {
 import { GET as openFile } from '@/app/api/settlement-statements/[id]/file/route'
 import { GET as readStatement } from '@/app/api/settlement-statements/[id]/route'
 import { closePool } from '@/lib/db'
+import { getAuth } from '@/lib/auth'
 import { closeJobQueue } from '@/lib/queue'
 import { apiRequest as request, withId } from '@/testing/requests'
 import { signInWithEmail } from '@/testing/sign-in'
@@ -57,7 +60,7 @@ beforeAll(async () => {
     {
       entryType: 'sale',
       amountPaise: 50_000,
-      description: 'Sale of 1 × Bamboo bottle',
+      description: 'Sale of 1 Ã— Bamboo bottle',
       createdAt: new Date('2026-10-02T10:00:00+05:30'),
     },
   ])
@@ -73,6 +76,59 @@ const statementStatus = async (id: string, cookie: string) =>
   readStatement(request(`/settlement-statements/${id}`, { cookie }), withId(id))
 
 describe('/api/seller/settlement-statements', () => {
+  test('I05 combined accounts select seller context for statement status and downloads', async () => {
+    const { owner: user } = await createTestSeller(owner)
+    await createAccountDirectory(getAuth()).addRole(user.id, 'buyer')
+    const cookie = await signInWithEmail(owner, user.email)
+    const asked = await POST(
+      request('/seller/settlement-statements', {
+        cookie,
+        method: 'POST',
+        body: { from: '2026-10-01', to: '2026-10-05' },
+      }),
+    )
+    expect(asked.status).toBe(202)
+    const {
+      statement: { id },
+    } = z
+      .object({ statement: z.object({ id: z.string() }) })
+      .parse(await asked.json())
+    expect(
+      (
+        await readStatement(
+          request(`/settlement-statements/${id}?as=seller`, { cookie }),
+          withId(id),
+        )
+      ).status,
+    ).toBe(200)
+    await makeSettlementStatement({ db: owner, storage }, id)
+    expect(
+      (
+        await openFile(
+          request(`/settlement-statements/${id}/file?as=seller`, { cookie }),
+          withId(id),
+        )
+      ).status,
+    ).toBe(302)
+    expect(
+      (
+        await openFile(
+          request(`/settlement-statements/${id}/file`, { cookie }),
+          withId(id),
+        )
+      ).status,
+    ).toBe(404)
+    expect(
+      (
+        await openFile(
+          request(`/settlement-statements/${id}/file?as=seller`, {
+            cookie: otherSellerCookie,
+          }),
+          withId(id),
+        )
+      ).status,
+    ).toBe(404)
+  })
   test('the seller asks, the worker makes it, and the seller downloads it', async () => {
     const asked = await POST(
       request('/seller/settlement-statements', {
@@ -113,7 +169,7 @@ describe('/api/seller/settlement-statements', () => {
     expect(link.headers.get('cache-control')).toBe('no-store')
     const csv = await (await fetch(link.headers.get('location')!)).text()
     expect(csv).toContain(
-      '"Sale","Sale of 1 × Bamboo bottle","","","500.00","500.00"',
+      '"Sale","Sale of 1 Ã— Bamboo bottle","","","500.00","500.00"',
     )
 
     const list = await GET(
@@ -143,7 +199,7 @@ describe('/api/seller/settlement-statements', () => {
 })
 
 describe('/api/admin/sellers/{id}/settlement-statements', () => {
-  test('administrators ask for and list a seller’s statements', async () => {
+  test('administrators ask for and list a sellerâ€™s statements', async () => {
     const asked = await askForSeller(
       request(`/admin/sellers/${sellerId}/settlement-statements`, {
         method: 'POST',

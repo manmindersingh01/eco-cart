@@ -38,6 +38,35 @@ const formFor = (key: string, maxBytes = 1000) =>
   })
 
 describe('upload forms', () => {
+  test.each([10_485_759, 10_485_760, 10_485_761])(
+    'B01 storage enforces the inclusive 10 MB form limit for %i bytes',
+    async (size) => {
+      const key = uploadKey()
+      const form = await storage.createUploadForm(key, {
+        contentType: 'application/pdf',
+        maxBytes: 10_485_760,
+        expiresInSeconds: 60,
+      })
+      expect(await post(form, Buffer.alloc(size))).toBe(
+        size <= 10_485_760 ? 204 : 400,
+      )
+      const stored = await storage.read(key)
+      expect(stored?.length ?? null).toBe(size <= 10_485_760 ? size : null)
+    },
+  )
+
+  test('B05 an expired POST form is refused, while a renewed form works', async () => {
+    const key = uploadKey()
+    const expired = await storage.createUploadForm(key, {
+      contentType: 'image/jpeg',
+      maxBytes: 1000,
+      expiresInSeconds: 1,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 2100))
+    expect(await post(expired, Buffer.from('photo'))).toBe(403)
+    expect(await storage.read(key)).toBeNull()
+    expect(await post(await formFor(key), Buffer.from('photo'))).toBe(204)
+  })
   test('let a browser upload a file within the limit', async () => {
     const key = uploadKey()
     expect(await post(await formFor(key), Buffer.from('photo'))).toBe(204)

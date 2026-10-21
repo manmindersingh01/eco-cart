@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import Loading from '../../loading'
 import { LinkButton } from '@/components/ui/button'
 import { Notice } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
-import { PageLoading } from '@/components/ui/page-loading'
 
 export const metadata: Metadata = {
   title: 'Access denied',
@@ -20,35 +20,31 @@ function firstValue(value: string | string[] | undefined): string | null {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
 }
 
-/** Which area was refused, and why, from the query string. */
-async function AccessDeniedMessage({ searchParams }: AccessDeniedPageProps) {
-  const query = await searchParams
-  const area = firstValue(query.area) === 'seller' ? 'seller' : 'administrator'
-  const sellerNotReady = firstValue(query.reason) === 'seller-not-ready'
+export default function AccessDeniedPage(props: AccessDeniedPageProps) {
   return (
-    <>
-      <PageHeader
-        title="Access denied"
-        description={`This page needs a signed-in ${area} account.`}
-      />
-      <Notice tone="warning" title="Your account cannot open this area">
-        {sellerNotReady
-          ? 'This seller account is not set up yet. Ask an administrator to complete its business record.'
-          : `Your current account does not have ${area} access.`}
-      </Notice>
-    </>
+    <Suspense fallback={<Loading />}>
+      <AccessDeniedContent {...props} />
+    </Suspense>
   )
 }
 
-export default function AccessDeniedPage({
-  searchParams,
-}: AccessDeniedPageProps) {
+async function AccessDeniedContent({ searchParams }: AccessDeniedPageProps) {
+  const query = await searchParams
+  const area = firstValue(query.area) === 'seller' ? 'seller' : 'administrator'
+  const sellerNotReady = firstValue(query.reason) === 'seller-not-ready'
+
   return (
     <main id="main-content" className="page-container flex-1 py-12">
       <div className="mx-auto grid max-w-2xl gap-6">
-        <Suspense fallback={<PageLoading />}>
-          <AccessDeniedMessage searchParams={searchParams} />
-        </Suspense>
+        <PageHeader
+          title="Access denied"
+          description={`This page needs a signed-in ${area} account.`}
+        />
+        <Notice tone="warning" title="Your account cannot open this area">
+          {sellerNotReady
+            ? 'This seller account is not set up yet. Ask an administrator to complete its business record.'
+            : `Your current account does not have ${area} access.`}
+        </Notice>
         <div className="flex flex-wrap gap-3">
           <LinkButton href="/" variant="secondary">
             Return to EcoKart

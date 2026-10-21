@@ -1,17 +1,16 @@
 import { getFullCategoryTree, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
-import { Suspense } from 'react'
 import { CategoryManager } from '@/components/admin/category-manager'
 import { PageHeader } from '@/components/ui/page-header'
-import { ContentLoading } from '@/components/ui/page-loading'
 import type { CategoryNode } from '@/lib/admin-catalogue'
 import { getDatabase } from '@/lib/db'
-import { requireAdmin } from '@/lib/request-context'
+import { requireAdminPageContext } from '@/lib/page-auth'
 
 export const metadata: Metadata = {
   title: 'Categories',
 }
+
+export const instant = false
 
 function serialiseCategory(
   node: Awaited<ReturnType<typeof getFullCategoryTree>>[number],
@@ -24,26 +23,19 @@ function serialiseCategory(
   }
 }
 
-/** The whole category tree, for the administrator signed in. */
-async function CategoryTree() {
-  const requestHeaders = await headers()
-  const { context } = await requireAdmin(requestHeaders)
+export default async function AdminCategoriesPage() {
+  const context = await requireAdminPageContext('/admin/categories')
   const categories = await withContext(getDatabase(), context, (tx) =>
     getFullCategoryTree(tx, context),
   )
-  return <CategoryManager initialTree={categories.map(serialiseCategory)} />
-}
 
-export default function AdminCategoriesPage() {
   return (
     <div className="grid gap-7">
       <PageHeader
         title="Categories"
         description="Maintain the three-level category tree, GST rates, default HSN codes, and public visibility."
       />
-      <Suspense fallback={<ContentLoading />}>
-        <CategoryTree />
-      </Suspense>
+      <CategoryManager initialTree={categories.map(serialiseCategory)} />
     </div>
   )
 }

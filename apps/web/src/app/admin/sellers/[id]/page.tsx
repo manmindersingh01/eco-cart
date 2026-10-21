@@ -1,25 +1,22 @@
 import { getSeller, NotFoundError } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
-import { Suspense } from 'react'
 import { SellerDetailManager } from '@/components/admin/seller-detail-manager'
-import { PageLoading } from '@/components/ui/page-loading'
 import type { SellerDetail } from '@/lib/admin-sellers'
-import { requireAdmin } from '@/lib/request-context'
+import { requireAdminPageContext } from '@/lib/page-auth'
 import { getSellerServices } from '@/lib/sellers'
 
 export const metadata: Metadata = {
   title: 'Seller details',
 }
 
-/** The seller in the address, for the administrator signed in. */
-async function SellerDetail({
+export const instant = false
+
+export default async function SellerDetailPage({
   params,
-}: Pick<PageProps<'/admin/sellers/[id]'>, 'params'>) {
+}: PageProps<'/admin/sellers/[id]'>) {
   const { id } = await params
-  const requestHeaders = await headers()
-  const { context } = await requireAdmin(requestHeaders)
+  const context = await requireAdminPageContext('/admin/sellers')
   let seller
   try {
     seller = await getSeller(getSellerServices(), context, id)
@@ -35,14 +32,4 @@ async function SellerDetail({
     updatedAt: seller.updatedAt.toISOString(),
   }
   return <SellerDetailManager initialSeller={serialised} />
-}
-
-export default function SellerDetailPage({
-  params,
-}: PageProps<'/admin/sellers/[id]'>) {
-  return (
-    <Suspense fallback={<PageLoading />}>
-      <SellerDetail params={params} />
-    </Suspense>
-  )
 }

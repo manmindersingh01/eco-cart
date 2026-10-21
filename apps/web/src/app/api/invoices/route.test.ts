@@ -1,4 +1,5 @@
 import {
+  createAccountDirectory,
   createDatabase,
   createObjectStorage,
   createPool,
@@ -23,6 +24,7 @@ import { z } from 'zod'
 import { POST as render } from '@/app/api/admin/invoices/[id]/render/route'
 import { GET as sellerInvoices } from '@/app/api/seller/invoices/route'
 import { closePool, getDatabase } from '@/lib/db'
+import { getAuth } from '@/lib/auth'
 import { closeJobQueue, getJobQueue } from '@/lib/queue'
 import { apiRequest as request, withId } from '@/testing/requests'
 import { signInWithEmail } from '@/testing/sign-in'
@@ -167,6 +169,63 @@ describe('GET /api/invoices?orderId=', () => {
 })
 
 describe('GET /api/invoices/{id}/pdf', () => {
+  test('I05 a combined account explicitly selects seller access for its sale invoice', async () => {
+    const { owner: sellerUser, seller } = await createTestInvoicingSeller(owner)
+    await createAccountDirectory(getAuth()).addRole(sellerUser.id, 'buyer')
+    const cookie = await signInWithEmail(owner, sellerUser.email)
+    const category = await createTestCategory(owner)
+    const { product, variant } = await createTestProduct(owner, {
+      sellerId: seller.id,
+      categoryId: category.id,
+    })
+    const buyer = await signedInBuyer()
+    const { order, items } = await createTestOrderWithLines(owner, {
+      buyerId: buyer.id,
+      lines: [
+        { sellerId: seller.id, productId: product.id, variantId: variant.id },
+      ],
+    })
+    const queue = await getJobQueue()
+    const issued = await withContext(getDatabase(), { role: 'system' }, (tx) =>
+      issueInvoices(tx, queue, orderToInvoiceFor(order, items)),
+    )
+    const invoiceId = issued[0]!.id
+    await renderInvoice({ db: owner, storage }, invoiceId)
+    expect(
+      (
+        await pdf(
+          request(`/invoices/${invoiceId}/pdf`, { cookie }),
+          withId(invoiceId),
+        )
+      ).status,
+    ).toBe(404)
+    expect(
+      (
+        await pdf(
+          request(`/invoices/${invoiceId}/pdf?as=seller`, { cookie }),
+          withId(invoiceId),
+        )
+      ).status,
+    ).toBe(302)
+    expect(
+      (
+        await pdf(
+          request(`/invoices/${invoiceId}/pdf?as=seller`, {
+            cookie: bengaluruCookie,
+          }),
+          withId(invoiceId),
+        )
+      ).status,
+    ).toBe(404)
+    expect(
+      (
+        await pdf(
+          request(`/invoices/${invoiceId}/pdf`, { cookie: buyer.cookie }),
+          withId(invoiceId),
+        )
+      ).status,
+    ).toBe(302)
+  })
   test('409 until the worker has made the PDF', async () => {
     const response = await pdfFor(buyerCookie)
     expect(response.status).toBe(409)

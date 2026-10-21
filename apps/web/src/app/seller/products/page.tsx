@@ -1,8 +1,6 @@
 import { listOwnProducts, ValidationError, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { headers } from 'next/headers'
-import { Suspense } from 'react'
 import { ProductPagination } from '@/components/seller/product-pagination'
 import { LinkButton } from '@/components/ui/button'
 import {
@@ -12,10 +10,9 @@ import {
 } from '@/components/ui/data-display'
 import { EmptyState, Notice, StatusBadge } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
-import { ContentLoading } from '@/components/ui/page-loading'
 import { getDatabase } from '@/lib/db'
 import { formatIndianDate, formatInr, formatStatusLabel } from '@/lib/format'
-import { requireSeller } from '@/lib/request-context'
+import { requireSellerPageContext } from '@/lib/page-auth'
 import {
   isProductStatus,
   productListHref,
@@ -27,6 +24,8 @@ import { getStorage } from '@/lib/storage'
 export const metadata: Metadata = {
   title: 'Products',
 }
+
+export const instant = false
 
 const filters: Array<{ label: string; status?: ProductStatus }> = [
   { label: 'All' },
@@ -71,11 +70,11 @@ function ProductThumbnail({ product }: { product: ProductSummary }) {
   )
 }
 
-/** Notices, status filters, and one page of the seller's products. */
-async function ProductList({
+export default async function SellerProductsPage({
   searchParams,
-}: Pick<PageProps<'/seller/products'>, 'searchParams'>) {
+}: PageProps<'/seller/products'>) {
   const query = await searchParams
+  const context = await requireSellerPageContext('/seller/products')
   const rawStatus = typeof query.status === 'string' ? query.status : undefined
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined
   const created = typeof query.created === 'string' ? query.created : undefined
@@ -90,8 +89,6 @@ async function ProductList({
       .flatMap((filter) => (filter.status ? [filter.status] : []))
       .join(', ')}.`
   } else {
-    const requestHeaders = await headers()
-    const { context } = await requireSeller(requestHeaders)
     try {
       const page = await withContext(getDatabase(), context, (tx) =>
         listOwnProducts(tx, getStorage(), context, {
@@ -113,7 +110,15 @@ async function ProductList({
   }
 
   return (
-    <>
+    <div className="grid gap-7">
+      <PageHeader
+        title="Products"
+        description="Create draft listings and follow their review and selling status."
+        actions={
+          <LinkButton href="/seller/products/new">Create draft</LinkButton>
+        }
+      />
+
       {created ? (
         <Notice title="Draft created" tone="success">
           Your product was saved. Detailed editing, variants, and photos arrive
@@ -291,25 +296,6 @@ async function ProductList({
           />
         </>
       )}
-    </>
-  )
-}
-
-export default function SellerProductsPage({
-  searchParams,
-}: PageProps<'/seller/products'>) {
-  return (
-    <div className="grid gap-7">
-      <PageHeader
-        title="Products"
-        description="Create draft listings and follow their review and selling status."
-        actions={
-          <LinkButton href="/seller/products/new">Create draft</LinkButton>
-        }
-      />
-      <Suspense fallback={<ContentLoading />}>
-        <ProductList searchParams={searchParams} />
-      </Suspense>
     </div>
   )
 }

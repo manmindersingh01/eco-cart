@@ -400,7 +400,7 @@ A seller account comes about in one of two ways.
 An administrator creates it through the seller onboarding, which creates the owner's account with the `seller` role through Better Auth (its internal `createUser`) and the linked `sellers` row together; if the business cannot be saved, the new account is removed again.
 Or a signed-in buyer applies to sell (section 5.4), and approving the application adds the `seller` role to their account through Better Auth's internal adapter, keeping `buyer`.
 Better Auth's own administrator endpoints refuse to hand out the `seller` role, so an account with that role always has a business.
-An account that both buys and sells picks the role it acts in by the area of each request: the seller portal and its APIs act as the seller, everything else as the buyer, and routes both use (an order's invoices, return photos) take `?as=seller` from the seller portal.
+An account that both buys and sells picks the role it acts in by the area of each request: the seller portal and its APIs act as the seller, everything else as the buyer, and shared routes (an order's invoices, return photos and settlement statement status/downloads) take `?as=seller` from the seller portal.
 Each request still runs with one role in its row-level security context, so the policies are the same as for two separate accounts.
 Suspending a buyer is Better Auth's ban (its `banUser` endpoint), which also revokes every session; the reason is kept in `ban_reason`.
 Suspending a seller suspends the business (section 5.4): its listings leave the storefront and the seller portal refuses it.

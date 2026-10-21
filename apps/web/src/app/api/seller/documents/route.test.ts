@@ -109,11 +109,12 @@ async function sendFile(
   requestId: string,
   bytes: Buffer,
   contentType = 'application/pdf',
+  cookie = sellerCookie,
 ): Promise<string> {
   const asked = await uploadForm(
     request(`/seller/documents/${requestId}/uploads`, {
       method: 'POST',
-      cookie: sellerCookie,
+      cookie,
       body: { contentType, size: bytes.length },
     }),
     withId(requestId),
@@ -138,7 +139,7 @@ async function sendFile(
   const added = await addFile(
     request(`/seller/documents/${requestId}/files`, {
       method: 'POST',
-      cookie: sellerCookie,
+      cookie,
       body: { uploadKey: upload.key },
     }),
     withId(requestId),
@@ -169,6 +170,44 @@ const approveSeller = () =>
     }),
     withId(sellerId),
   )
+
+test('B03 S05 review queue includes a checked document after its application is rejected', async () => {
+  const { owner: user, seller } = await createTestSeller(owner, 'pending')
+  const cookie = await signInWithEmail(owner, user.email)
+  const asked = await ask(
+    request(`/admin/sellers/${seller.id}/documents`, {
+      method: 'POST',
+      cookie: adminCookie,
+      body: {
+        documents: [{ type: 'other', note: 'Test rejected business document' }],
+      },
+    }),
+    withId(seller.id),
+  )
+  expect(asked.status).toBe(201)
+  const { documents: requests } = z
+    .object({ documents: z.array(documentView) })
+    .parse(await asked.json())
+  await sendFile(requests[0]!.id, testPdf(), 'application/pdf', cookie)
+  await owner
+    .update(schema.sellers)
+    .set({ status: 'rejected', rejectionReason: 'Correct your application' })
+    .where(eq(schema.sellers.id, seller.id))
+  const response = await reviewQueue(
+    request('/admin/seller-documents', { cookie: adminCookie }),
+  )
+  expect(response.status).toBe(200)
+  const result = z
+    .object({
+      items: z.array(
+        z.object({ seller: z.object({ id: z.string(), status: z.string() }) }),
+      ),
+    })
+    .parse(await response.json())
+  expect(
+    result.items.find((item) => item.seller.id === seller.id)?.seller.status,
+  ).toBe('rejected')
+})
 
 describe('seller verification documents', () => {
   let gstId: string

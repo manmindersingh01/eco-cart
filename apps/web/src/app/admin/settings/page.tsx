@@ -1,23 +1,30 @@
 import { listSettings, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
 import { Suspense } from 'react'
+import AdminLoading from '../loading'
 import { SettingsEditor } from '@/components/admin/settings-editor'
 import { Notice } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
-import { ContentLoading } from '@/components/ui/page-loading'
 import type { AdminSetting } from '@/lib/admin-settings'
 import { getDatabase } from '@/lib/db'
-import { requireAdmin } from '@/lib/request-context'
+import { requireAdminPageContext } from '@/lib/page-auth'
 
 export const metadata: Metadata = {
   title: 'Platform settings',
 }
 
-/** The settings as saved, for the administrator signed in. */
-async function SettingsBody() {
-  const requestHeaders = await headers()
-  const { context } = await requireAdmin(requestHeaders)
+export const instant = false
+
+export default function AdminSettingsPage() {
+  return (
+    <Suspense fallback={<AdminLoading />}>
+      <AdminSettingsContent />
+    </Suspense>
+  )
+}
+
+async function AdminSettingsContent() {
+  const context = await requireAdminPageContext('/admin/settings')
   const settings = await withContext(getDatabase(), context, (tx) =>
     listSettings(tx, context),
   )
@@ -30,7 +37,11 @@ async function SettingsBody() {
   ).length
 
   return (
-    <>
+    <div className="grid gap-8">
+      <PageHeader
+        title="Platform settings"
+        description="Save each setting separately. Changes take effect on the next request and are recorded in the administrator audit log."
+      />
       {missingCount > 0 ? (
         <Notice title="Setup is incomplete" tone="warning">
           {missingCount === 1
@@ -62,20 +73,6 @@ async function SettingsBody() {
         </ul>
       </nav>
       <SettingsEditor settings={serialised} />
-    </>
-  )
-}
-
-export default function AdminSettingsPage() {
-  return (
-    <div className="grid gap-8">
-      <PageHeader
-        title="Platform settings"
-        description="Save each setting separately. Changes take effect on the next request and are recorded in the administrator audit log."
-      />
-      <Suspense fallback={<ContentLoading />}>
-        <SettingsBody />
-      </Suspense>
     </div>
   )
 }

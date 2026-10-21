@@ -306,6 +306,83 @@ describe('the seller’s portal list', () => {
 })
 
 describe('uploading a file', () => {
+  test.each([0, 10_485_761])(
+    'B01 worker rejects actual %i bytes even when the browser declares one byte',
+    async (size) => {
+      const seller = await createTestSeller(owner, 'pending')
+      const context = sellerContext(seller)
+      const [request] = await ask(seller.seller.id)
+      const form = await createDocumentUpload(
+        { db: web, storage },
+        context,
+        request!.id,
+        { contentType: 'application/pdf', size: 1 },
+      )
+      await storage.write(form.key, Buffer.alloc(size), {
+        contentType: 'application/pdf',
+      })
+      const registered = await withContext(web, context, (tx) =>
+        addDocumentFile(tx, queue, context, request!.id, {
+          uploadKey: form.key,
+        }),
+      )
+      expect(registered.status).toBe('processing')
+      await checkUploadedDocument(deps, registered.files[0]!.id)
+      const checked = await asAdmin((tx) =>
+        getDocumentRequest(tx, admin, request!.id),
+      )
+      expect(checked.status).toBe('requested')
+      expect(checked.files[0]?.status).toBe('failed')
+      expect(checked.files[0]?.failureReason).toBe(
+        size === 0
+          ? 'The file is not a PDF, JPEG, or PNG'
+          : 'The file is larger than 10 MB',
+      )
+      expect(await storage.read(form.key)).toBeNull()
+    },
+  )
+  test.each([10_485_759, 10_485_760])(
+    'B01 checks a valid %i-byte PDF through registration and the worker',
+    async (size) => {
+      const seller = await createTestSeller(owner, 'pending')
+      const [request] = await ask(seller.seller.id)
+      const bytes = testPdf({ size })
+      expect(bytes.length).toBe(size)
+      const { fileId } = await upload(seller, request!.id, bytes)
+      await checkUploadedDocument(deps, fileId)
+      const document = await asAdmin((tx) =>
+        getDocumentRequest(tx, admin, request!.id),
+      )
+      expect(document.status).toBe('received')
+      expect(document.files[0]).toMatchObject({
+        status: 'received',
+        sizeBytes: size,
+        contentType: 'application/pdf',
+      })
+    },
+  )
+
+  test.each([0, 10_485_761])(
+    'B01 refuses a declared %i-byte document',
+    async (size) => {
+      const seller = await createTestSeller(owner, 'pending')
+      const [request] = await ask(seller.seller.id)
+      expect(
+        await validationIssues(
+          createDocumentUpload(
+            { db: web, storage },
+            sellerContext(seller),
+            request!.id,
+            { contentType: 'application/pdf', size },
+          ),
+        ),
+      ).toEqual([
+        size === 0
+          ? 'size must be at least 1 byte'
+          : 'size must be at most 10 MB',
+      ])
+    },
+  )
   test('signs a private upload form for the request', async () => {
     const seller = await createTestSeller(owner, 'pending')
     const [request] = await ask(seller.seller.id)

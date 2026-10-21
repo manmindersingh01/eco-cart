@@ -7,6 +7,8 @@ export const metadata: Metadata = {
   title: 'Create seller',
 }
 
+export const instant = false
+
 export default function NewSellerPage() {
   return (
     <div className="grid gap-7">

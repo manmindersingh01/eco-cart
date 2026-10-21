@@ -1,8 +1,9 @@
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { checkVideoTools, loadVideoTools } from './video-processing.ts'
+import {
+  checkVideoTools,
+  checkVideoToolsWith,
+  loadVideoTools,
+} from './video-processing.ts'
 
 describe('loadVideoTools', () => {
   test('finds ffmpeg and ffprobe on the PATH unless told where they are', () => {
@@ -39,17 +40,12 @@ describe('checkVideoTools', () => {
   })
 
   test('refuses an ffmpeg without the H.264 encoder', async () => {
-    const folder = await mkdtemp(join(tmpdir(), 'ecokart-test-ffmpeg-'))
-    try {
-      // Answers every question, but lists no encoders.
-      const fake = join(folder, 'ffmpeg')
-      await writeFile(fake, '#!/bin/sh\necho "ffmpeg version 0"\n')
-      await chmod(fake, 0o755)
-      await expect(
-        checkVideoTools({ ...loadVideoTools(), ffmpegPath: fake }),
-      ).rejects.toThrow(`The ffmpeg at "${fake}" has no libx264 encoder`)
-    } finally {
-      await rm(folder, { recursive: true, force: true })
-    }
+    const fake = '/fake/ffmpeg'
+    await expect(
+      checkVideoToolsWith(
+        { ...loadVideoTools(), ffmpegPath: fake },
+        async () => 'ffmpeg version 0',
+      ),
+    ).rejects.toThrow(`The ffmpeg at "${fake}" has no libx264 encoder`)
   })
 })

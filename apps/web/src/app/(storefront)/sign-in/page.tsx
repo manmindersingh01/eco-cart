@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import Loading from '../../loading'
 import { SignInForm } from '@/components/auth/sign-in-form'
 import { Card } from '@/components/ui/feedback'
-import { FormLoading } from '@/components/ui/page-loading'
 import { safeReturnTo } from '@/lib/auth-routing'
 
 export const metadata: Metadata = {
@@ -20,18 +20,19 @@ function firstValue(value: string | string[] | undefined): string | null {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
 }
 
-/** The form, which needs where to go back to and why sign-in was asked for. */
-async function SignInFromQuery({ searchParams }: SignInPageProps) {
-  const query = await searchParams
+export default function SignInPage(props: SignInPageProps) {
   return (
-    <SignInForm
-      returnTo={safeReturnTo(firstValue(query.returnTo))}
-      reason={firstValue(query.reason)}
-    />
+    <Suspense fallback={<Loading />}>
+      <SignInContent {...props} />
+    </Suspense>
   )
 }
 
-export default function SignInPage({ searchParams }: SignInPageProps) {
+async function SignInContent({ searchParams }: SignInPageProps) {
+  const query = await searchParams
+  const returnTo = safeReturnTo(firstValue(query.returnTo))
+  const reason = firstValue(query.reason)
+
   return (
     <main
       id="main-content"
@@ -46,9 +47,7 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
             Use the one-time code sent to your email address.
           </p>
         </div>
-        <Suspense fallback={<FormLoading />}>
-          <SignInFromQuery searchParams={searchParams} />
-        </Suspense>
+        <SignInForm returnTo={returnTo} reason={reason} />
       </Card>
     </main>
   )

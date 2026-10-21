@@ -5,6 +5,8 @@ export const metadata: Metadata = {
   title: 'Create product draft',
 }
 
+export const instant = false
+
 export default function NewSellerProductPage() {
   return <ProductCreateForm />
 }

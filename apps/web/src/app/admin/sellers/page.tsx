@@ -1,8 +1,6 @@
 import { listSellers, ValidationError } from '@ecokart/core'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { headers } from 'next/headers'
-import { Suspense } from 'react'
 import { SellerPagination } from '@/components/admin/seller-pagination'
 import { LinkButton } from '@/components/ui/button'
 import {
@@ -12,7 +10,6 @@ import {
 } from '@/components/ui/data-display'
 import { EmptyState, Notice, StatusBadge } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
-import { ContentLoading } from '@/components/ui/page-loading'
 import {
   isSellerStatus,
   sellerDetailHref,
@@ -22,11 +19,13 @@ import {
 } from '@/lib/admin-sellers'
 import { getDatabase } from '@/lib/db'
 import { formatIndianDate, formatState } from '@/lib/format'
-import { requireAdmin } from '@/lib/request-context'
+import { requireAdminPageContext } from '@/lib/page-auth'
 
 export const metadata: Metadata = {
   title: 'Sellers',
 }
+
+export const instant = false
 
 const filters: Array<{ label: string; status?: SellerStatus }> = [
   { label: 'All' },
@@ -44,11 +43,11 @@ function statusTone(status: SellerStatus) {
       : ('warning' as const)
 }
 
-/** The status filters and one page of sellers, from the query string. */
-async function SellerList({
+export default async function AdminSellersPage({
   searchParams,
-}: Pick<PageProps<'/admin/sellers'>, 'searchParams'>) {
+}: PageProps<'/admin/sellers'>) {
   const query = await searchParams
+  const context = await requireAdminPageContext('/admin/sellers')
   const rawStatus = typeof query.status === 'string' ? query.status : undefined
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined
   const status = isSellerStatus(rawStatus) ? rawStatus : undefined
@@ -59,8 +58,6 @@ async function SellerList({
   if (rawStatus && !status) {
     error = 'The seller status filter must be pending, approved, or suspended.'
   } else {
-    const requestHeaders = await headers()
-    const { context } = await requireAdmin(requestHeaders)
     try {
       const page = await listSellers(getDatabase(), context, {
         ...(status ? { status } : {}),
@@ -79,7 +76,15 @@ async function SellerList({
   }
 
   return (
-    <>
+    <div className="grid gap-7">
+      <PageHeader
+        title="Sellers"
+        description="Create seller accounts, review pending businesses, and control marketplace access."
+        actions={
+          <LinkButton href="/admin/sellers/new">Create seller</LinkButton>
+        }
+      />
+
       <nav aria-label="Filter sellers by status" className="overflow-x-auto">
         <ul className="flex min-w-max gap-2">
           {filters.map((filter) => {
@@ -219,25 +224,6 @@ async function SellerList({
           />
         </>
       )}
-    </>
-  )
-}
-
-export default function AdminSellersPage({
-  searchParams,
-}: PageProps<'/admin/sellers'>) {
-  return (
-    <div className="grid gap-7">
-      <PageHeader
-        title="Sellers"
-        description="Create seller accounts, review pending businesses, and control marketplace access."
-        actions={
-          <LinkButton href="/admin/sellers/new">Create seller</LinkButton>
-        }
-      />
-      <Suspense fallback={<ContentLoading />}>
-        <SellerList searchParams={searchParams} />
-      </Suspense>
     </div>
   )
 }

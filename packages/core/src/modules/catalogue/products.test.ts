@@ -868,6 +868,9 @@ describe('minimum buying quantity', () => {
     expect(
       (await create(toothbrush({ minOrderQuantity: 5 }))).minOrderQuantity,
     ).toBe(5)
+    expect(
+      (await create(toothbrush({ minOrderQuantity: 1000 }))).minOrderQuantity,
+    ).toBe(1000)
     for (const [value, issue] of [
       [0, 'minOrderQuantity must be at least 1'],
       [1001, 'minOrderQuantity must be at most 1000'],
