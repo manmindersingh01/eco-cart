@@ -1,9 +1,11 @@
 import { getOwnSeller } from '@ecokart/core'
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
+import { Suspense } from 'react'
 import { LinkButton } from '@/components/ui/button'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageLoading } from '@/components/ui/page-loading'
 import { getDatabase } from '@/lib/db'
 import { requireSeller } from '@/lib/request-context'
 import { sellerStatusPresentation } from '@/lib/seller-profile'
@@ -12,7 +14,8 @@ export const metadata: Metadata = {
   title: 'Seller portal',
 }
 
-export default async function SellerPage() {
+/** The portal home for the seller signed in. */
+async function SellerHome() {
   const requestHeaders = await headers()
   const { context } = await requireSeller(requestHeaders)
   const seller = await getOwnSeller(getDatabase(), context)
@@ -58,5 +61,13 @@ export default async function SellerPage() {
         </div>
       </section>
     </div>
+  )
+}
+
+export default function SellerPage() {
+  return (
+    <Suspense fallback={<PageLoading />}>
+      <SellerHome />
+    </Suspense>
   )
 }

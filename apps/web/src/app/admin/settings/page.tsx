@@ -1,9 +1,11 @@
 import { listSettings, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
+import { Suspense } from 'react'
 import { SettingsEditor } from '@/components/admin/settings-editor'
 import { Notice } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
+import { ContentLoading } from '@/components/ui/page-loading'
 import type { AdminSetting } from '@/lib/admin-settings'
 import { getDatabase } from '@/lib/db'
 import { requireAdmin } from '@/lib/request-context'
@@ -12,7 +14,8 @@ export const metadata: Metadata = {
   title: 'Platform settings',
 }
 
-export default async function AdminSettingsPage() {
+/** The settings as saved, for the administrator signed in. */
+async function SettingsBody() {
   const requestHeaders = await headers()
   const { context } = await requireAdmin(requestHeaders)
   const settings = await withContext(getDatabase(), context, (tx) =>
@@ -27,11 +30,7 @@ export default async function AdminSettingsPage() {
   ).length
 
   return (
-    <div className="grid gap-8">
-      <PageHeader
-        title="Platform settings"
-        description="Save each setting separately. Changes take effect on the next request and are recorded in the administrator audit log."
-      />
+    <>
       {missingCount > 0 ? (
         <Notice title="Setup is incomplete" tone="warning">
           {missingCount === 1
@@ -63,6 +62,20 @@ export default async function AdminSettingsPage() {
         </ul>
       </nav>
       <SettingsEditor settings={serialised} />
+    </>
+  )
+}
+
+export default function AdminSettingsPage() {
+  return (
+    <div className="grid gap-8">
+      <PageHeader
+        title="Platform settings"
+        description="Save each setting separately. Changes take effect on the next request and are recorded in the administrator audit log."
+      />
+      <Suspense fallback={<ContentLoading />}>
+        <SettingsBody />
+      </Suspense>
     </div>
   )
 }

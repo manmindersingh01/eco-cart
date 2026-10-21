@@ -9,8 +9,9 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { Suspense } from 'react'
 import { SellerApplicationManager } from '@/components/account/seller-application-manager'
-import { Notice, Skeleton } from '@/components/ui/feedback'
+import { Notice } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
+import { ContentLoading } from '@/components/ui/page-loading'
 import { getDatabase } from '@/lib/db'
 import { getRequestContext } from '@/lib/request-context'
 import type { SellerApplication } from '@/lib/seller-application'
@@ -27,8 +28,8 @@ export default function SellerApplicationPage() {
           title="Become a seller"
           description="Sell your products to buyers across India from the account you already shop with."
         />
-        {/* The session is read per request, so it streams in after the page shell. */}
-        <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+        {/* The session is read per request, so it streams in after the title. */}
+        <Suspense fallback={<ContentLoading />}>
           <Application />
         </Suspense>
       </div>

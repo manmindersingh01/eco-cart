@@ -2,6 +2,7 @@ import { listOwnProducts, ValidationError, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
+import { Suspense } from 'react'
 import { ProductPagination } from '@/components/seller/product-pagination'
 import { LinkButton } from '@/components/ui/button'
 import {
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/data-display'
 import { EmptyState, Notice, StatusBadge } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
+import { ContentLoading } from '@/components/ui/page-loading'
 import { getDatabase } from '@/lib/db'
 import { formatIndianDate, formatInr, formatStatusLabel } from '@/lib/format'
 import { requireSeller } from '@/lib/request-context'
@@ -69,9 +71,10 @@ function ProductThumbnail({ product }: { product: ProductSummary }) {
   )
 }
 
-export default async function SellerProductsPage({
+/** Notices, status filters, and one page of the seller's products. */
+async function ProductList({
   searchParams,
-}: PageProps<'/seller/products'>) {
+}: Pick<PageProps<'/seller/products'>, 'searchParams'>) {
   const query = await searchParams
   const rawStatus = typeof query.status === 'string' ? query.status : undefined
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined
@@ -110,15 +113,7 @@ export default async function SellerProductsPage({
   }
 
   return (
-    <div className="grid gap-7">
-      <PageHeader
-        title="Products"
-        description="Create draft listings and follow their review and selling status."
-        actions={
-          <LinkButton href="/seller/products/new">Create draft</LinkButton>
-        }
-      />
-
+    <>
       {created ? (
         <Notice title="Draft created" tone="success">
           Your product was saved. Detailed editing, variants, and photos arrive
@@ -296,6 +291,25 @@ export default async function SellerProductsPage({
           />
         </>
       )}
+    </>
+  )
+}
+
+export default function SellerProductsPage({
+  searchParams,
+}: PageProps<'/seller/products'>) {
+  return (
+    <div className="grid gap-7">
+      <PageHeader
+        title="Products"
+        description="Create draft listings and follow their review and selling status."
+        actions={
+          <LinkButton href="/seller/products/new">Create draft</LinkButton>
+        }
+      />
+      <Suspense fallback={<ContentLoading />}>
+        <ProductList searchParams={searchParams} />
+      </Suspense>
     </div>
   )
 }
