@@ -59,6 +59,28 @@ export type VariantFormValue = {
   isActive: boolean
 }
 
+/** The most a product's minimum order quantity may be, as the server allows. */
+export const MAX_MIN_ORDER_QUANTITY = 1000
+
+/**
+ * The minimum order quantity typed in a form, or why it is not one: a whole
+ * number from 1 to 1000. For example 10 means a buyer orders at least 10 of
+ * the variant they choose.
+ */
+export function parseMinOrderQuantity(
+  raw: string,
+): { ok: true; value: number } | { ok: false; error: string } {
+  const parsed = parseWholeNumber(raw, 'Minimum order quantity')
+  if (!parsed.ok) return parsed
+  if (parsed.value < 1 || parsed.value > MAX_MIN_ORDER_QUANTITY) {
+    return {
+      ok: false,
+      error: `Minimum order quantity must be from 1 to ${MAX_MIN_ORDER_QUANTITY.toLocaleString('en-IN')}.`,
+    }
+  }
+  return parsed
+}
+
 export type ProductFormValues = {
   categoryId: string
   brandId: string
@@ -67,6 +89,7 @@ export type ProductFormValues = {
   highlights: Array<{ id: string; value: string }>
   attributes: AttributeFormValue[]
   hsnCode: string
+  minOrderQuantity: string
   optionNames: Array<{ id: string; value: string }>
   variants: VariantFormValue[]
 }
@@ -79,6 +102,7 @@ export type ProductInput = {
   highlights: string[]
   attributes: Record<string, string>
   hsnCode: string | null
+  minOrderQuantity: number
   optionNames: string[]
   variants: Array<{
     sku: string
@@ -181,6 +205,9 @@ export function serialiseProduct(
     issues.push('variants must have at least one variant')
   if (values.variants.length > 100)
     issues.push('variants can have at most 100 variants')
+  const minOrderQuantity = parseMinOrderQuantity(values.minOrderQuantity)
+  if (!minOrderQuantity.ok)
+    issues.push(`minOrderQuantity ${minOrderQuantity.error}`)
 
   const highlights = values.highlights.map(({ value }, index) => {
     const trimmed = value.trim()
@@ -281,6 +308,7 @@ export function serialiseProduct(
       highlights,
       attributes,
       hsnCode: values.hsnCode.trim() || null,
+      minOrderQuantity: minOrderQuantity.ok ? minOrderQuantity.value : 1,
       optionNames,
       variants,
     },

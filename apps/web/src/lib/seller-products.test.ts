@@ -53,6 +53,7 @@ const values: ProductFormValues = {
   highlights: [],
   attributes: [],
   hsnCode: '',
+  minOrderQuantity: '1',
   optionNames: [],
   variants: [
     {
@@ -96,6 +97,7 @@ describe('draft product serialization', () => {
         highlights: [],
         attributes: {},
         hsnCode: null,
+        minOrderQuantity: 1,
         optionNames: [],
         variants: [
           {

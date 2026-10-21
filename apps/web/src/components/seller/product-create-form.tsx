@@ -38,6 +38,7 @@ const initialValues: ProductFormValues = {
   highlights: [],
   attributes: [],
   hsnCode: '',
+  minOrderQuantity: '1',
   optionNames: [],
   variants: [
     {
@@ -321,6 +322,23 @@ export function ProductCreateForm() {
                 inputMode="numeric"
                 pattern="(?:[0-9]{4}|[0-9]{6}|[0-9]{8})"
                 maxLength={8}
+                disabled={pending}
+              />
+            </Field>
+            <Field
+              label="Minimum order quantity"
+              htmlFor="product-min-order"
+              hint="The fewest units of one variant a buyer may order, from 1 to 1,000. For example, 10 means a buyer adds at least 10 of the size or colour they choose."
+              error={error('minOrderQuantity')}
+              required
+            >
+              <Input
+                value={values.minOrderQuantity}
+                onChange={(event) =>
+                  change('minOrderQuantity', event.target.value)
+                }
+                inputMode="numeric"
+                maxLength={4}
                 disabled={pending}
               />
             </Field>

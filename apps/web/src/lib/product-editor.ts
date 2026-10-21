@@ -27,6 +27,17 @@ export type ProductImage = {
   urls: { thumb: string; card: string; gallery: string } | null
 }
 
+export type ProductVideo = {
+  id: string
+  status: 'processing' | 'ready' | 'failed'
+  failureReason: string | null
+  durationMs: number | null
+  width: number | null
+  height: number | null
+  /** The converted MP4 and its poster, once ready; never the original. */
+  urls: { video: string; poster: string } | null
+}
+
 export type SellerProduct = {
   id: string
   slug: string
@@ -36,6 +47,8 @@ export type SellerProduct = {
   highlights: string[]
   attributes: Record<string, string>
   optionNames: string[]
+  /** The fewest units of one variant a buyer may order at once. */
+  minOrderQuantity: number
   hsnCode: string | null
   gstRateBps: number | null
   category: {
@@ -56,6 +69,7 @@ export type SellerProduct = {
   updatedAt: string
   variants: ProductVariant[]
   images: ProductImage[]
+  video: ProductVideo | null
 }
 
 export type ListingFormValues = {
@@ -262,6 +276,43 @@ export function signedUploadBody(
   for (const [name, value] of Object.entries(fields)) body.append(name, value)
   body.append('file', file)
   return body
+}
+
+export const ALLOWED_VIDEO_TYPES = [
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+] as const
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024
+export const MAX_VIDEO_SECONDS = 60
+
+export function validateVideoFile(
+  file: Pick<File, 'type' | 'size'>,
+): string | null {
+  if (!ALLOWED_VIDEO_TYPES.some((type) => type === file.type)) {
+    return 'Use an MP4, MOV, or WebM video.'
+  }
+  if (file.size < 1) return 'The video file is empty.'
+  if (file.size > MAX_VIDEO_BYTES) return 'The video must be 50 MB or smaller.'
+  return null
+}
+
+/** How often the editor asks for the product while the worker is busy. */
+export const MEDIA_POLL_MS = 2_500
+
+/** True while the worker is still checking a photo or the video. */
+export function hasProcessingMedia(
+  product: Pick<SellerProduct, 'images' | 'video'>,
+): boolean {
+  return (
+    shouldPollImages(product.images, true) ||
+    product.video?.status === 'processing'
+  )
+}
+
+/** The photos that count against the limit: every one except failed ones. */
+export function countedPhotos(images: readonly ProductImage[]): number {
+  return images.filter((image) => image.status !== 'failed').length
 }
 
 export function shouldPollImages(

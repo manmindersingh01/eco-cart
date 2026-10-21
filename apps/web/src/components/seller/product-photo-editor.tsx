@@ -1,12 +1,6 @@
 'use client'
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ChangeEvent,
-  type FormEvent,
-} from 'react'
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
@@ -14,10 +8,9 @@ import { Field, Input, Select } from '@/components/ui/form-controls'
 import { ApiError, apiRequest } from '@/lib/api-client'
 import {
   canEditListing,
+  countedPhotos,
   MAX_PRODUCT_PHOTOS,
   movedImageIds,
-  nextPollDelay,
-  shouldPollImages,
   signedUploadBody,
   validateImageFile,
   type ProductImage,
@@ -51,88 +44,9 @@ export function ProductPhotoEditor({
 }) {
   const editable = canEditListing(product.status)
   const inputRef = useRef<HTMLInputElement>(null)
-  const pollAttempt = useRef(0)
   const [uploads, setUploads] = useState<UploadItem[]>([])
   const [mutationError, setMutationError] = useState<string | null>(null)
-  const [pollError, setPollError] = useState<string | null>(null)
   const [pendingOrder, setPendingOrder] = useState(false)
-  const processingIds = product.images
-    .filter((image) => image.status === 'processing')
-    .map((image) => image.id)
-    .join(',')
-
-  useEffect(() => {
-    if (!processingIds) {
-      pollAttempt.current = 0
-      return undefined
-    }
-    let stopped = false
-    let timer: number | undefined
-    let controller: AbortController | undefined
-
-    const stopRequest = () => {
-      if (timer !== undefined) window.clearTimeout(timer)
-      timer = undefined
-      controller?.abort()
-      controller = undefined
-    }
-
-    const schedule = (attempt: number) => {
-      stopRequest()
-      if (
-        stopped ||
-        !shouldPollImages(
-          product.images,
-          document.visibilityState === 'visible',
-        )
-      ) {
-        return
-      }
-      timer = window.setTimeout(async () => {
-        controller = new AbortController()
-        try {
-          const response = await apiRequest<{ product: SellerProduct }>(
-            `/api/seller/products/${product.id}`,
-            { signal: controller.signal },
-          )
-          if (stopped) return
-          setPollError(null)
-          pollAttempt.current += 1
-          onProduct(response.product)
-        } catch (cause) {
-          if (
-            stopped ||
-            (cause instanceof DOMException && cause.name === 'AbortError')
-          )
-            return
-          if (cause instanceof ApiError && cause.status === 401) {
-            window.location.assign(
-              `/sign-in?returnTo=${encodeURIComponent(`/seller/products/${product.id}`)}&reason=session-ended`,
-            )
-            return
-          }
-          setPollError(
-            'Photo status could not be refreshed. Polling will try again.',
-          )
-          pollAttempt.current += 1
-          schedule(pollAttempt.current)
-        }
-      }, nextPollDelay(attempt))
-    }
-
-    const visibilityChanged = () => {
-      if (document.visibilityState === 'hidden') stopRequest()
-      else schedule(pollAttempt.current)
-    }
-    document.addEventListener('visibilitychange', visibilityChanged)
-    schedule(pollAttempt.current)
-    return () => {
-      stopped = true
-      document.removeEventListener('visibilitychange', visibilityChanged)
-      stopRequest()
-    }
-  }, [onProduct, processingIds, product.id, product.images])
-
   function updateUpload(id: string, update: Partial<UploadItem>) {
     setUploads((current) =>
       current.map((item) => (item.id === id ? { ...item, ...update } : item)),
@@ -143,9 +57,18 @@ export function ProductPhotoEditor({
     const files = [...(event.target.files ?? [])]
     event.target.value = ''
     const accepted: Array<{ id: string; file: File }> = []
+    let free =
+      MAX_PRODUCT_PHOTOS -
+      countedPhotos(product.images) -
+      uploads.filter((item) => item.stage !== 'failed').length
     const rows = files.map((file) => {
       const id = crypto.randomUUID()
-      const error = validateImageFile(file)
+      const error =
+        validateImageFile(file) ??
+        (free > 0
+          ? null
+          : `A product has at most ${MAX_PRODUCT_PHOTOS} photos; delete one to add this.`)
+      if (!error) free -= 1
       const stage: UploadStage = error ? 'failed' : 'requesting'
       if (!error) accepted.push({ id, file })
       return {
@@ -227,12 +150,14 @@ export function ProductPhotoEditor({
             Product photos
           </h2>
           <p className="mt-1 text-sm text-muted">
-            Ready photos use the resized backend URLs. Original uploads are
-            never displayed.
+            The first photo is the main one: it shows on product cards and opens
+            the product page. Move a photo earlier to make it the main one. Up
+            to {MAX_PRODUCT_PHOTOS} photos; each updates here by itself once
+            EcoKart has checked it.
           </p>
         </div>
         <StatusBadge>
-          {product.images.length} of {MAX_PRODUCT_PHOTOS} photos
+          {countedPhotos(product.images)} of {MAX_PRODUCT_PHOTOS} photos
         </StatusBadge>
       </div>
 
@@ -255,10 +180,7 @@ export function ProductPhotoEditor({
           <Button
             className="mt-4"
             onClick={() => inputRef.current?.click()}
-            disabled={
-              product.images.filter((image) => image.status !== 'failed')
-                .length >= MAX_PRODUCT_PHOTOS
-            }
+            disabled={countedPhotos(product.images) >= MAX_PRODUCT_PHOTOS}
           >
             Choose photos
           </Button>
@@ -302,7 +224,6 @@ export function ProductPhotoEditor({
         </Notice>
       )}
 
-      {pollError ? <Notice tone="warning">{pollError}</Notice> : null}
       {mutationError ? (
         <Notice title={mutationError} tone="danger">
           <Button
@@ -456,7 +377,11 @@ function ImageEditor({
             >
               {image.status}
             </StatusBadge>
-            <span className="text-sm text-muted">Position {index + 1}</span>
+            {index === 0 ? (
+              <StatusBadge tone="success">Main photo</StatusBadge>
+            ) : (
+              <span className="text-sm text-muted">Photo {index + 1}</span>
+            )}
             {image.width && image.height ? (
               <span className="text-sm text-muted">
                 {image.width} × {image.height}px

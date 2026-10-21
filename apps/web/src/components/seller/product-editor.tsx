@@ -1,9 +1,12 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { ProductLifecycle } from './product-lifecycle'
 import { ProductListingEditor } from './product-listing-editor'
+import { ProductMinimumQuantity } from './product-minimum-quantity'
 import { ProductPhotoEditor } from './product-photo-editor'
 import { ProductVariantsEditor } from './product-variant-editor'
+import { ProductVideoEditor } from './product-video-editor'
 import { Button, LinkButton } from '@/components/ui/button'
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
@@ -16,7 +19,13 @@ import {
   formatInr,
   formatStatusLabel,
 } from '@/lib/format'
-import { canEditListing, type SellerProduct } from '@/lib/product-editor'
+import {
+  canEditListing,
+  hasProcessingMedia,
+  MEDIA_POLL_MS,
+  nextPollDelay,
+  type SellerProduct,
+} from '@/lib/product-editor'
 
 export function ProductEditor({
   initialProduct,
@@ -27,6 +36,7 @@ export function ProductEditor({
   const [reloadError, setReloadError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const editable = canEditListing(product.status)
+  const pollError = useMediaPolling(product, setProduct)
 
   const reload = useCallback(async () => {
     setReloadError(null)
@@ -105,6 +115,10 @@ export function ProductEditor({
 
       <ProductSummary product={product} />
 
+      <ProductLifecycle product={product} onProduct={setProduct} />
+
+      <ProductMinimumQuantity product={product} onProduct={setProduct} />
+
       {editable ? (
         <ProductListingEditor
           key={JSON.stringify(listingKey(product))}
@@ -162,7 +176,15 @@ export function ProductEditor({
         onReload={reload}
       />
 
+      {pollError ? <Notice tone="warning">{pollError}</Notice> : null}
+
       <ProductPhotoEditor
+        product={product}
+        onProduct={setProduct}
+        onReload={reload}
+      />
+
+      <ProductVideoEditor
         product={product}
         onProduct={setProduct}
         onReload={reload}
@@ -174,8 +196,7 @@ export function ProductEditor({
           <>
             <p className="mt-2 text-sm text-muted">
               Deleting removes this draft or rejected product from your
-              catalogue. The empty HTTP response is handled without parsing
-              JSON.
+              catalogue.
             </p>
             <div className="mt-5">
               <ConfirmationDialog
@@ -193,8 +214,9 @@ export function ProductEditor({
           </>
         ) : (
           <p className="mt-2 text-sm text-muted">
-            Only a draft or rejected product can be deleted. Products that have
-            been on sale are archived through a later lifecycle flow.
+            Only a draft or rejected product can be deleted. A product that has
+            been on sale is archived from the listing status above instead, so
+            past orders keep it.
           </p>
         )}
       </Card>
@@ -296,11 +318,92 @@ function ProductSummary({ product }: { product: SellerProduct }) {
             label="Total stock"
             value={product.totalStock.toLocaleString('en-IN')}
           />
+          <Detail
+            label="Minimum order"
+            value={`${product.minOrderQuantity.toLocaleString('en-IN')} of a variant`}
+          />
           <Detail label="Variants" value={String(product.variants.length)} />
         </dl>
       </Card>
     </div>
   )
+}
+
+/**
+ * Asks for the product every few seconds while the worker is still checking
+ * a photo or the video, so each one turns ready or failed where it is shown.
+ * It pauses while the tab is hidden and backs off after a failed request.
+ */
+function useMediaPolling(
+  product: SellerProduct,
+  onProduct: (product: SellerProduct) => void,
+): string | null {
+  const busy = hasProcessingMedia(product)
+  const productId = product.id
+  const [pollError, setPollError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!busy) return undefined
+    let stopped = false
+    let failures = 0
+    let timer: number | undefined
+    let controller: AbortController | undefined
+
+    const stop = () => {
+      if (timer !== undefined) window.clearTimeout(timer)
+      timer = undefined
+      controller?.abort()
+      controller = undefined
+    }
+    const schedule = (delay: number) => {
+      stop()
+      if (stopped || document.visibilityState !== 'visible') return
+      timer = window.setTimeout(async () => {
+        controller = new AbortController()
+        try {
+          const response = await apiRequest<{ product: SellerProduct }>(
+            `/api/seller/products/${productId}`,
+            { signal: controller.signal },
+          )
+          if (stopped) return
+          failures = 0
+          setPollError(null)
+          onProduct(response.product)
+          schedule(MEDIA_POLL_MS)
+        } catch (cause) {
+          if (
+            stopped ||
+            (cause instanceof DOMException && cause.name === 'AbortError')
+          )
+            return
+          if (cause instanceof ApiError && cause.status === 401) {
+            window.location.assign(
+              `/sign-in?returnTo=${encodeURIComponent(`/seller/products/${productId}`)}&reason=session-ended`,
+            )
+            return
+          }
+          failures += 1
+          setPollError(
+            'Photo and video status could not be refreshed. Trying again.',
+          )
+          schedule(Math.max(MEDIA_POLL_MS, nextPollDelay(failures)))
+        }
+      }, delay)
+    }
+    const visibilityChanged = () => {
+      if (document.visibilityState === 'hidden') stop()
+      else schedule(0)
+    }
+    document.addEventListener('visibilitychange', visibilityChanged)
+    schedule(MEDIA_POLL_MS)
+    return () => {
+      stopped = true
+      document.removeEventListener('visibilitychange', visibilityChanged)
+      stop()
+    }
+  }, [busy, productId, onProduct])
+
+  return busy ? pollError : null
 }
 
 function listingKey(product: SellerProduct) {
