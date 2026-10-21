@@ -167,7 +167,7 @@ function PromiseCard({ title, text }: { title: string; text: string }) {
 
 function CategoryCard({ category }: { category: PublicCategory }) {
   return (
-    <Card className="p-0">
+    <Card flush>
       <div className="border-b bg-brand-soft p-5">
         <h3 className="text-xl font-semibold text-brand-strong">
           {category.name}

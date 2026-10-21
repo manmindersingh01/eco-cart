@@ -414,7 +414,7 @@ function ImageEditor({
   }
 
   return (
-    <Card className="p-0">
+    <Card flush>
       <div className="aspect-[4/3] overflow-hidden rounded-t-xl border-b bg-surface-subtle">
         {image.status === 'ready' && image.urls ? (
           <a href={image.urls.gallery} target="_blank" rel="noreferrer">

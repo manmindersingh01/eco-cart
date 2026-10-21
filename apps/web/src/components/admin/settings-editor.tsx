@@ -115,7 +115,7 @@ function SettingCard({
 }) {
   const source = sourcePresentation(setting.source)
   return (
-    <Card className="p-0">
+    <Card flush>
       <form onSubmit={onSubmit} noValidate>
         <div className="grid gap-3 border-b p-5 sm:grid-cols-[1fr_auto] sm:items-start">
           <div>

@@ -221,7 +221,11 @@ export function CategoryManager({
         )}
       </section>
 
-      <Card id="category-editor" className="scroll-mt-6 p-0 xl:sticky xl:top-6">
+      <Card
+        id="category-editor"
+        flush
+        className="scroll-mt-6 xl:sticky xl:top-6"
+      >
         <form onSubmit={submit} noValidate>
           <div className="border-b p-5">
             <h2 className="text-lg font-semibold">
