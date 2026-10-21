@@ -1,6 +1,11 @@
+import type { Metadata } from 'next'
 import { LinkButton } from '@/components/ui/button'
 import { Card } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
+
+export const metadata: Metadata = {
+  title: 'Administrator portal',
+}
 
 export const instant = false
 

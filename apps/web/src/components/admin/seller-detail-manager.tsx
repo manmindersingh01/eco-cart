@@ -67,6 +67,9 @@ export function SellerDetailManager({
   const [suspensionReason, setSuspensionReason] = useState('')
   const [rejectionReason, setRejectionReason] = useState('')
   const [feedback, setFeedback] = useState(idleFeedback)
+  // Shown inside the lifecycle card, next to the buttons that caused it,
+  // rather than at the top of a long page.
+  const [lifecycleFeedback, setLifecycleFeedback] = useState(idleFeedback)
   const actions = lifecycleActions(
     seller.status,
     Boolean(seller.gstin && seller.pan),
@@ -84,7 +87,7 @@ export function SellerDetailManager({
     return response.seller
   }
 
-  function handleError(cause: unknown) {
+  function handleError(cause: unknown, show = setFeedback) {
     if (cause instanceof ApiError) {
       if (cause.status === 401) {
         window.location.assign(
@@ -92,7 +95,7 @@ export function SellerDetailManager({
         )
         return
       }
-      setFeedback({
+      show({
         error: cause.message,
         issues: cause.issues,
         success: null,
@@ -100,7 +103,7 @@ export function SellerDetailManager({
       })
       return
     }
-    setFeedback({
+    show({
       ...idleFeedback,
       error:
         'The seller could not be updated. Check your connection and try again.',
@@ -148,6 +151,7 @@ export function SellerDetailManager({
   ) {
     setActionPending(true)
     setFeedback(idleFeedback)
+    setLifecycleFeedback(idleFeedback)
     try {
       await apiRequest(`/api/admin/sellers/${seller.id}/${action}`, {
         method: 'POST',
@@ -165,12 +169,12 @@ export function SellerDetailManager({
       const updated = await loadCurrentSeller()
       setSuspensionReason('')
       setRejectionReason('')
-      setFeedback({
+      setLifecycleFeedback({
         ...idleFeedback,
         success: `${updated.displayName} is now ${updated.status}.`,
       })
     } catch (cause) {
-      handleError(cause)
+      handleError(cause, setLifecycleFeedback)
     } finally {
       setActionPending(false)
     }
@@ -188,29 +192,7 @@ export function SellerDetailManager({
         }
       />
 
-      {feedback.error ? (
-        <Notice title={feedback.error} tone="danger">
-          {feedback.issues.length > 0 ? (
-            <ul className="list-disc space-y-1 pl-5">
-              {feedback.issues.map((issue) => (
-                <li key={issue}>{issue}</li>
-              ))}
-            </ul>
-          ) : null}
-          {feedback.conflict ? (
-            <Button
-              variant="secondary"
-              className="mt-3"
-              onClick={() => window.location.reload()}
-            >
-              Reload current seller
-            </Button>
-          ) : null}
-        </Notice>
-      ) : null}
-      {feedback.success ? (
-        <Notice tone="success">{feedback.success}</Notice>
-      ) : null}
+      <FeedbackNotices feedback={feedback} />
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <Card>
@@ -308,6 +290,7 @@ export function SellerDetailManager({
             Lifecycle changes take effect immediately and are recorded in the
             audit log.
           </p>
+          <FeedbackNotices feedback={lifecycleFeedback} className="mt-4" />
           {actions.approveDisabledReason ? (
             <Notice tone="warning" className="mt-4">
               {actions.approveDisabledReason} Approval will show the exact
@@ -431,4 +414,40 @@ export function SellerDetailManager({
       </Card>
     </div>
   )
+}
+
+function FeedbackNotices({
+  feedback,
+  className,
+}: {
+  feedback: MutationFeedback
+  className?: string
+}) {
+  if (feedback.error) {
+    return (
+      <Notice title={feedback.error} tone="danger" className={className}>
+        {feedback.issues.length > 0 ? (
+          <ul className="list-disc space-y-1 pl-5">
+            {feedback.issues.map((issue) => (
+              <li key={issue}>{issue}</li>
+            ))}
+          </ul>
+        ) : null}
+        {feedback.conflict ? (
+          <Button
+            variant="secondary"
+            className="mt-3"
+            onClick={() => window.location.reload()}
+          >
+            Reload current seller
+          </Button>
+        ) : null}
+      </Notice>
+    )
+  }
+  return feedback.success ? (
+    <Notice tone="success" className={className}>
+      {feedback.success}
+    </Notice>
+  ) : null
 }

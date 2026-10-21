@@ -8,10 +8,11 @@ import { Field, Select, Textarea } from '@/components/ui/form-controls'
 import { apiRequest, ApiError } from '@/lib/api-client'
 import { formatStatusLabel } from '@/lib/format'
 import { useClientReady } from '@/lib/use-client-ready'
-import type {
-  SellerDocument,
-  DocumentReview,
-  DocumentPage,
+import {
+  documentTypeLabel,
+  type SellerDocument,
+  type DocumentReview,
+  type DocumentPage,
 } from '@/lib/seller-documents'
 
 export function SellerDocumentRequests({
@@ -109,7 +110,7 @@ export function SellerDocumentRequests({
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
           >
             <div>
-              <p className="font-medium">{formatStatusLabel(item.type)}</p>
+              <p className="font-medium">{documentTypeLabel(item.type)}</p>
               <p className="break-words text-sm">{item.note}</p>
               <StatusBadge>{formatStatusLabel(item.status)}</StatusBadge>
               {['requested', 'processing', 'received'].includes(item.status) ? (
@@ -151,7 +152,7 @@ export function SellerDocumentRequests({
               'other',
             ].map((value) => (
               <option key={value} value={value}>
-                {formatStatusLabel(value)}
+                {documentTypeLabel(value)}
               </option>
             ))}
           </Select>
@@ -232,7 +233,7 @@ export function DocumentReviewQueue() {
       {page.items.map((item) => (
         <Card key={item.fileId}>
           <h2 className="font-semibold">{item.seller.displayName}</h2>
-          <p className="my-3">{formatStatusLabel(item.request.type)}</p>
+          <p className="my-3">{documentTypeLabel(item.request.type)}</p>
           <LinkButton
             href={{ pathname: `/admin/seller-documents/${item.request.id}` }}
             variant="secondary"
@@ -298,7 +299,7 @@ export function DocumentReviewManager({
       {success ? <Notice tone="success">{success}</Notice> : null}
       <Card>
         <h2 className="text-lg font-semibold">
-          {formatStatusLabel(document.type)}
+          {documentTypeLabel(document.type)}
         </h2>
         <StatusBadge className="mt-3">
           {formatStatusLabel(document.status)}

@@ -7,7 +7,8 @@ import { countCategories } from '@/lib/public-home'
 import type { PublicCategory } from '@/lib/seller-products'
 
 export const metadata: Metadata = {
-  title: 'EcoKart | Independent sellers across India',
+  // absolute: the root template would add a second "| EcoKart".
+  title: { absolute: 'EcoKart | Independent sellers across India' },
   description:
     'Explore EcoKart categories and active brands while our reviewed marketplace catalogue is prepared.',
 }

@@ -20,7 +20,8 @@ export function PortalShell({
 }) {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-background lg:flex-row">
-      <aside className="border-b bg-surface lg:w-64 lg:border-r lg:border-b-0">
+      {/* On desktop the navigation stays in view on long pages. */}
+      <aside className="border-b bg-surface lg:sticky lg:top-0 lg:h-dvh lg:w-64 lg:shrink-0 lg:self-start lg:overflow-y-auto lg:border-r lg:border-b-0">
         <div className="flex items-center justify-between gap-4 px-4 py-4 lg:block lg:px-6 lg:py-6">
           <Link
             href="/"
