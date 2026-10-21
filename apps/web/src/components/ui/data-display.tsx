@@ -62,6 +62,8 @@ export function DetailList({
  * One label and value in a `<dl>`. `code` keeps an identifier such as a
  * GSTIN, PAN, or invoice number on one line: broken in two it reads as two
  * values and is hard to copy. DetailList keeps its columns wide enough.
+ * A blank value reads as a muted "Not given", for example the name of a
+ * buyer who applied to sell without setting one.
  */
 export function Detail({
   label,
@@ -72,16 +74,19 @@ export function Detail({
   value: string
   code?: boolean
 }) {
+  const missing = value.trim() === ''
   return (
     <div className="min-w-0">
       <dt className="text-sm text-muted">{label}</dt>
       <dd
         className={cx(
-          'mt-1 font-medium',
-          code ? 'whitespace-nowrap' : 'break-words',
+          'mt-1',
+          missing
+            ? 'text-muted'
+            : cx('font-medium', code ? 'whitespace-nowrap' : 'break-words'),
         )}
       >
-        {value}
+        {missing ? 'Not given' : value}
       </dd>
     </div>
   )
