@@ -399,9 +399,11 @@ test('S01 S02 S03 S04 S05 S06 S07 S08 I02 I03 I04 @smoke applicant documents, de
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     expect((await page.request.get('/api/seller/products')).status()).toBe(200)
     await page.goto('/')
-    await expect(
-      page.getByRole('link', { name: 'Seller portal', exact: true }),
-    ).toBeVisible()
+    const sellerPortal = page.getByRole('link', {
+      name: /^Seller(?: portal)?$/,
+    })
+    await expect(sellerPortal).toBeVisible()
+    await expect(sellerPortal).toHaveAttribute('href', '/seller')
     await admin.getByLabel('Suspension reason').fill('Test business review')
     await admin
       .getByRole('button', { name: 'Suspend seller', exact: true })

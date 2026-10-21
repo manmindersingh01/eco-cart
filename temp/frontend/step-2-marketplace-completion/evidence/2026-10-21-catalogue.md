@@ -157,3 +157,37 @@ Safari invalid bowl,Unknown Safari category,SAFARI-UNIQUE-BAD,100,120,20,10
 The existing media contract provides no caption upload or transcription asset.
 These seller/admin video previews therefore do not claim captioned audio accessibility; caption support needs a separate product decision.
 No production deployment or task 06 storefront UI is included in this task.
+
+## Main integration
+
+The implementation and completion documents were committed as `e34d5ec`.
+At the user's request, `git pull --no-rebase -X theirs origin main` integrated main through `f4b1beab92ad5de588b0b085845cef928f1a5873`, producing merge commit `2669632`.
+The merge preferred main for conflicting edits and completed with no unresolved conflicts.
+Main's shared card, form, phone-header, account-control, portal-navigation and API demo changes are retained.
+The merged shared UI directory, account controls, Razorpay test helper and API demo script match main exactly.
+Verification of the merged candidate is recorded below before pushing to main.
+The first merged browser run reproduced Firefox restoring disabled form attributes because main's adjacent card change displaced the listing form's autocomplete guard.
+The follow-up keeps main's `Card flush` and restores `autoComplete="off"` on that form.
+That diagnostic run, `ee1f1f9f06e4`, was stopped after identifying the failure and cleaned its owned resources.
+It also recorded one import report connection reset; subsequent verification must pass that read without relaxing its assertions.
+
+The verified integration candidate is merge `266963225070bae7bc58982ba592fb735abe3ff0` plus the listing form guard and responsive onboarding test adjustment recorded here.
+
+| Merged-candidate command | Result |
+| --- | --- |
+| `pnpm test:e2e -- --grep=C0` | Exit 0: 18 passed across Chromium, Firefox and WebKit at desktop and phone widths, zero skips/retries; run `ffb48b22ca35` cleaned its resources; Firefox import report reads passed without changing the assertions |
+
+The first merged smoke run passed 13 of 14 tests and found a historical onboarding selector expecting `Seller portal` at phone widths.
+Main intentionally labels that phone link `Seller`.
+The test now accepts the responsive accessible label and explicitly verifies its `/seller` destination, retaining main's UI unchanged.
+Run `9c7ec1966b01` cleaned its resources.
+
+The corrected `pnpm test:e2e:smoke` exited 0 with 14 passed, zero skips/retries, in run `da73759b9a1a`.
+`pnpm test:e2e:demo` exited 0 with 23 passed, zero failed and two configuration skips in run `f5ed9eb25cde`.
+The skips were the AI-disabled assistant and online payment, disabled in the isolated stack; the demo does not establish online-payment coverage.
+The demo verified seller applications, combined-account shopping, minimum-order enforcement, cash-on-delivery checkout, dispatch, delivery, invoices, reviews, returns/refunds and seller statements.
+Both runs cleaned their owned resources.
+The first merged `pnpm check` passed formatting, lint and typecheck, then reported 995 of 996 core tests passing.
+The returns visibility test assumed its request was last in the global administrator queue, but other test files can add requests concurrently.
+That test now checks the intended visibility and uniqueness across pages without assuming it owns the newest request.
+No returns service behaviour or ordering changed.
