@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
 import { Field, Input } from '@/components/ui/form-controls'
 import { PageHeader } from '@/components/ui/page-header'
+import { Detail, DetailList } from '@/components/ui/data-display'
 import { issuesFor } from '@/lib/admin-settings'
 import { ApiError, apiRequest } from '@/lib/api-client'
 import { formatIndianDate, formatState } from '@/lib/format'
@@ -130,13 +131,13 @@ export function SellerProfileManager({
             </div>
             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
           </div>
-          <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+          <DetailList className="mt-5">
             <Detail label="Display name" value={seller.displayName} />
             <Detail label="Legal name" value={seller.legalName} />
             <Detail label="Seller URL name" value={seller.slug} />
-            <Detail label="GSTIN" value={seller.gstin ?? 'Not provided'} />
-            <Detail label="PAN" value={seller.pan ?? 'Not provided'} />
-            <Detail label="Invoice prefix" value={seller.invoicePrefix} />
+            <Detail label="GSTIN" value={seller.gstin ?? 'Not provided'} code />
+            <Detail label="PAN" value={seller.pan ?? 'Not provided'} code />
+            <Detail label="Invoice prefix" value={seller.invoicePrefix} code />
             <Detail
               label="Commission"
               value={sellerCommissionLabel(seller.commissionBps)}
@@ -149,7 +150,7 @@ export function SellerProfileManager({
                   : 'Not approved yet'
               }
             />
-          </dl>
+          </DetailList>
         </Card>
 
         <Card>
@@ -158,7 +159,7 @@ export function SellerProfileManager({
             Ask an administrator to correct this address because it appears on
             legal records and invoices.
           </p>
-          <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+          <DetailList className="mt-5">
             <Detail label="Address" value={seller.line1} />
             <Detail label="City" value={seller.city} />
             <Detail
@@ -166,7 +167,7 @@ export function SellerProfileManager({
               value={`${formatState(seller.stateCode)} (${seller.stateCode})`}
             />
             <Detail label="PIN code" value={seller.pincode} />
-          </dl>
+          </DetailList>
         </Card>
       </div>
 
@@ -273,15 +274,6 @@ export function SellerProfileManager({
           />
         </dl>
       </Card>
-    </div>
-  )
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd className="mt-1 break-words font-medium">{value}</dd>
     </div>
   )
 }

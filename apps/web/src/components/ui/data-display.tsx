@@ -38,3 +38,56 @@ export function DataCard({ className, ...props }: HTMLAttributes<HTMLElement>) {
     />
   )
 }
+
+/**
+ * Details in two columns from the small breakpoint, or one while two would
+ * be narrower than 10rem, the width of a GSTIN kept on one line.
+ */
+export function DetailList({
+  className,
+  ...props
+}: HTMLAttributes<HTMLDListElement>) {
+  return (
+    <dl
+      className={cx(
+        'grid gap-4 sm:grid-cols-[repeat(auto-fill,minmax(max(10rem,calc(50%_-_0.5rem)),1fr))]',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+/**
+ * One label and value in a `<dl>`. `code` keeps an identifier such as a
+ * GSTIN, PAN, or invoice number on one line: broken in two it reads as two
+ * values and is hard to copy. DetailList keeps its columns wide enough.
+ * A blank value reads as a muted "Not given", for example the name of a
+ * buyer who applied to sell without setting one.
+ */
+export function Detail({
+  label,
+  value,
+  code = false,
+}: {
+  label: string
+  value: string
+  code?: boolean
+}) {
+  const missing = value.trim() === ''
+  return (
+    <div className="min-w-0">
+      <dt className="text-sm text-muted">{label}</dt>
+      <dd
+        className={cx(
+          'mt-1',
+          missing
+            ? 'text-muted'
+            : cx('font-medium', code ? 'whitespace-nowrap' : 'break-words'),
+        )}
+      >
+        {missing ? 'Not given' : value}
+      </dd>
+    </div>
+  )
+}

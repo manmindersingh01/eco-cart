@@ -9,6 +9,7 @@ import { Button, LinkButton } from '@/components/ui/button'
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
+import { Detail } from '@/components/ui/data-display'
 import { ApiError, apiRequest } from '@/lib/api-client'
 import {
   formatBasisPoints,
@@ -271,6 +272,7 @@ function ProductSummary({ product }: { product: SellerProduct }) {
         <dl className="mt-4 grid gap-3">
           <Detail
             label="Effective HSN"
+            code={Boolean(product.hsnCode ?? product.category.defaultHsnCode)}
             value={
               product.hsnCode ??
               product.category.defaultHsnCode ??
@@ -312,15 +314,6 @@ function ProductSummary({ product }: { product: SellerProduct }) {
           <Detail label="Variants" value={String(product.variants.length)} />
         </dl>
       </Card>
-    </div>
-  )
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd className="mt-1 break-words font-medium">{value}</dd>
     </div>
   )
 }
