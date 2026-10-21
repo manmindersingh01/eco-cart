@@ -191,3 +191,16 @@ The first merged `pnpm check` passed formatting, lint and typecheck, then report
 The returns visibility test assumed its request was last in the global administrator queue, but other test files can add requests concurrently.
 That test now checks the intended visibility and uniqueness across pages without assuming it owns the newest request.
 No returns service behaviour or ordering changed.
+
+Integration fixes and the diagnostic evidence were committed as `ffc3664`.
+Main then received `2697e2d` and `37509b8`, introducing shared detail values that keep identifiers on one line and show blank values as `Not given`.
+Another `git pull --no-rebase -X theirs origin main` retained those changes and produced merge `3f65582` without unresolved conflicts.
+The latest candidate's shared UI, account controls, administrator seller details, seller profile, Razorpay test helper and API demo script match main exactly.
+Its task 05 quantity, media, publication and import controls remain present.
+No later application code changes were needed.
+
+| Latest-main candidate command | Result |
+| --- | --- |
+| `pnpm check` on `3f65582` | Exit 0: formatting, lint, typecheck, 996 core + 264 web + 11 worker tests (1,271 total), and the Next.js 16.3.7 production build passed; local log `apps/web/.e2e/task05-latest-main-check.log` |
+| `pnpm test:e2e:smoke` on `3f65582` | Exit 0: 14 passed across Chromium desktop and phone, zero failures/skips/retries; run `a85024a208d7` cleaned its resources; includes the main detail-display changes and responsive portal labels |
+| `pnpm test:e2e -- --project=webkit-desktop --project=webkit-phone --grep=C01` on `3f65582` | Exit 0: two passed, zero failures/skips/retries; run `7101c3811951` cleaned its resources; verifies the updated product details, quantity and publication journey in WebKit |
