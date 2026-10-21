@@ -2,7 +2,9 @@ import { getOwnProduct, NotFoundError, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
+import { Suspense } from 'react'
 import { ProductEditor } from '@/components/seller/product-editor'
+import { PageLoading } from '@/components/ui/page-loading'
 import { getDatabase } from '@/lib/db'
 import type { SellerProduct } from '@/lib/product-editor'
 import { requireSeller } from '@/lib/request-context'
@@ -12,9 +14,10 @@ export const metadata: Metadata = {
   title: 'Product editor',
 }
 
-export default async function SellerProductPage({
+/** The seller's own product in the address. */
+async function ProductForEditing({
   params,
-}: PageProps<'/seller/products/[id]'>) {
+}: Pick<PageProps<'/seller/products/[id]'>, 'params'>) {
   const { id } = await params
   const requestHeaders = await headers()
   const { context } = await requireSeller(requestHeaders)
@@ -34,4 +37,14 @@ export default async function SellerProductPage({
     updatedAt: product.updatedAt.toISOString(),
   }
   return <ProductEditor initialProduct={serialised} />
+}
+
+export default function SellerProductPage({
+  params,
+}: PageProps<'/seller/products/[id]'>) {
+  return (
+    <Suspense fallback={<PageLoading />}>
+      <ProductForEditing params={params} />
+    </Suspense>
+  )
 }
