@@ -1240,20 +1240,34 @@ const steps: Step[] = [
   {
     name: 'The seller’s own login places an order as a buyer',
     async run() {
-      // Another seller's product from the example data.
-      const found = expectStatus(
-        await seller.get('/api/search?q=toothbrush'),
-        200,
-        'Searching as the seller',
-      )
-      const slug = text(found, 'items.0.slug')
+      // Another seller's product from the example data. A local database may
+      // have taken some example listings off sale, so try a few words.
+      let item: Record<string, unknown> | undefined
+      for (const words of ['toothbrush', 'bamboo', 'jute', 'cotton']) {
+        const found = expectStatus(
+          await seller.get(`/api/search?q=${words}`),
+          200,
+          'Searching as the seller',
+        )
+        item = list(found, 'items').find(
+          (candidate) =>
+            candidate.inStock === true && candidate.slug !== story.productSlug,
+        )
+        if (item) break
+      }
+      if (!item) {
+        fail(
+          'no example product is on sale; run `pnpm db:seed` on a fresh database',
+        )
+      }
       const product = expectStatus(
-        await seller.get(`/api/products/${slug}`),
+        await seller.get(`/api/products/${String(item.slug)}`),
         200,
         'The product page',
       )
       const added = await seller.post('/api/cart/items', {
         variantId: text(product, 'product.variants.0.id'),
+        quantity: Number(item.minOrderQuantity ?? 1),
       })
       if (added.status === 403) {
         skip(
