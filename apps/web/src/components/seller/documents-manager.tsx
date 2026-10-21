@@ -7,6 +7,8 @@ import { Field, Input } from '@/components/ui/form-controls'
 import { apiRequest, ApiError } from '@/lib/api-client'
 import { formatStatusLabel } from '@/lib/format'
 import {
+  documentTypeLabel,
+  documentTypeName,
   documentUploadError,
   type SellerDocument,
   type DocumentPage,
@@ -189,7 +191,7 @@ export function DocumentsManager() {
       ) : null}
       {documents.map((document) => (
         <Card key={document.id}>
-          <h3 className="font-semibold">{formatStatusLabel(document.type)}</h3>
+          <h3 className="font-semibold">{documentTypeLabel(document.type)}</h3>
           <StatusBadge className="mt-2">
             {formatStatusLabel(document.status)}
           </StatusBadge>
@@ -217,9 +219,9 @@ export function DocumentsManager() {
           {document.status === 'requested' ? (
             <Field
               className="mt-4"
-              label={`Upload ${formatStatusLabel(document.type)}`}
+              label={`Upload ${documentTypeName(document.type)}`}
               htmlFor={`document-${document.id}`}
-              hint="PDF, JPEG or PNG. Maximum 10 MB, including exactly 10,485,760 bytes."
+              hint="A PDF, JPEG or PNG of up to 10 MB."
             >
               <Input
                 type="file"

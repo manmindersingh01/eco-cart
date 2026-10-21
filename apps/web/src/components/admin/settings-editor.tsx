@@ -98,6 +98,18 @@ const labels: Record<SettingKey, string> = {
   company_details: 'Company details',
 }
 
+/*
+ * The stored settings describe their units (basis points, paise), but these
+ * fields take a percentage and rupees, so say it the way the form does.
+ */
+const plainDescriptions: Partial<Record<SettingKey, string>> = {
+  commission_bps:
+    'The share of each sale EcoKart keeps, as a percentage. A seller with their own rate uses that instead.',
+  delivery_charge_paise: 'A flat delivery charge for each order.',
+  free_delivery_threshold_paise:
+    'Orders whose subtotal reaches this amount are delivered free.',
+}
+
 function settingLabel(key: SettingKey): string {
   return labels[key]
 }
@@ -122,7 +134,9 @@ function SettingCard({
             <h3 className="text-lg font-semibold">
               {settingLabel(setting.key)}
             </h3>
-            <p className="mt-1 text-sm text-muted">{setting.description}</p>
+            <p className="mt-1 text-sm text-muted">
+              {plainDescriptions[setting.key] ?? setting.description}
+            </p>
           </div>
           <StatusBadge tone={source.tone}>{source.label}</StatusBadge>
           <p className="text-sm text-muted sm:col-span-2">

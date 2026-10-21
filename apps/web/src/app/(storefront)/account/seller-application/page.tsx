@@ -13,10 +13,17 @@ export const metadata = { title: 'Seller application' }
 export const instant = false
 
 export default function ApplicationPage() {
+  // The one <main> stays outside the boundary, so the loading text and the
+  // application share it.
   return (
-    <Suspense fallback={<output>Loading application...</output>}>
-      <ApplicationData />
-    </Suspense>
+    <main
+      id="main-content"
+      className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6"
+    >
+      <Suspense fallback={<output>Loading application...</output>}>
+        <ApplicationData />
+      </Suspense>
+    </main>
   )
 }
 
@@ -37,12 +44,5 @@ async function ApplicationData() {
   } catch (cause) {
     if (!(cause instanceof NotFoundError)) throw cause
   }
-  return (
-    <main
-      id="main-content"
-      className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6"
-    >
-      <ApplicationManager initialApplication={application} />
-    </main>
-  )
+  return <ApplicationManager initialApplication={application} />
 }

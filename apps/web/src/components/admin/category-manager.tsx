@@ -309,7 +309,7 @@ export function CategoryManager({
               <Field
                 label="GST percentage"
                 htmlFor="category-gst"
-                hint="For example, 5 or 0.25. The backend accepts only current GST rates."
+                hint="For example, 5 or 0.25. Use a current GST rate."
                 error={error('gstRateBps')}
                 required
               >
@@ -328,7 +328,7 @@ export function CategoryManager({
               <Field
                 label="Default HSN code"
                 htmlFor="category-hsn"
-                hint="Optional. Clearing this field sends null."
+                hint="Optional. Leave it blank if the category has no default HSN code."
                 error={error('defaultHsnCode')}
               >
                 <Input

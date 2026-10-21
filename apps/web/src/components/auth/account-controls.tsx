@@ -145,12 +145,10 @@ export function AccountControls({
           {label}
         </span>
       ) : null}
-      {account.roles.includes('buyer') ? (
-        <LinkButton
-          href="/account/seller-application"
-          variant="quiet"
-          className={portal ? 'max-sm:hidden' : undefined}
-        >
+      {/* Approval adds the seller role, and then the seller portal link
+          takes the application's place. */}
+      {account.roles.includes('buyer') && !account.roles.includes('seller') ? (
+        <LinkButton href="/account/seller-application" variant="quiet">
           <span className="sm:hidden">Sell</span>
           <span className="max-sm:hidden">Seller application</span>
         </LinkButton>
