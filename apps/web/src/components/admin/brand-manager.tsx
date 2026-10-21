@@ -502,7 +502,7 @@ function BrandForm({
     issuesFor(issues, path).join('. ') || undefined
   const prefix = onCancel ? 'edit-brand' : 'new-brand'
   return (
-    <Card className="p-0">
+    <Card flush>
       <form onSubmit={onSubmit} noValidate>
         <div className="border-b p-5">
           <h2 className="text-lg font-semibold">{title}</h2>

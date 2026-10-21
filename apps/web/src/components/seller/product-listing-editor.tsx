@@ -135,7 +135,7 @@ export function ProductListingEditor({
   )
 
   return (
-    <Card className="p-0">
+    <Card flush>
       <form onSubmit={save} noValidate>
         <div className="border-b p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">

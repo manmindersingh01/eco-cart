@@ -239,7 +239,10 @@ export function SellerDetailManager({
           <h2 className="font-semibold">Owner account</h2>
           {seller.owner ? (
             <dl className="mt-4 grid gap-3 text-sm">
-              <Detail label="Name" value={seller.owner.name} />
+              <Detail
+                label="Name"
+                value={seller.owner.name || 'Not provided'}
+              />
               <Detail label="Email" value={seller.owner.email} />
               <Detail
                 label="Mobile"
@@ -298,6 +301,12 @@ export function SellerDetailManager({
           Lifecycle changes take effect immediately and are recorded in the
           audit log.
         </p>
+        {seller.status === 'rejected' ? (
+          <Notice tone="neutral" className="mt-4">
+            This application was rejected. It comes back here as pending when
+            the applicant corrects it and applies again.
+          </Notice>
+        ) : null}
         {actions.approveDisabledReason ? (
           <Notice tone="warning" className="mt-4">
             {actions.approveDisabledReason} Approval will show the exact missing
@@ -325,6 +334,7 @@ export function SellerDetailManager({
               title="Approve this seller?"
               description="The seller will be allowed to trade on EcoKart. GSTIN and PAN must both be valid."
               trigger="Approve seller"
+              triggerVariant="primary"
               confirmLabel="Approve seller"
               onConfirm={() => void runLifecycle('approve')}
               triggerDisabled={actionPending}
@@ -390,7 +400,7 @@ export function SellerDetailManager({
 
       <SellerDocumentsPanel sellerId={seller.id} />
 
-      <Card className="p-0">
+      <Card flush>
         <form onSubmit={saveBusiness} noValidate>
           <div className="border-b p-5 sm:p-6">
             <h2 className="text-lg font-semibold">Edit business details</h2>

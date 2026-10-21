@@ -140,7 +140,7 @@ export function SellerDocumentsPanel({ sellerId }: { sellerId: string }) {
   }
 
   return (
-    <Card className="p-0">
+    <Card flush>
       <div className="border-b p-5 sm:p-6">
         <h2 className="text-lg font-semibold">Documents</h2>
         <p className="mt-1 text-sm text-muted">

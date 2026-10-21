@@ -125,7 +125,7 @@ export function ProductVariantsEditor({
       </div>
 
       {identityEditable && product.optionNames.length > 0 ? (
-        <Card className="p-0">
+        <Card flush>
           <form onSubmit={addVariant} noValidate>
             <div className="border-b p-5">
               <h3 className="text-lg font-semibold">Add variant</h3>
@@ -243,7 +243,7 @@ function ExistingVariantEditor({
   }
 
   return (
-    <Card className="p-0">
+    <Card flush>
       <form onSubmit={save} noValidate>
         <div className="flex flex-wrap items-start justify-between gap-3 border-b p-5">
           <div>

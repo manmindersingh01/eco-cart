@@ -170,7 +170,7 @@ export function SellerProfileManager({
         </Card>
       </div>
 
-      <Card className="p-0">
+      <Card flush>
         <form onSubmit={save} noValidate>
           <div className="border-b p-5 sm:p-6">
             <h2 className="text-lg font-semibold">Contact details</h2>

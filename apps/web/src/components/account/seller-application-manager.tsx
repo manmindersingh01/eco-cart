@@ -1,6 +1,12 @@
 'use client'
 
-import { useState, type FormEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
 import { ApplicationDocuments } from './application-documents'
 import { SellerBusinessFields } from '@/components/admin/seller-form-fields'
 import { Button, LinkButton } from '@/components/ui/button'
@@ -43,6 +49,15 @@ export function SellerApplicationManager({
   const [editing, setEditing] = useState(false)
   const [pending, setPending] = useState(false)
   const [feedback, setFeedback] = useState(idle)
+  const formRef = useRef<HTMLDivElement>(null)
+
+  // The form replaces the summary, whose button may be far down on a phone,
+  // so bring the form's start into view.
+  useEffect(() => {
+    if (editing) {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [editing])
 
   const status = application?.status
   const reapplying = status === 'rejected'
@@ -156,7 +171,7 @@ export function SellerApplicationManager({
       ) : null}
 
       {showForm ? (
-        <Card className="p-0">
+        <Card flush ref={formRef} className="scroll-mt-6">
           <form onSubmit={submit} noValidate>
             <div className="border-b p-5 sm:p-6">
               <h2 className="text-lg font-semibold">

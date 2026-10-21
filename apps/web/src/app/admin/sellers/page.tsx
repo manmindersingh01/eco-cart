@@ -160,10 +160,10 @@ async function SellerList({
                           {formatStatusLabel(seller.status)}
                         </StatusBadge>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-4 py-4 whitespace-nowrap">
                         {formatIndianDate(seller.createdAt)}
                       </td>
-                      <td className="px-4 py-4 text-right">
+                      <td className="px-4 py-4 text-right whitespace-nowrap">
                         <Link
                           href={sellerDetailHref(seller.id)}
                           className="font-semibold text-brand-strong underline-offset-4 hover:underline"

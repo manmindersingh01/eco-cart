@@ -17,7 +17,8 @@ type AccountControlsProps = {
 
 /**
  * The link next to Sign out: from a portal back to the shop, and from the
- * shop to the portal the account may use, or to applying to sell.
+ * shop to the portal the account may use, or to applying to sell. `short`
+ * fits a phone's header next to the logo or the account name.
  */
 function areaLink(
   account: CurrentAccount,
@@ -25,14 +26,23 @@ function areaLink(
 ): {
   href: '/' | '/admin' | '/seller' | '/account/seller-application'
   label: string
+  short: string
 } | null {
-  if (area !== 'shop') return { href: '/', label: 'Back to shop' }
-  if (account.roles.includes('admin'))
-    return { href: '/admin', label: 'Admin portal' }
-  if (account.roles.includes('seller'))
-    return { href: '/seller', label: 'Seller portal' }
+  if (area !== 'shop') {
+    return { href: '/', label: 'Back to shop', short: 'Shop' }
+  }
+  if (account.roles.includes('admin')) {
+    return { href: '/admin', label: 'Admin portal', short: 'Admin' }
+  }
+  if (account.roles.includes('seller')) {
+    return { href: '/seller', label: 'Seller portal', short: 'Seller' }
+  }
   if (account.roles.includes('buyer')) {
-    return { href: '/account/seller-application', label: 'Sell on EcoKart' }
+    return {
+      href: '/account/seller-application',
+      label: 'Sell on EcoKart',
+      short: 'Sell',
+    }
   }
   return null
 }
@@ -138,13 +148,20 @@ export function AccountControls({
   const link = areaLink(account, area)
   return (
     <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
-      <div className={compact ? 'sr-only' : 'min-w-0 text-right'}>
-        <p className="truncate text-sm font-medium">{label}</p>
-        <p className="text-xs text-muted">{formatStatusLabel(account.role)}</p>
-      </div>
+      {/* Compact: the name is in Sign out's label, and a hidden block here
+          would still take a gap in the row. */}
+      {compact ? null : (
+        <div className="min-w-0 text-right">
+          <p className="truncate text-sm font-medium">{label}</p>
+          <p className="text-xs text-muted">
+            {formatStatusLabel(account.role)}
+          </p>
+        </div>
+      )}
       {link ? (
         <LinkButton href={link.href} variant="secondary">
-          {link.label}
+          <span className="sm:hidden">{link.short}</span>
+          <span className="hidden sm:inline">{link.label}</span>
         </LinkButton>
       ) : null}
       <Button
