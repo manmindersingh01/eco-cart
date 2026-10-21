@@ -7,6 +7,7 @@ import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
 import { Field, Input, Select, Textarea } from '@/components/ui/form-controls'
 import { issuesFor } from '@/lib/admin-settings'
 import { ApiError, apiRequest } from '@/lib/api-client'
+import { useClientReady } from '@/lib/use-client-ready'
 import {
   listingValues,
   serialiseListingChanges,
@@ -51,7 +52,9 @@ export function ProductListingEditor({
   const [selectedBrand, setSelectedBrand] = useState<PublicBrand | null>(
     product.brand ? { ...product.brand, slug: '' } : null,
   )
-  const [pending, setPending] = useState(false)
+  const ready = useClientReady()
+  const [saving, setPending] = useState(false)
+  const pending = saving || !ready
   const [feedback, setFeedback] = useState(idle)
 
   useEffect(() => {
@@ -136,7 +139,7 @@ export function ProductListingEditor({
 
   return (
     <Card className="p-0">
-      <form onSubmit={save} noValidate>
+      <form autoComplete="off" onSubmit={save} noValidate>
         <div className="border-b p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>

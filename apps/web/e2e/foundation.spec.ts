@@ -22,7 +22,12 @@ test('P01 P07 @smoke public shell and protected routes', async ({
     page.getByRole('link', { name: 'Sign in', exact: true }),
   ).toBeVisible()
   await checkPage()
-  for (const path of ['/admin/settings', '/seller/products'])
+  for (const path of [
+    '/admin/settings',
+    '/seller/products',
+    '/admin/moderation',
+    '/seller/imports',
+  ])
     await expectProtectedRedirect(page, path)
   await page.getByLabel('Email address').focus()
   await expect(page.getByLabel('Email address')).toBeFocused()
@@ -86,6 +91,9 @@ test('P04 @smoke direct storage upload and real worker processing', async ({
     .parse(await created.json())
   await page.goto(`/seller/products/${product.id}`)
   await expect(
+    page.getByRole('button', { name: 'Save minimum quantity', exact: true }),
+  ).toBeEnabled()
+  await expect(
     page.getByRole('heading', { name: 'Product photos' }),
   ).toBeVisible()
   const storageOrigin = new URL(process.env.STORAGE_ENDPOINT!).origin
@@ -99,8 +107,11 @@ test('P04 @smoke direct storage upload and real worker processing', async ({
   })
     .png()
     .toBuffer()
+  await expect(
+    page.locator('input[type="file"][aria-label="Product photos"]'),
+  ).toBeEnabled()
   await page
-    .locator('input[type="file"]')
+    .locator('input[type="file"][aria-label="Product photos"]')
     .setInputFiles({ name: 'bowl.png', mimeType: 'image/png', buffer })
   expect((await uploaded).ok()).toBe(true)
   await expect

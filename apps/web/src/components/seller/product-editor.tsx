@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react'
 import { ProductListingEditor } from './product-listing-editor'
 import { ProductPhotoEditor } from './product-photo-editor'
 import { ProductVariantsEditor } from './product-variant-editor'
+import { ProductOperations, ProductVideoEditor } from './product-operations'
 import { Button, LinkButton } from '@/components/ui/button'
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
@@ -103,6 +104,11 @@ export function ProductEditor({
       ) : null}
 
       <ProductSummary product={product} />
+      <ProductOperations
+        product={product}
+        onProduct={setProduct}
+        onReload={reload}
+      />
 
       {editable ? (
         <ProductListingEditor
@@ -167,14 +173,19 @@ export function ProductEditor({
         onReload={reload}
       />
 
+      <ProductVideoEditor
+        key={product.video?.id ?? 'none'}
+        product={product}
+        onProduct={setProduct}
+        onReload={reload}
+      />
       <Card>
         <h2 className="text-lg font-semibold text-danger">Danger area</h2>
         {editable ? (
           <>
             <p className="mt-2 text-sm text-muted">
               Deleting removes this draft or rejected product from your
-              catalogue. The empty HTTP response is handled without parsing
-              JSON.
+              catalogue.
             </p>
             <div className="mt-5">
               <ConfirmationDialog
@@ -193,7 +204,7 @@ export function ProductEditor({
         ) : (
           <p className="mt-2 text-sm text-muted">
             Only a draft or rejected product can be deleted. Products that have
-            been on sale are archived through a later lifecycle flow.
+            been on sale can be archived using the publication controls above.
           </p>
         )}
       </Card>
@@ -248,6 +259,10 @@ function ProductSummary({ product }: { product: SellerProduct }) {
         <dl className="mt-4 grid gap-3">
           <Detail label="Category" value={product.category.path.join(' > ')} />
           <Detail label="Brand" value={product.brand?.name ?? 'Unbranded'} />
+          <Detail
+            label="Minimum quantity"
+            value={`${product.minOrderQuantity} per variant`}
+          />
           <Detail label="URL name" value={product.slug} />
         </dl>
       </Card>

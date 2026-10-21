@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Planned |
-| Implemented | No |
+| Status | complete |
+| Implemented | Yes |
 | Depends on | 02; 04 for complete applicant-to-seller journey |
 | Blocks | Publishable catalogue for storefront and purchase tests |
 
@@ -78,4 +78,20 @@ Add proposed `e2e/catalogue-lifecycle.spec.ts`, `media.spec.ts` and `imports.spe
 Reuse generated image/video/spreadsheet fixtures from `@ecokart/core/testing`.
 Use bounded job polling and real SeaweedFS objects.
 Run relevant core and route tests, worker tests, lint/typecheck and these browser suites.
-Completion evidence is pending; record persisted product IDs and test-only fixture identities without private signed URLs.
+Completion evidence records persisted product IDs and test-only fixture identities in ignored test attachments without publishing private signed URLs.
+
+## Implementation and verification log
+
+Implementation started on 21 October 2026 on `step-2-marketplace-completion`, from `661b7fedc09481eccd7ce408e27bb88a4f325af3`.
+The starting worktree was clean.
+See [the task evidence](evidence/2026-10-21-catalogue.md) for implemented behaviour, acceptance mapping, commands and remaining checks.
+The existing moderation API lists open reviews with risk filters, not arbitrary product status filters.
+The administrator screen uses that contract; seller product lists retain their status filters, and reviewed detail remains accessible after a decision.
+The existing four-photo limit, usable main-photo requirement and optional single-video policy are retained.
+AI mapping controls remain task 11 work.
+
+Completed and verified on 21 October 2026.
+All C01 through C08 acceptance cases passed through the browser journeys and relevant core/API regression tests.
+The final catalogue run passed 18 tests across Chromium, Firefox and WebKit at desktop and phone widths, followed by six installed Chrome tests and 14 smoke tests.
+`pnpm check` exited 0: formatting, lint, typecheck, 1,271 tests and the production build passed.
+Actual Safari, VoiceOver and browser zoom checks remain task 12 release work; exact manual steps are in the linked evidence.

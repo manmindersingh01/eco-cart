@@ -226,6 +226,26 @@ describe('adding a photo', () => {
     await expect(requestUpload(product)).resolves.toBeDefined()
   })
 
+  test('C03 concurrent registrations cannot exceed the four-photo cap', async () => {
+    const product = await newProduct()
+    for (let index = 0; index < MAX_IMAGES_PER_PRODUCT - 1; index++)
+      await addPhoto(product)
+    const first = await requestUpload(product)
+    const second = await requestUpload(product)
+    const results = await Promise.allSettled([
+      add(product, { uploadKey: first.key }),
+      add(product, { uploadKey: second.key }),
+    ])
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1)
+    const failure = results.find((result) => result.status === 'rejected')
+    expect(
+      failure?.status === 'rejected' && failure.reason instanceof ConflictError,
+    ).toBe(true)
+    expect((await view(product)).images).toHaveLength(MAX_IMAGES_PER_PRODUCT)
+  })
+
   test('only while listing details may change', async () => {
     const product = await newProduct()
     await owner

@@ -59,7 +59,7 @@ Confirm actual remote names again when implementation starts.
 | 02 | [Backend integration and role compatibility](02-integration-and-roles.md) | 01 | Current `step-2-marketplace-completion` branch | Yes | Complete; role, API demo, browser and full checks passed |
 | 03 | [Remarks decisions and backend changes](03-remarks-backend.md) | 02 | Current `step-2-marketplace-completion` branch | Yes | Complete; retained policies verified and reproduced defects fixed |
 | 04 | [Seller applications and verification](04-seller-onboarding.md) | 02 | Current `step-2-marketplace-completion` branch | Yes | Complete; application/document journeys and full checks passed |
-| 05 | [Catalogue lifecycle, quantity, media, imports](05-catalogue-operations.md) | 02; 04 for applicant journey | `frontend/step-5-catalogue-operations` | No | Planned |
+| 05 | [Catalogue lifecycle, quantity, media, imports](05-catalogue-operations.md) | 02; 04 for applicant journey | Current `step-2-marketplace-completion` branch | Yes | Complete; C01-C08, catalogue/Chrome/smoke browser runs and `pnpm check` passed |
 | 06 | [Public shop and keyword search](06-storefront.md) | 05 | `frontend/step-6-storefront` | No | Planned |
 | 07 | [Buyer account, addresses, cart, coupons](07-account-and-cart.md) | 06 | `frontend/step-7-account-cart` | No | Planned |
 | 08 | [Checkout, orders, fulfilment, invoices](08-checkout-and-orders.md) | 07 | `frontend/step-8-checkout-orders` | No | Planned |
@@ -71,7 +71,8 @@ Confirm actual remote names again when implementation starts.
 Task numbers are a recommended chronological execution sequence.
 The dependency column is the actual blocking relationship.
 Tasks 02 through 04 were approved and completed together on the existing branch; their [shared evidence](evidence/2026-10-20-onboarding.md) records implementation, tests and remaining release checks.
-The current document and media policies are resolved; task 05 is the next implementation task.
+The current document and media policies are resolved; task 05 is complete with [catalogue evidence](evidence/2026-10-21-catalogue.md).
+Task 06 is the next implementation task.
 Prioritise payment integrity, order accuracy, catalogue, and the buyer journey over AI convenience.
 Reassess the 31 October launch scope after task 02; do not promise this whole programme fits the remaining days.
 

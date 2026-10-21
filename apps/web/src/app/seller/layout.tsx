@@ -9,6 +9,7 @@ const navigation = [
   { href: '/seller/profile', label: 'Business profile' },
   { href: '/seller/documents', label: 'Documents' },
   { href: '/seller/products', label: 'Products' },
+  { href: '/seller/imports', label: 'Catalogue imports' },
 ] as const
 
 // Entering a protected area may block on the server's session decision.

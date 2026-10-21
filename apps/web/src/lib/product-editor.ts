@@ -4,6 +4,7 @@ import {
   paiseToRupeeInput,
 } from './admin-settings'
 import type { ProductStatus } from './seller-products'
+import type { VideoView } from '@ecokart/core'
 
 export type ProductVariant = {
   id: string
@@ -28,6 +29,8 @@ export type ProductImage = {
 }
 
 export type SellerProduct = {
+  minOrderQuantity: number
+  video: VideoView | null
   id: string
   slug: string
   status: ProductStatus

@@ -17,6 +17,8 @@ export const test = base.extend<{ checkPage: () => Promise<void> }>({
       // Resource errors from these explicitly asserted refusals are expected.
       const location = message.location().url
       const expectedRefusal =
+        (/Failed to load resource.*400/.test(message.text()) &&
+          /\/api\/seller\/products\/[^/]+\/submit$/.test(location)) ||
         (/Failed to load resource.*401/.test(message.text()) &&
           location.includes('/api/me')) ||
         (/Failed to load resource.*400/.test(message.text()) &&
@@ -88,6 +90,7 @@ export function fixturesFor(project: string) {
         z.object({
           adminEmail: z.string(),
           sellerEmail: z.string(),
+          otherSellerEmail: z.string(),
         }),
       ),
     })

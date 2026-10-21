@@ -13,9 +13,11 @@ import {
 import { PageHeader } from '@/components/ui/page-header'
 import { issuesFor } from '@/lib/admin-settings'
 import { ApiError, apiRequest } from '@/lib/api-client'
+import { useClientReady } from '@/lib/use-client-ready'
 import {
   flattenLeafCategories,
   serialiseProduct,
+  SKU_INPUT_PATTERN,
   type LeafCategory,
   type ProductFormValues,
   type PublicBrand,
@@ -31,6 +33,7 @@ type Feedback = {
 const idleFeedback: Feedback = { error: null, issues: [] }
 
 const initialValues: ProductFormValues = {
+  minOrderQuantity: '1',
   categoryId: '',
   brandId: '',
   title: '',
@@ -63,7 +66,9 @@ export function ProductCreateForm() {
     useState('/api/categories')
   const [selectedBrand, setSelectedBrand] = useState<PublicBrand | null>(null)
   const [feedback, setFeedback] = useState(idleFeedback)
-  const [pending, setPending] = useState(false)
+  const ready = useClientReady()
+  const [saving, setPending] = useState(false)
+  const pending = saving || !ready
 
   useEffect(() => {
     const controller = new AbortController()
@@ -227,7 +232,12 @@ export function ProductCreateForm() {
         }
       />
 
-      <form className="grid gap-6" onSubmit={submit} noValidate>
+      <form
+        autoComplete="off"
+        className="grid gap-6"
+        onSubmit={submit}
+        noValidate
+      >
         <Card className="grid gap-5">
           <SectionHeading
             title="Product identity"
@@ -291,6 +301,24 @@ export function ProductCreateForm() {
                 onChange={(event) => change('title', event.target.value)}
                 minLength={3}
                 maxLength={150}
+                disabled={pending}
+              />
+            </Field>
+            <Field
+              label="Minimum quantity"
+              htmlFor="create-minimum"
+              hint="Whole number from 1 to 1000. Minimum 10 means at least 10 units of the chosen variant; 11 is allowed."
+              error={error('minOrderQuantity')}
+            >
+              <Input
+                type="number"
+                min={1}
+                max={1000}
+                step={1}
+                value={values.minOrderQuantity ?? '1'}
+                onChange={(event) =>
+                  change('minOrderQuantity', event.target.value)
+                }
                 disabled={pending}
               />
             </Field>
@@ -589,7 +617,7 @@ export function ProductCreateForm() {
 
         <div className="flex flex-col-reverse gap-3 rounded-xl border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted">
-            The draft remains private until the later review flow approves it.
+            The draft remains private until an administrator approves it.
           </p>
           <Button type="submit" disabled={pending || categoriesLoading}>
             {pending ? 'Creating draft...' : 'Create product draft'}
@@ -657,7 +685,7 @@ function VariantEditor({
           onChange={(event) =>
             onChange((current) => ({ ...current, sku: event.target.value }))
           }
-          pattern="[A-Za-z0-9][A-Za-z0-9._/-]{0,63}"
+          pattern={SKU_INPUT_PATTERN}
           maxLength={64}
           disabled={disabled}
         />

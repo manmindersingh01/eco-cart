@@ -767,6 +767,16 @@ Later the same day Ravi changes the stock of Soft to 95 without anything else ch
 - Tests prove every rule above, the summary fields after each kind of change, that one seller can never read or change another's product, the upload form's limits against real object storage, the image job from upload to stored sizes (including metadata removal and every failure reason), and every API answer.
 - `pnpm check` passes.
 
+### Catalogue portal extension (21 October 2026)
+
+Task 05 adds seller publication controls, a minimum-quantity editor, converted-video previews, catalogue import screens and administrator moderation screens over the existing services.
+Minimum quantity can change on an approved product through a minimum-only update; other listing details still require draft or rejected status.
+The open moderation queue uses its existing risk filter and keyset cursor, and review detail remains available after a decision for history and take-down.
+Import mapping comes from the server's field metadata; valid rows stay as drafts when another row fails.
+Browser components read shared upload limits through `@ecokart/core/catalogue-contracts`, which excludes database and worker imports.
+No schema, lifecycle, upload-policy or HTTP contract change is required.
+Task 05 records its automated acceptance evidence and exact manual release checks separately.
+
 ## Step 7: Listing moderation
 
 Status: Done (11 October 2026; extended 12 October 2026 with the client's answers).
@@ -1636,3 +1646,6 @@ Green Basket's 101st call of the day is refused with 429, "You have used todayâ€
 - 20 October 2026: Integrated the recorded buyer/seller role decision and application/document services with the existing portals and browser harness.
   Updated step 4's historical single-role wording and documented the onboarding screens and asynchronous document checks.
   Existing administrator-requested documents, the inclusive 10 MB policy, product minimum quantities and optional media limits are retained.
+- 21 October 2026: Added the catalogue portal extension over the existing product, media, moderation and import contracts.
+  Added a browser-safe contract export and a regression test for simultaneous registrations at the photo cap.
+  Task 05 records the implementation and verification results.
