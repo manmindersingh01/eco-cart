@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from 'react'
+import type { ComponentPropsWithRef, HTMLAttributes, ReactNode } from 'react'
 import { cx } from '@/lib/classes'
 
 type Tone = 'neutral' | 'success' | 'warning' | 'danger'
@@ -10,11 +10,22 @@ const tones: Record<Tone, string> = {
   danger: 'border-danger/35 bg-danger-soft text-danger',
 }
 
-export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+export function Card({
+  className,
+  flush = false,
+  ...props
+}: ComponentPropsWithRef<'div'> & {
+  /**
+   * No padding, for a card whose sections pad themselves. A `p-0` class
+   * cannot do it: both classes apply, and the stylesheet puts p-5 last.
+   */
+  flush?: boolean
+}) {
   return (
     <div
       className={cx(
-        'rounded-xl border bg-surface p-5 shadow-[var(--shadow-card)]',
+        'rounded-xl border bg-surface shadow-[var(--shadow-card)]',
+        flush ? 'overflow-hidden' : 'p-5',
         className,
       )}
       {...props}

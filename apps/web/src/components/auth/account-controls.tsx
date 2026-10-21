@@ -1,5 +1,6 @@
 'use client'
 
+import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Button, LinkButton } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/feedback'
@@ -23,6 +24,7 @@ export function AccountControls({
   const [unavailable, setUnavailable] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [signOutError, setSignOutError] = useState<string | null>(null)
+  const pathname = usePathname()
 
   useEffect(() => {
     if (initialAccount !== undefined) return undefined
@@ -110,28 +112,47 @@ export function AccountControls({
   const label =
     account.name || account.email || account.phoneNumber || 'Account'
   const portal = account.roles.includes('admin')
-    ? ({ href: '/admin', label: 'Administrator portal' } as const)
+    ? ({
+        href: '/admin',
+        label: 'Administrator portal',
+        short: 'Admin',
+      } as const)
     : account.roles.includes('seller')
-      ? ({ href: '/seller', label: 'Seller portal' } as const)
+      ? ({ href: '/seller', label: 'Seller portal', short: 'Seller' } as const)
       : null
+  // Inside that portal already, its link would only reload the page.
+  const inPortal = portal ? pathname.startsWith(portal.href) : false
+  // On a phone the row keeps to one link and Sign out, so it fits beside
+  // the logo. `max-sm:hidden` rather than `hidden`: a variant comes later in
+  // the stylesheet, so it wins over a button's own inline-flex.
   return (
     <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-3">
-      <div className={compact ? 'sr-only' : 'min-w-0 max-w-full text-right'}>
-        <p className="truncate text-sm font-medium">{label}</p>
-        <p className="text-xs text-muted">{account.role}</p>
-      </div>
-      {portal ? (
+      {/* Compact: the name is in Sign out's label, and a hidden block here
+          would still take a gap in the row. */}
+      {compact ? null : (
+        <div className="min-w-0 max-w-full text-right max-sm:hidden">
+          <p className="truncate text-sm font-medium">{label}</p>
+          <p className="text-xs text-muted">{account.role}</p>
+        </div>
+      )}
+      {portal && !inPortal ? (
         <LinkButton href={portal.href} variant="secondary">
-          {portal.label}
+          <span className="sm:hidden">{portal.short}</span>
+          <span className="max-sm:hidden">{portal.label}</span>
         </LinkButton>
-      ) : compact ? (
-        <span className="min-w-0 max-w-full break-all text-sm font-medium">
+      ) : compact && !portal ? (
+        <span className="min-w-0 max-w-full text-sm font-medium break-all max-sm:hidden">
           {label}
         </span>
       ) : null}
       {account.roles.includes('buyer') ? (
-        <LinkButton href="/account/seller-application" variant="quiet">
-          Seller application
+        <LinkButton
+          href="/account/seller-application"
+          variant="quiet"
+          className={portal ? 'max-sm:hidden' : undefined}
+        >
+          <span className="sm:hidden">Sell</span>
+          <span className="max-sm:hidden">Seller application</span>
         </LinkButton>
       ) : null}
       <Button

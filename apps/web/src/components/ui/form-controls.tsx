@@ -49,7 +49,9 @@ export function Field({
   })
 
   return (
-    <div className={cx('grid gap-1.5', className)}>
+    // content-start: beside a taller field in the same row, the extra
+    // height goes below the hint instead of stretching the control.
+    <div className={cx('grid content-start gap-1.5', className)}>
       <label htmlFor={htmlFor} className="text-sm font-medium">
         {label}
         {required ? <span aria-hidden="true"> *</span> : null}

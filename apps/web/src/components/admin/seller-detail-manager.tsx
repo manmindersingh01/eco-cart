@@ -402,7 +402,7 @@ export function SellerDetailManager({
       ) : null}
       <SellerDocumentRequests sellerId={seller.id} />
 
-      <Card className="p-0">
+      <Card flush>
         <form autoComplete="off" onSubmit={saveBusiness} noValidate>
           <div className="border-b p-5 sm:p-6">
             <h2 className="text-lg font-semibold">Edit business details</h2>

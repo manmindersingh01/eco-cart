@@ -85,7 +85,7 @@ export function NewSellerForm() {
   }
 
   return (
-    <Card className="p-0">
+    <Card flush>
       <form onSubmit={submit} noValidate>
         <div className="grid gap-7 p-5 sm:p-6">
           <fieldset className="grid gap-4 sm:grid-cols-2">
