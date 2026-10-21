@@ -13,7 +13,9 @@ export const GET = handleErrors(
     request: Request,
     route: RouteContext<'/api/settlement-statements/[id]/file'>,
   ) => {
-    const { context } = await requireSignedIn(request.headers)
+    // Statements belong to sellers, so an account that also buys acts as
+    // its seller here; administrators act as themselves in any area.
+    const { context } = await requireSignedIn(request.headers, 'seller')
     const { id } = await route.params
     const { url } = await getSettlementStatementDownload(
       { db: getDatabase(), storage: getStorage() },
