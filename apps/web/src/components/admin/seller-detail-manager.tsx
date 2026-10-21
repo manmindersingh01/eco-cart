@@ -9,6 +9,7 @@ import { ConfirmationDialog } from '@/components/ui/confirmation-dialog'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
 import { Field, Input } from '@/components/ui/form-controls'
 import { PageHeader } from '@/components/ui/page-header'
+import { Detail } from '@/components/ui/data-display'
 import {
   businessValuesFromSeller,
   highImpactBusinessChanges,
@@ -272,9 +273,9 @@ export function SellerDetailManager({
         <Card>
           <h2 className="font-semibold">Business summary</h2>
           <dl className="mt-4 grid gap-3 text-sm">
-            <Detail label="GSTIN" value={seller.gstin ?? 'Not provided'} />
-            <Detail label="PAN" value={seller.pan ?? 'Not provided'} />
-            <Detail label="Invoice prefix" value={seller.invoicePrefix} />
+            <Detail label="GSTIN" value={seller.gstin ?? 'Not provided'} code />
+            <Detail label="PAN" value={seller.pan ?? 'Not provided'} code />
+            <Detail label="Invoice prefix" value={seller.invoicePrefix} code />
             <Detail
               label="Commission"
               value={
@@ -428,15 +429,6 @@ export function SellerDetailManager({
           </div>
         </form>
       </Card>
-    </div>
-  )
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-muted">{label}</dt>
-      <dd className="mt-1 break-words font-medium">{value}</dd>
     </div>
   )
 }
