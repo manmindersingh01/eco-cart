@@ -16,7 +16,9 @@ export default async function SellerLayout({
     <PortalShell
       portalName="Seller portal"
       navigation={navigation}
-      accountActions={<AccountControls initialAccount={account} />}
+      accountActions={
+        <AccountControls initialAccount={account} area="seller" />
+      }
     >
       {children}
     </PortalShell>

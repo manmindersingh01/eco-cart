@@ -73,6 +73,7 @@ describe('seller list and lifecycle presentation', () => {
     expect(lifecycleActions('pending', false)).toEqual({
       approve: true,
       approveDisabledReason: 'Add both GSTIN and PAN before approval.',
+      reject: true,
       suspend: true,
       reinstate: false,
     })
@@ -83,8 +84,15 @@ describe('seller list and lifecycle presentation', () => {
     })
     expect(lifecycleActions('suspended', true)).toMatchObject({
       approve: false,
+      reject: false,
       suspend: false,
       reinstate: true,
+    })
+    expect(lifecycleActions('rejected', true)).toMatchObject({
+      approve: false,
+      reject: false,
+      suspend: false,
+      reinstate: false,
     })
   })
 

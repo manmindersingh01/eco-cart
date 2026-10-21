@@ -6,15 +6,41 @@ import { Skeleton } from '@/components/ui/feedback'
 import { ApiError, apiRequest } from '@/lib/api-client'
 import { authClient } from '@/lib/auth-client'
 import type { CurrentAccount } from '@/lib/auth-routing'
+import { formatStatusLabel } from '@/lib/format'
 
 type AccountControlsProps = {
   initialAccount?: CurrentAccount
   compact?: boolean
+  /** Where the controls sit: the shop, or one of the two portals. */
+  area?: 'shop' | 'seller' | 'admin'
+}
+
+/**
+ * The link next to Sign out: from a portal back to the shop, and from the
+ * shop to the portal the account may use, or to applying to sell.
+ */
+function areaLink(
+  account: CurrentAccount,
+  area: NonNullable<AccountControlsProps['area']>,
+): {
+  href: '/' | '/admin' | '/seller' | '/account/seller-application'
+  label: string
+} | null {
+  if (area !== 'shop') return { href: '/', label: 'Back to shop' }
+  if (account.roles.includes('admin'))
+    return { href: '/admin', label: 'Admin portal' }
+  if (account.roles.includes('seller'))
+    return { href: '/seller', label: 'Seller portal' }
+  if (account.roles.includes('buyer')) {
+    return { href: '/account/seller-application', label: 'Sell on EcoKart' }
+  }
+  return null
 }
 
 export function AccountControls({
   initialAccount,
   compact = false,
+  area = 'shop',
 }: AccountControlsProps) {
   const [account, setAccount] = useState<CurrentAccount | null>(
     initialAccount ?? null,
@@ -109,12 +135,18 @@ export function AccountControls({
 
   const label =
     account.name || account.email || account.phoneNumber || 'Account'
+  const link = areaLink(account, area)
   return (
-    <div className="flex flex-wrap items-center justify-end gap-3">
+    <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
       <div className={compact ? 'sr-only' : 'min-w-0 text-right'}>
         <p className="truncate text-sm font-medium">{label}</p>
-        <p className="text-xs text-muted">{account.role}</p>
+        <p className="text-xs text-muted">{formatStatusLabel(account.role)}</p>
       </div>
+      {link ? (
+        <LinkButton href={link.href} variant="secondary">
+          {link.label}
+        </LinkButton>
+      ) : null}
       <Button
         variant="quiet"
         disabled={signingOut}

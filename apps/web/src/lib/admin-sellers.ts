@@ -187,11 +187,13 @@ export function lifecycleActions(
 ): {
   approve: boolean
   approveDisabledReason: string | null
+  reject: boolean
   suspend: boolean
   reinstate: boolean
 } {
   return {
     approve: status === 'pending',
+    reject: status === 'pending',
     approveDisabledReason:
       status === 'pending' && !hasTaxDetails
         ? 'Add both GSTIN and PAN before approval.'

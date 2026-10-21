@@ -1,20 +1,30 @@
-import { Field, Input } from '@/components/ui/form-controls'
+import { GST_STATES } from '@ecokart/core/states'
+import { Field, Input, Select } from '@/components/ui/form-controls'
 import { issuesFor } from '@/lib/admin-settings'
 import type { BusinessFormValues } from '@/lib/admin-sellers'
 
+/**
+ * The business details of a seller. `application` is the form a buyer
+ * fills in to apply to sell: it has no commission, and the invoice prefix
+ * may be left blank for EcoKart to suggest one.
+ */
 export function SellerBusinessFields({
   values,
   issues,
   disabled,
   onChange,
+  mode = 'admin',
 }: {
-  values: BusinessFormValues
+  values: Omit<BusinessFormValues, 'commissionPercent'> &
+    Partial<Pick<BusinessFormValues, 'commissionPercent'>>
   issues: readonly string[]
   disabled: boolean
   onChange: (key: keyof BusinessFormValues, value: string) => void
+  mode?: 'admin' | 'application'
 }) {
   const error = (path: string) =>
     issuesFor(issues, path).join('. ') || undefined
+  const application = mode === 'application'
 
   return (
     <div className="grid gap-7">
@@ -25,6 +35,9 @@ export function SellerBusinessFields({
         <Field
           label="Display name"
           htmlFor="seller-display-name"
+          hint={
+            application ? 'The shop name buyers see on EcoKart.' : undefined
+          }
           error={error('displayName')}
           required
         >
@@ -38,6 +51,11 @@ export function SellerBusinessFields({
         <Field
           label="Legal name"
           htmlFor="seller-legal-name"
+          hint={
+            application
+              ? 'As registered for GST, for example Green Basket Private Limited.'
+              : undefined
+          }
           error={error('legalName')}
           required
         >
@@ -56,26 +74,38 @@ export function SellerBusinessFields({
         <Field
           label="GSTIN"
           htmlFor="seller-gstin"
-          hint="Optional while pending. Required before approval."
+          hint={
+            application
+              ? 'You can add it later, but we need it before approval.'
+              : 'Optional while pending. Required before approval.'
+          }
           error={error('gstin')}
         >
           <Input
             value={values.gstin}
             onChange={(event) => onChange('gstin', event.target.value)}
             placeholder="27AAACE1234F1Z5"
+            autoCapitalize="characters"
+            spellCheck={false}
             disabled={disabled}
           />
         </Field>
         <Field
           label="PAN"
           htmlFor="seller-pan"
-          hint="Optional while pending. It must match the PAN inside the GSTIN."
+          hint={
+            application
+              ? 'Needed before approval. It is part of your GSTIN.'
+              : 'Optional while pending. It must match the PAN inside the GSTIN.'
+          }
           error={error('pan')}
         >
           <Input
             value={values.pan}
             onChange={(event) => onChange('pan', event.target.value)}
             placeholder="AAACE1234F"
+            autoCapitalize="characters"
+            spellCheck={false}
             disabled={disabled}
           />
         </Field>
@@ -113,19 +143,27 @@ export function SellerBusinessFields({
           />
         </Field>
         <Field
-          label="GST state code"
+          label="State"
           htmlFor="seller-state-code"
-          hint="Two digits, for example 27 for Maharashtra."
+          hint="Your GSTIN starts with this state's code."
           error={error('stateCode')}
           required
         >
-          <Input
+          <Select
             value={values.stateCode}
             onChange={(event) => onChange('stateCode', event.target.value)}
-            inputMode="numeric"
-            maxLength={2}
+            autoComplete="address-level1"
             disabled={disabled}
-          />
+          >
+            <option value="" disabled>
+              Choose a state
+            </option>
+            {GST_STATES.map((state) => (
+              <option key={state.code} value={state.code}>
+                {state.name} ({state.code})
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field
           label="PIN code"
@@ -138,7 +176,7 @@ export function SellerBusinessFields({
             onChange={(event) => onChange('pincode', event.target.value)}
             autoComplete="postal-code"
             inputMode="numeric"
-            maxLength={4}
+            maxLength={6}
             disabled={disabled}
           />
         </Field>
@@ -181,38 +219,46 @@ export function SellerBusinessFields({
 
       <fieldset className="grid gap-4 border-t pt-6 sm:grid-cols-2">
         <legend className="mb-3 font-semibold sm:col-span-2">
-          Invoicing and commission
+          {application ? 'Invoicing' : 'Invoicing and commission'}
         </legend>
         <Field
           label="Invoice prefix"
           htmlFor="seller-invoice-prefix"
-          hint="Use 1 to 4 capital letters or digits. It cannot change after the first invoice."
+          hint={
+            application
+              ? 'Optional: 1 to 4 capital letters or digits that start your GST invoice numbers. Leave it blank and we will suggest one.'
+              : 'Use 1 to 4 capital letters or digits. It cannot change after the first invoice.'
+          }
           error={error('invoicePrefix')}
-          required
+          required={!application}
         >
           <Input
             value={values.invoicePrefix}
             onChange={(event) => onChange('invoicePrefix', event.target.value)}
             maxLength={6}
+            autoCapitalize="characters"
+            spellCheck={false}
             disabled={disabled}
           />
         </Field>
-        <Field
-          label="Seller commission percentage"
-          htmlFor="seller-commission"
-          hint="Leave blank to use the platform commission."
-          error={error('commissionBps')}
-        >
-          <Input
-            value={values.commissionPercent}
-            onChange={(event) =>
-              onChange('commissionPercent', event.target.value)
-            }
-            inputMode="decimal"
-            placeholder="10"
-            disabled={disabled}
-          />
-        </Field>
+        {application ? null : (
+          <Field
+            label="Seller commission percentage"
+            htmlFor="seller-commission"
+            hint="Leave blank to use the platform commission."
+            error={error('commissionBps')}
+          >
+            <Input
+              value={values.commissionPercent ?? ''}
+              onChange={(event) =>
+                onChange('commissionPercent', event.target.value)
+              }
+              inputMode="decimal"
+              placeholder="10"
+              disabled={disabled}
+            />
+          </Field>
+        )}
       </fieldset>
     </div>
   )

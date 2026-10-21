@@ -16,7 +16,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
     <PortalShell
       portalName="Administrator portal"
       navigation={navigation}
-      accountActions={<AccountControls initialAccount={account} />}
+      accountActions={<AccountControls initialAccount={account} area="admin" />}
     >
       {children}
     </PortalShell>

@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import { SellerDocumentsPanel } from './seller-documents-panel'
 import { SellerBusinessFields } from './seller-form-fields'
 import { Button, LinkButton } from '@/components/ui/button'
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog'
@@ -60,6 +61,7 @@ export function SellerDetailManager({
   const [editPending, setEditPending] = useState(false)
   const [actionPending, setActionPending] = useState(false)
   const [suspensionReason, setSuspensionReason] = useState('')
+  const [rejectionReason, setRejectionReason] = useState('')
   const [feedback, setFeedback] = useState(idleFeedback)
   const actions = lifecycleActions(
     seller.status,
@@ -137,7 +139,9 @@ export function SellerDetailManager({
     }
   }
 
-  async function runLifecycle(action: 'approve' | 'suspend' | 'reinstate') {
+  async function runLifecycle(
+    action: 'approve' | 'reject' | 'suspend' | 'reinstate',
+  ) {
     setActionPending(true)
     setFeedback(idleFeedback)
     try {
@@ -145,10 +149,13 @@ export function SellerDetailManager({
         method: 'POST',
         ...(action === 'suspend'
           ? { json: { reason: suspensionReason.trim() } }
-          : {}),
+          : action === 'reject'
+            ? { json: { reason: rejectionReason.trim() } }
+            : {}),
       })
       const updated = await loadCurrentSeller()
       setSuspensionReason('')
+      setRejectionReason('')
       setFeedback({
         ...idleFeedback,
         success: `${updated.displayName} is now ${updated.status}.`,
@@ -297,6 +304,21 @@ export function SellerDetailManager({
             fields.
           </Notice>
         ) : null}
+        {actions.reject ? (
+          <Field
+            label="Reason, if you reject"
+            htmlFor="seller-rejection-reason"
+            hint="The applicant reads it in an email and in their account, then can correct their details and apply again."
+            className="mt-5 max-w-2xl"
+          >
+            <Input
+              value={rejectionReason}
+              onChange={(event) => setRejectionReason(event.target.value)}
+              maxLength={500}
+              disabled={actionPending}
+            />
+          </Field>
+        ) : null}
         <div className="mt-5 flex flex-wrap gap-3">
           {actions.approve ? (
             <ConfirmationDialog
@@ -309,10 +331,23 @@ export function SellerDetailManager({
               confirmDisabled={actionPending}
             />
           ) : null}
+          {actions.reject ? (
+            <ConfirmationDialog
+              title="Reject this application?"
+              description={`The applicant is emailed the reason and can apply again. Reason: ${rejectionReason.trim() || 'No reason entered'}`}
+              trigger="Reject application"
+              triggerVariant="danger"
+              confirmLabel="Reject application"
+              onConfirm={() => void runLifecycle('reject')}
+              danger
+              triggerDisabled={actionPending || !rejectionReason.trim()}
+              confirmDisabled={actionPending || !rejectionReason.trim()}
+            />
+          ) : null}
           {actions.reinstate ? (
             <ConfirmationDialog
               title="Reinstate this seller?"
-              description="The owner account will be unbanned. The seller returns to its previous approved or pending state."
+              description="The seller returns to its previous approved or pending state, and an owner account banned with the suspension is unbanned."
               trigger="Reinstate seller"
               confirmLabel="Reinstate seller"
               onConfirm={() => void runLifecycle('reinstate')}
@@ -326,7 +361,7 @@ export function SellerDetailManager({
             <Field
               label="Suspension reason"
               htmlFor="seller-suspension-reason"
-              hint="This reason is stored on the seller and used when banning the owner account."
+              hint="Stored on the seller. An owner who only sells is banned with it; an owner who also shops keeps shopping."
               required
             >
               <Input
@@ -352,6 +387,8 @@ export function SellerDetailManager({
           </div>
         ) : null}
       </Card>
+
+      <SellerDocumentsPanel sellerId={seller.id} />
 
       <Card className="p-0">
         <form onSubmit={saveBusiness} noValidate>

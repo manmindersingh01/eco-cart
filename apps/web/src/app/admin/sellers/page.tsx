@@ -19,7 +19,7 @@ import {
   type SellerSummary,
 } from '@/lib/admin-sellers'
 import { getDatabase } from '@/lib/db'
-import { formatIndianDate, formatState } from '@/lib/format'
+import { formatIndianDate, formatState, formatStatusLabel } from '@/lib/format'
 import { requireAdmin } from '@/lib/request-context'
 
 export const metadata: Metadata = {
@@ -54,7 +54,8 @@ export default async function AdminSellersPage({
   let nextCursor: string | null = null
 
   if (rawStatus && !status) {
-    error = 'The seller status filter must be pending, approved, or suspended.'
+    error =
+      'The seller status filter must be pending, approved, suspended, or rejected.'
   } else {
     const requestHeaders = await headers()
     const { context } = await requireAdmin(requestHeaders)
@@ -79,7 +80,7 @@ export default async function AdminSellersPage({
     <div className="grid gap-7">
       <PageHeader
         title="Sellers"
-        description="Create seller accounts, review pending businesses, and control marketplace access."
+        description="Create seller accounts, review applications from buyers, and control marketplace access."
         actions={
           <LinkButton href="/admin/sellers/new">Create seller</LinkButton>
         }
@@ -161,7 +162,7 @@ export default async function AdminSellersPage({
                       </td>
                       <td className="px-4 py-4">
                         <StatusBadge tone={statusTone(seller.status)}>
-                          {seller.status}
+                          {formatStatusLabel(seller.status)}
                         </StatusBadge>
                       </td>
                       <td className="px-4 py-4">
@@ -190,7 +191,7 @@ export default async function AdminSellersPage({
                     </p>
                   </div>
                   <StatusBadge tone={statusTone(seller.status)}>
-                    {seller.status}
+                    {formatStatusLabel(seller.status)}
                   </StatusBadge>
                 </div>
                 <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
