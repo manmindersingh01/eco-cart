@@ -1,4 +1,4 @@
-import { ForbiddenError, NotSignedInError } from '@ecokart/core'
+import { ForbiddenError, NotSignedInError, rolesOf } from '@ecokart/core'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { safeReturnTo, type CurrentAccount } from './auth-routing'
@@ -18,6 +18,7 @@ function accountFromSession(
     email: user.email.endsWith('.invalid') ? null : user.email,
     phoneNumber: user.phoneNumber ?? null,
     role,
+    roles: rolesOf(user.role),
     sellerId,
   }
 }

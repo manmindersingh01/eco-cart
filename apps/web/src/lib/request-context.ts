@@ -2,6 +2,7 @@ import {
   ForbiddenError,
   NotSignedInError,
   resolveRequestContext,
+  type RequestArea,
   type RequestContext,
 } from '@ecokart/core'
 import { getAuth } from './auth'
@@ -13,26 +14,46 @@ export type Session = NonNullable<
 
 /**
  * Who is asking: the Better Auth session (if any) and the row-level security
- * context to run their queries with (design doc 6.1 step 6).
+ * context to run their queries with (design doc 6.1 step 6). An account that
+ * both buys and sells acts as the seller in `area` 'seller', the seller
+ * routes, and as the buyer everywhere else.
  *
  * Throws SellerAccountNotReadyError (403) for a seller account whose business
  * has not been set up yet.
  */
 export async function getRequestContext(
   headers: Headers,
+  area: RequestArea = 'buyer',
+  options: { applicants?: boolean } = {},
 ): Promise<{ session: Session | null; context: RequestContext }> {
   const session = await getAuth().api.getSession({ headers })
   return {
     session,
-    context: await resolveRequestContext(getDatabase(), session?.user ?? null),
+    context: await resolveRequestContext(
+      getDatabase(),
+      session?.user ?? null,
+      area,
+      options,
+    ),
   }
 }
 
-/** The signed-in account, or 401. */
+/**
+ * The area a route that both portals use acts in: `?as=seller` from the
+ * seller portal, otherwise the buyer. For example, Ravi, who buys and
+ * sells, downloads his own sale's invoice with `?as=seller` and his
+ * purchase's invoice without it.
+ */
+export const areaOf = (request: Request): RequestArea =>
+  new URL(request.url).searchParams.get('as') === 'seller' ? 'seller' : 'buyer'
+
+/** The signed-in account, acting in `area`, or 401. */
 export async function requireSignedIn(
   headers: Headers,
+  area: RequestArea = 'buyer',
+  options: { applicants?: boolean } = {},
 ): Promise<{ session: Session; context: RequestContext }> {
-  const { session, context } = await getRequestContext(headers)
+  const { session, context } = await getRequestContext(headers, area, options)
   if (!session) throw new NotSignedInError()
   return { session, context }
 }
@@ -49,12 +70,20 @@ export async function requireAdmin(headers: Headers): Promise<{
   return { session, context }
 }
 
-/** A signed-in seller whose business is set up and not suspended, or 401 / 403. */
-export async function requireSeller(headers: Headers): Promise<{
+/**
+ * A signed-in seller whose business is set up and not suspended, or 401 /
+ * 403. With `applicants`, also a buyer whose seller application is pending
+ * or was rejected, acting for that business: only for the routes an
+ * application needs, such as the documents an administrator asked for.
+ */
+export async function requireSeller(
+  headers: Headers,
+  options: { applicants?: boolean } = {},
+): Promise<{
   session: Session
   context: Extract<RequestContext, { role: 'seller' }>
 }> {
-  const { session, context } = await requireSignedIn(headers)
+  const { session, context } = await requireSignedIn(headers, 'seller', options)
   if (context.role !== 'seller') {
     throw new ForbiddenError('This needs a seller account')
   }

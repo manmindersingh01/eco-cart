@@ -112,8 +112,10 @@ export function SellerProfileManager({
 
       <Notice title={status.title} tone={status.tone}>
         <p>{status.description}</p>
-        {seller.suspendedReason ? (
-          <p className="mt-2 font-medium">Reason: {seller.suspendedReason}</p>
+        {seller.suspendedReason || seller.rejectionReason ? (
+          <p className="mt-2 font-medium">
+            Reason: {seller.suspendedReason ?? seller.rejectionReason}
+          </p>
         ) : null}
       </Notice>
 

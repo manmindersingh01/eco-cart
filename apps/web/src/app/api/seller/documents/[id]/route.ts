@@ -9,7 +9,10 @@ export const GET = handleErrors(
     request: Request,
     route: RouteContext<'/api/seller/documents/[id]'>,
   ) => {
-    const { context } = await requireSeller(request.headers)
+    const { context } = await requireSeller(request.headers, {
+      // An applicant sends the documents an administrator asked for.
+      applicants: true,
+    })
     const { id } = await route.params
     const document = await withContext(getDatabase(), context, (tx) =>
       getDocumentRequest(tx, context, id),

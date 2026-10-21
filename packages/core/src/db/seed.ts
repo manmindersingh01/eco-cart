@@ -68,6 +68,7 @@ export const DEVELOPMENT_SETTINGS: { [K in SettingKey]?: SettingValue<K> } = {
   commission_bps: 1000,
   delivery_charge_paise: 4900,
   free_delivery_threshold_paise: 49_900,
+  return_window_days: 7,
   company_details: {
     legalName: 'EcoKart Example Private Limited',
     displayName: 'EcoKart (example data)',

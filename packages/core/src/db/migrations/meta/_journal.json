@@ -274,6 +274,41 @@
       "when": 1792443125201,
       "tag": "0038_guest_cart_clean_up_index",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792443602847,
+      "tag": "0039_return_lists_and_one_refund",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792444205372,
+      "tag": "0040_settlement_statements_and_payout_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792444207078,
+      "tag": "0041_settlement_statement_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792444721844,
+      "tag": "0042_seller_applications",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792444722486,
+      "tag": "0043_buyer_seller_role",
+      "breakpoints": true
     }
   ]
 }

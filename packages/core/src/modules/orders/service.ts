@@ -1,9 +1,10 @@
-import { asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import type { Transaction } from '../../db/client.ts'
 import {
   orderEvents,
   orderItems,
   orders,
+  shipments,
   type ShippingAddressSnapshot,
 } from '../../db/schema/index.ts'
 import { NotFoundError } from '../../errors.ts'
@@ -325,4 +326,87 @@ export async function cancelUnpaidOrder(
     reason,
   )
   return true
+}
+
+/* Returns (backend spec step 15): what the returns module needs to know and
+ * change about order lines, without reading this module's tables itself. */
+
+const missingLine = () =>
+  new NotFoundError('There is no order line with that id')
+
+/** An order line with its order, as a return sees it. */
+export interface LineOfOrder {
+  order: OrderRow
+  line: OrderItemRow
+  /** When the line's parcel was delivered; null while it has not been. */
+  deliveredAt: Date | null
+}
+
+/**
+ * Locks the order of `orderItemId` and reads the line, as it stands once the
+ * lock is held, with its delivery time; 404 when there is no such line in
+ * the caller's view.
+ */
+export async function lockOrderOfLine(
+  tx: Transaction,
+  orderItemId: string,
+): Promise<LineOfOrder> {
+  const [found] = await tx
+    .select({ orderId: orderItems.orderId })
+    .from(orderItems)
+    .where(eq(orderItems.id, orderItemId))
+  if (!found) throw missingLine()
+  const order = await lockOrder(tx, found.orderId)
+  const [row] = await tx
+    .select({ line: orderItems, deliveredAt: shipments.deliveredAt })
+    .from(orderItems)
+    .leftJoin(shipments, eq(shipments.id, orderItems.shipmentId))
+    .where(eq(orderItems.id, orderItemId))
+  if (!row) throw missingLine()
+  return { order, line: row.line, deliveredAt: row.deliveredAt }
+}
+
+/** Moves a line from one status to another and writes the order event. */
+export async function changeLineStatus(
+  tx: Transaction,
+  change: {
+    orderId: string
+    lineId: string
+    from: string
+    to: string
+    actor: OrderActor
+    eventType: string
+    note?: string
+  },
+): Promise<void> {
+  await tx
+    .update(orderItems)
+    .set({ status: change.to })
+    .where(
+      and(eq(orderItems.id, change.lineId), eq(orderItems.status, change.from)),
+    )
+  await recordOrderEvent(tx, {
+    orderId: change.orderId,
+    orderItemId: change.lineId,
+    actorUserId: change.actor.userId,
+    actorRole: change.actor.role,
+    eventType: change.eventType,
+    fromStatus: change.from,
+    toStatus: change.to,
+    ...(change.note ? { note: change.note } : {}),
+  })
+}
+
+/** Order lines by id with their order number and buyer, for return lists. */
+export async function linesWithOrders(
+  tx: Transaction,
+  lineIds: readonly string[],
+): Promise<Map<string, { line: OrderItemRow; order: OrderRow }>> {
+  if (lineIds.length === 0) return new Map()
+  const rows = await tx
+    .select({ line: orderItems, order: orders })
+    .from(orderItems)
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
+    .where(inArray(orderItems.id, [...new Set(lineIds)]))
+  return new Map(rows.map((row) => [row.line.id, row]))
 }

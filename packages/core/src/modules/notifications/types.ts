@@ -109,3 +109,22 @@ export const cancelledPayload = z.object({
   ]),
 })
 export type CancelledPayload = z.infer<typeof cancelledPayload>
+
+export const refundRecordedPayload = z.object({
+  orderNumber: z.string(),
+  buyerName: z.string(),
+  amountPaise: z.number().int(),
+  method: z.enum(['gateway', 'bank_transfer']),
+  /** The returned items; empty for the refund of a cancelled order. */
+  lines: z.array(shippedLine),
+})
+export type RefundRecordedPayload = z.infer<typeof refundRecordedPayload>
+
+/** An administrator's decision on a seller application (design doc 5.4). */
+export const sellerApplicationPayload = z.object({
+  displayName: z.string(),
+  decision: z.enum(['approved', 'rejected']),
+  /** Why it was rejected; null when it was approved. */
+  reason: z.string().nullable(),
+})
+export type SellerApplicationPayload = z.infer<typeof sellerApplicationPayload>

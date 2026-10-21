@@ -20,8 +20,23 @@ import type { EmailOtpPurpose } from '../notifications/types.ts'
 
 export const OTP_EXPIRES_IN_SECONDS = 5 * 60
 
-/** One role per account (design doc 11). */
+/**
+ * What an account may be. An account has one or more roles, stored by
+ * Better Auth's admin plugin as one comma-separated value: a buyer whose
+ * seller application was approved is `buyer,seller` (design doc 11,
+ * decided 20 October 2026).
+ */
 export type AccountRole = 'buyer' | 'seller' | 'admin'
+
+const ACCOUNT_ROLES: readonly AccountRole[] = ['buyer', 'seller', 'admin']
+
+/** The roles in a stored role value; an account without one is a buyer. */
+export function rolesOf(role: string | null | undefined): AccountRole[] {
+  const roles = ACCOUNT_ROLES.filter((known) =>
+    (role ?? '').split(',').some((part) => part.trim() === known),
+  )
+  return roles.length > 0 ? roles : ['buyer']
+}
 
 const accessControl = createAccessControl(defaultStatements)
 
@@ -248,7 +263,7 @@ function profileRefusal(
     'phoneNumber' in fields &&
     fields.phoneNumber === null
 
-  if ((addsPhone || addsEmail) && user.role !== 'buyer') {
+  if ((addsPhone || addsEmail) && !rolesOf(user.role).includes('buyer')) {
     return 'Only buyer accounts can add a phone number or an email address here'
   }
   if (addsPhone && user.phoneNumber) {
@@ -282,10 +297,14 @@ function requestedRoles(path: string, body: unknown): string[] {
     'data' in body && typeof body.data === 'object' ? body.data : null
   const fromData = data && 'role' in data ? data.role : undefined
   const role = 'role' in body ? body.role : fromData
-  if (typeof role === 'string') return [role]
-  return Array.isArray(role)
-    ? role.filter((r): r is string => typeof r === 'string')
-    : []
+  // One value may hold several roles, such as "buyer,seller".
+  const values =
+    typeof role === 'string'
+      ? [role]
+      : Array.isArray(role)
+        ? role.filter((r): r is string => typeof r === 'string')
+        : []
+  return values.flatMap((value) => value.split(',').map((part) => part.trim()))
 }
 
 export interface AuthDependencies {
@@ -406,13 +425,13 @@ export function createAuth(dependencies: AuthDependencies) {
       // ignores errors thrown from the email callback, so a refusal there
       // would never reach the caller.
       before: createAuthMiddleware(async (ctx) => {
-        // Seller accounts come only from the seller flow, which also creates
-        // the business, so a seller account always has one (backend spec
-        // step 4).
+        // The seller role comes only with a seller business: an
+        // administrator creates the seller, or approves the account's
+        // application, so a seller always has one (backend spec step 4).
         if (requestedRoles(ctx.path, ctx.body).includes('seller')) {
           throw new APIError('BAD_REQUEST', {
             message:
-              'Seller accounts are created together with their business in the seller onboarding',
+              'The seller role comes only with a seller business: create the seller, or approve the account’s seller application',
           })
         }
         if (

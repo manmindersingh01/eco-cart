@@ -41,6 +41,7 @@ describe('GET /api/me', () => {
       email,
       phoneNumber: null,
       role: 'buyer',
+      roles: ['buyer'],
       sellerId: null,
     })
   })
@@ -50,6 +51,7 @@ describe('GET /api/me', () => {
     const response = await me(await signInWithEmail(owner, sellerUser.email))
     expect(await response.json()).toMatchObject({
       role: 'seller',
+      roles: ['seller'],
       sellerId: seller.id,
     })
   })

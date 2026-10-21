@@ -234,3 +234,55 @@ export function renderCancelledEmail(order: {
   ]
   return { text: lines.join('\n\n'), html: asHtml(lines) }
 }
+
+export function refundRecordedSubject(orderNumber: string): string {
+  return `Your refund for EcoKart order ${orderNumber}`
+}
+
+export function renderRefundRecordedEmail(refund: {
+  orderNumber: string
+  buyerName: string
+  amountPaise: number
+  method: 'gateway' | 'bank_transfer'
+  lines: { title: string; options: Record<string, string>; quantity: number }[]
+}): { text: string; html: string } {
+  const lines = [
+    `Hello ${refund.buyerName},`,
+    `We have refunded ${rupees(refund.amountPaise)} for order ${refund.orderNumber}.`,
+    ...(refund.lines.length > 0
+      ? [['For your return of:', ...refund.lines.map(lineName)].join('\n')]
+      : []),
+    refund.method === 'gateway'
+      ? 'It goes back the way you paid. Your bank may take a few working days to show it.'
+      : 'We sent it to your bank account by bank transfer.',
+    'Thank you for shopping with EcoKart.',
+  ]
+  return { text: lines.join('\n\n'), html: asHtml(lines) }
+}
+
+export function sellerApplicationSubject(
+  decision: 'approved' | 'rejected',
+): string {
+  return decision === 'approved'
+    ? 'You can now sell on EcoKart'
+    : 'Your EcoKart seller application needs changes'
+}
+
+export function renderSellerApplicationEmail(application: {
+  displayName: string
+  decision: 'approved' | 'rejected'
+  reason: string | null
+}): { text: string; html: string } {
+  const lines =
+    application.decision === 'approved'
+      ? [
+          `Your application to sell as ${application.displayName} is approved.`,
+          'Sign in with the same account to open the seller portal and add your products. You can still shop on EcoKart as before.',
+        ]
+      : [
+          `Your application to sell as ${application.displayName} was not approved.`,
+          `Reason: ${application.reason ?? 'not given'}`,
+          'You can change your application and apply again from your account.',
+        ]
+  return { text: lines.join('\n\n'), html: asHtml(lines) }
+}

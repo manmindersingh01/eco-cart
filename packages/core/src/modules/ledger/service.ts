@@ -1,13 +1,15 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { Transaction } from '../../db/client.ts'
 import { sellerLedgerEntries } from '../../db/schema/index.ts'
+import { ConflictError } from '../../errors.ts'
+import { formatRupees } from '../../lib/money.ts'
 
 /*
  * The seller ledger (design doc 5.9): append only, so a seller's balance is
  * the sum of their entries. Payment confirmation writes a sale and a
- * commission entry for every order line (backend spec step 12), and
- * cancelling an order reverses them (step 13); step 15 adds refunds,
- * payouts, and adjustments.
+ * commission entry for every order line (backend spec step 12),
+ * cancelling an order reverses them (step 13), and a refunded return takes
+ * back its share (step 15).
  */
 
 /** An order line as the ledger records it. */
@@ -131,4 +133,100 @@ export async function reverseSales(
     ]
   })
   if (entries.length > 0) await tx.insert(sellerLedgerEntries).values(entries)
+}
+
+/** A refunded return, as the ledger takes it back from the seller. */
+export interface ReturnedLine {
+  sellerId: string
+  orderId: string
+  orderItemId: string
+  returnRequestId: string
+  orderNumber: string
+  title: string
+  returnedQuantity: number
+  /** What the buyer got back for this return. */
+  refundPaise: number
+  /** The administrator who recorded the refund. */
+  createdBy: string
+}
+
+/** The sum of one kind of entry, as exact text. */
+const totalOf = (entryType: string) =>
+  sql<string>`coalesce(sum(${sellerLedgerEntries.amountPaise}) filter (where ${eq(sellerLedgerEntries.entryType, entryType)}), 0)`
+
+/** `numerator / denominator`, rounded half up, in exact whole numbers. */
+function roundedShare(numerator: bigint, denominator: bigint): number {
+  return Number((numerator * 2n + denominator) / (denominator * 2n))
+}
+
+/**
+ * Takes back what a refunded return earned its seller (design doc 6.5 step
+ * 4): a `refund_reversal` of the refund, and a `commission_reversal` of
+ * the commission on it, worked out from the line's own sale and commission
+ * entries, which used the rate frozen on the line. The share is counted
+ * over everything refunded on the line so far, so partial returns never
+ * drift, and the refund that empties the line gives back exactly its
+ * commission. For example on a ₹1,500 line whose commission was ₹150,
+ * refunds of ₹500 and then ₹1,000 give back ₹50 and then ₹100. Calling it
+ * again for the same return writes nothing; the caller holds the order's
+ * lock, which keeps that check safe.
+ */
+export async function recordReturnReversal(
+  tx: Transaction,
+  line: ReturnedLine,
+): Promise<void> {
+  const [done] = await tx
+    .select({ id: sellerLedgerEntries.id })
+    .from(sellerLedgerEntries)
+    .where(eq(sellerLedgerEntries.returnRequestId, line.returnRequestId))
+    .limit(1)
+  if (done) return
+
+  const [entries] = await tx
+    .select({
+      sale: totalOf('sale'),
+      refunded: totalOf('refund_reversal'),
+      commission: totalOf('commission'),
+      commissionBack: totalOf('commission_reversal'),
+    })
+    .from(sellerLedgerEntries)
+    .where(eq(sellerLedgerEntries.orderItemId, line.orderItemId))
+  const sale = BigInt(entries?.sale ?? '0')
+  const refundedBefore = -BigInt(entries?.refunded ?? '0')
+  const refundedNow = refundedBefore + BigInt(line.refundPaise)
+  if (refundedNow > sale) {
+    throw new ConflictError(
+      `Only ${formatRupees(Number(sale - refundedBefore))} of ${line.title} on order ${line.orderNumber} is left to refund`,
+    )
+  }
+  const commission = -BigInt(entries?.commission ?? '0')
+  const commissionBack =
+    roundedShare(commission * refundedNow, sale) -
+    Number(entries?.commissionBack ?? '0')
+
+  const common = {
+    sellerId: line.sellerId,
+    orderId: line.orderId,
+    orderItemId: line.orderItemId,
+    returnRequestId: line.returnRequestId,
+    createdBy: line.createdBy,
+  }
+  await tx.insert(sellerLedgerEntries).values([
+    {
+      ...common,
+      entryType: 'refund_reversal',
+      amountPaise: -line.refundPaise,
+      description: `Refund of ${line.returnedQuantity} × ${line.title} returned from order ${line.orderNumber}`,
+    },
+    ...(commissionBack > 0
+      ? [
+          {
+            ...common,
+            entryType: 'commission_reversal',
+            amountPaise: commissionBack,
+            description: `Commission returned: ${line.returnedQuantity} × ${line.title} returned from order ${line.orderNumber}`,
+          },
+        ]
+      : []),
+  ])
 }

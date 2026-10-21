@@ -1,4 +1,4 @@
-export type SellerStatus = 'pending' | 'approved' | 'suspended'
+export type SellerStatus = 'pending' | 'approved' | 'suspended' | 'rejected'
 
 export type SellerProfile = {
   id: string
@@ -19,6 +19,7 @@ export type SellerProfile = {
   commissionBps: number | null
   approvedAt: string | null
   suspendedReason: string | null
+  rejectionReason: string | null
   createdAt: string
   updatedAt: string
 }
@@ -83,6 +84,15 @@ export function sellerStatusPresentation(status: SellerStatus): {
       title: 'Your business is suspended',
       description:
         'Your products are not public. Contact EcoKart support about the reason shown below.',
+    }
+  }
+  if (status === 'rejected') {
+    return {
+      label: 'Rejected',
+      tone: 'danger',
+      title: 'Your application was not approved',
+      description:
+        'Read the reason below, change your details, and apply again.',
     }
   }
   return {

@@ -20,7 +20,12 @@ export {
   type QueueCounts,
   type QueueDefinition,
 } from './lib/queue.ts'
-export { isPlaceholderEmail, type Auth } from './modules/auth/auth.ts'
+export {
+  isPlaceholderEmail,
+  rolesOf,
+  type AccountRole,
+  type Auth,
+} from './modules/auth/auth.ts'
 export { loadAuthConfig, type AuthConfig } from './modules/auth/config.ts'
 export {
   createAppAuth,
@@ -28,6 +33,7 @@ export {
   resolveRequestContext,
   SellerAccountNotReadyError,
   SellerSuspendedError,
+  type RequestArea,
 } from './modules/auth/service.ts'
 export {
   createAccountDirectory,
@@ -68,6 +74,7 @@ export {
   getSeller,
   listSellers,
   reinstateSeller,
+  rejectSeller,
   suspendSeller,
   updateOwnContacts,
   updateSeller,
@@ -76,6 +83,12 @@ export {
   type SellerSummary,
 } from './modules/sellers/service.ts'
 export type { SellerStatus, SellerView } from './modules/sellers/types.ts'
+// A buyer applies to sell (decided 20 October 2026).
+export {
+  applyToSell,
+  getOwnApplication,
+  updateOwnApplication,
+} from './modules/sellers/applications.ts'
 export {
   acceptSellerDocument,
   addDocumentFile,
@@ -110,7 +123,40 @@ export {
   setSellerBankAccount,
 } from './modules/ledger/bank-accounts.ts'
 export { loadLedgerConfig, type LedgerConfig } from './modules/ledger/config.ts'
-export type { BankAccountView } from './modules/ledger/types.ts'
+export {
+  getOwnLedger,
+  getSellerLedger,
+  listSellerBalances,
+} from './modules/ledger/entries.ts'
+export {
+  recordAdjustment,
+  recordPayout,
+  type RecordedEntry,
+} from './modules/ledger/payouts.ts'
+export {
+  getSettlementStatement,
+  getSettlementStatementDownload,
+  listOwnStatements,
+  listSellerStatements,
+  MAKE_STATEMENT_QUEUE,
+  requestOwnStatement,
+  requestSellerStatement,
+} from './modules/ledger/statements.ts'
+export {
+  makeSettlementStatement,
+  registerLedgerJobs,
+  type LedgerJobDependencies,
+} from './modules/ledger/jobs.ts'
+export type {
+  BankAccountView,
+  LedgerEntryType,
+  LedgerEntryView,
+  SellerBalance,
+  SellerLedger,
+  SettlementStatementDownload,
+  SettlementStatementStatus,
+  SettlementStatementView,
+} from './modules/ledger/types.ts'
 export {
   addReturnPhoto,
   attachReturnPhotos,
@@ -521,6 +567,7 @@ export {
 export {
   cancelOrderAsAdmin,
   cancelOwnOrder,
+  recordCancellationRefund,
   dispatchLines,
   markShipmentDelivered,
 } from './modules/orders/fulfilment.ts'
@@ -548,3 +595,22 @@ export type {
   ShipmentView,
   VerifiedPurchase,
 } from './modules/orders/types.ts'
+// Returns and refunds (backend spec step 15).
+export {
+  approveReturn,
+  getReturn,
+  listOwnReturns,
+  listReturns,
+  listSellerReturns,
+  openReturn,
+  recordReturnRefund,
+  rejectReturn,
+} from './modules/returns/service.ts'
+export {
+  RETURN_REASONS,
+  RETURN_STATUSES,
+  type RefundRecord,
+  type ReturnReason,
+  type ReturnStatus,
+  type ReturnView,
+} from './modules/returns/types.ts'

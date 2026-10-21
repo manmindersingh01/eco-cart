@@ -13,7 +13,10 @@ export const POST = handleErrors(
     request: Request,
     route: RouteContext<'/api/seller/documents/[id]/files'>,
   ) => {
-    const { context } = await requireSeller(request.headers)
+    const { context } = await requireSeller(request.headers, {
+      // An applicant sends the documents an administrator asked for.
+      applicants: true,
+    })
     const { id } = await route.params
     const input = await readJsonBody(request)
     const queue = await getJobQueue()

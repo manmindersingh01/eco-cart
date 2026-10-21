@@ -31,12 +31,13 @@ const filters: Array<{ label: string; status?: SellerStatus }> = [
   { label: 'Pending', status: 'pending' },
   { label: 'Approved', status: 'approved' },
   { label: 'Suspended', status: 'suspended' },
+  { label: 'Rejected', status: 'rejected' },
 ]
 
 function statusTone(status: SellerStatus) {
   return status === 'approved'
     ? ('success' as const)
-    : status === 'suspended'
+    : status === 'suspended' || status === 'rejected'
       ? ('danger' as const)
       : ('warning' as const)
 }

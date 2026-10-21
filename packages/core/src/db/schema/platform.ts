@@ -85,7 +85,7 @@ export const emailOutbox = pgTable(
     index('email_outbox_status_created_at_idx').on(t.status, t.createdAt),
     check(
       'email_outbox_template_check',
-      sql`template in ('otp', 'order_placed', 'payment_received', 'dispatched', 'cancelled', 'refund_recorded')`,
+      sql`template in ('otp', 'order_placed', 'payment_received', 'dispatched', 'cancelled', 'refund_recorded', 'seller_application')`,
     ),
     check(
       'email_outbox_status_check',

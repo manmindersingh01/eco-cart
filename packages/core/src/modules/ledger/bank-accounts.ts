@@ -2,12 +2,16 @@ import { eq } from 'drizzle-orm'
 import type { Transaction } from '../../db/client.ts'
 import type { RequestContext } from '../../db/context.ts'
 import { sellerBankAccounts } from '../../db/schema/index.ts'
-import { ConflictError, ForbiddenError, NotFoundError } from '../../errors.ts'
+import { ConflictError } from '../../errors.ts'
 import { openSecret, sealSecret } from '../../lib/encryption.ts'
 import { uniqueViolation } from '../../lib/postgres.ts'
-import { isUuid, parseInput } from '../../lib/validation.ts'
+import { parseInput } from '../../lib/validation.ts'
 import { recordAuditEntry } from '../audit/service.ts'
-import { getSellerLabels } from '../sellers/service.ts'
+import {
+  assertAdministrator,
+  assertSeller,
+  assertSellerExists,
+} from './access.ts'
 import {
   bankAccountInput,
   type BankAccountView,
@@ -21,18 +25,9 @@ import {
  * 4 digits are ever shown or logged.
  */
 
-type Administrator = Extract<RequestContext, { role: 'admin' | 'system' }>
 type BankAccountRow = typeof sellerBankAccounts.$inferSelect
 
-function assertAdministrator(
-  context: RequestContext,
-): asserts context is Administrator {
-  if (context.role !== 'admin' && context.role !== 'system') {
-    throw new ForbiddenError(
-      'Only administrators can manage seller bank details',
-    )
-  }
-}
+const MANAGE = 'manage seller bank details'
 
 const toView = (row: BankAccountRow): BankAccountView => ({
   sellerId: row.sellerId,
@@ -49,16 +44,12 @@ const auditable = (row: BankAccountRow) => ({
   ifsc: row.ifsc,
 })
 
-async function assertSellerExists(
-  tx: Transaction,
-  sellerId: string,
-): Promise<void> {
-  if (!isUuid(sellerId) || (await getSellerLabels(tx, [sellerId])).size === 0) {
-    throw new NotFoundError('There is no seller with that id')
-  }
-}
-
-async function findBankAccount(
+/**
+ * The seller's bank account row. `lock` holds it until the transaction
+ * ends: changing the account and recording a payout both take this lock,
+ * so they happen one after the other.
+ */
+export async function findBankAccount(
   tx: Transaction,
   sellerId: string,
   { lock = false } = {},
@@ -84,7 +75,7 @@ export async function setSellerBankAccount(
   input: unknown,
   ip?: string | null,
 ): Promise<BankAccountView> {
-  assertAdministrator(context)
+  assertAdministrator(context, MANAGE)
   const details = parseInput(
     bankAccountInput,
     input,
@@ -147,7 +138,7 @@ export async function getSellerBankAccount(
   context: RequestContext,
   sellerId: string,
 ): Promise<BankAccountView | null> {
-  assertAdministrator(context)
+  assertAdministrator(context, MANAGE)
   await assertSellerExists(tx, sellerId)
   const row = await findBankAccount(tx, sellerId)
   return row ? toView(row) : null
@@ -158,9 +149,7 @@ export async function getOwnBankAccount(
   tx: Transaction,
   context: RequestContext,
 ): Promise<BankAccountView | null> {
-  if (context.role !== 'seller') {
-    throw new ForbiddenError('This needs a seller account')
-  }
+  assertSeller(context)
   const row = await findBankAccount(tx, context.sellerId)
   return row ? toView(row) : null
 }
@@ -175,7 +164,7 @@ export async function readPayoutBankAccount(
   context: RequestContext,
   sellerId: string,
 ): Promise<PayoutBankAccount | null> {
-  assertAdministrator(context)
+  assertAdministrator(context, MANAGE)
   const row = await findBankAccount(tx, sellerId)
   if (!row) return null
   return {

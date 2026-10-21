@@ -142,15 +142,19 @@ async function lineViews(
   const shipmentIds = [
     ...new Set(lines.flatMap((line) => line.shipmentId ?? [])),
   ]
-  const [parcels, sellerNames] = await Promise.all([
+  // One after the other: a transaction is one connection, which runs one
+  // query at a time anyway.
+  const parcels =
     shipmentIds.length > 0
-      ? tx.select().from(shipments).where(inArray(shipments.id, shipmentIds))
-      : Promise.resolve([]),
-    getSellerNames(
-      tx,
-      lines.map((line) => line.sellerId),
-    ),
-  ])
+      ? await tx
+          .select()
+          .from(shipments)
+          .where(inArray(shipments.id, shipmentIds))
+      : []
+  const sellerNames = await getSellerNames(
+    tx,
+    lines.map((line) => line.sellerId),
+  )
   const byId = new Map(
     parcels.map((parcel): [string, ShipmentView] => [
       parcel.id,
@@ -311,11 +315,9 @@ export async function getBuyerOrder(
     .from(orders)
     .where(and(eq(orders.id, orderId), eq(orders.userId, context.userId)))
   if (!order) throw notFound()
-  const [lines, payments, invoices] = await Promise.all([
-    linesOf(tx, [order.id]),
-    paymentsOfOrder(tx, order.id),
-    listOrderInvoices(tx, context, order.id),
-  ])
+  const lines = await linesOf(tx, [order.id])
+  const payments = await paymentsOfOrder(tx, order.id)
+  const invoices = await listOrderInvoices(tx, context, order.id)
   return {
     id: order.id,
     orderNumber: order.orderNumber,
@@ -374,29 +376,29 @@ async function sellerOrderViews(
     ),
     (line) => line.orderId,
   )
-  return Promise.all(
-    ordersShown.map(async (order) => {
-      const own = lines.get(order.id) ?? []
-      return {
-        id: order.id,
-        orderNumber: order.orderNumber,
-        placedAt: order.placedAt,
-        status: asStatus(order.status),
-        paymentMethod: asMethod(order.paymentMethod),
-        buyerName: order.buyerName,
-        buyerPhone: order.buyerPhone,
-        shippingAddress: order.shippingAddress,
-        lines: await lineViews(tx, photos, own),
-        sellerTotalPaise: own
-          .filter((line) => line.status !== 'cancelled')
-          .reduce(
-            (total, line) =>
-              total + line.lineTotalPaise - line.discountSharePaise,
-            0,
-          ),
-      }
-    }),
-  )
+  const views: SellerOrderSummary[] = []
+  for (const order of ordersShown) {
+    const own = lines.get(order.id) ?? []
+    views.push({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      placedAt: order.placedAt,
+      status: asStatus(order.status),
+      paymentMethod: asMethod(order.paymentMethod),
+      buyerName: order.buyerName,
+      buyerPhone: order.buyerPhone,
+      shippingAddress: order.shippingAddress,
+      lines: await lineViews(tx, photos, own),
+      sellerTotalPaise: own
+        .filter((line) => line.status !== 'cancelled')
+        .reduce(
+          (total, line) =>
+            total + line.lineTotalPaise - line.discountSharePaise,
+          0,
+        ),
+    })
+  }
+  return views
 }
 
 /**
@@ -579,16 +581,14 @@ export async function getAdminOrder(
   if (!isUuid(orderId)) throw notFound()
   const [order] = await tx.select().from(orders).where(eq(orders.id, orderId))
   if (!order) throw notFound()
-  const [lines, payments, events, invoices] = await Promise.all([
-    linesOf(tx, [order.id]),
-    paymentsOfOrder(tx, order.id),
-    tx
-      .select()
-      .from(orderEvents)
-      .where(eq(orderEvents.orderId, order.id))
-      .orderBy(asc(orderEvents.createdAt), asc(orderEvents.id)),
-    listOrderInvoices(tx, context, order.id),
-  ])
+  const lines = await linesOf(tx, [order.id])
+  const payments = await paymentsOfOrder(tx, order.id)
+  const events = await tx
+    .select()
+    .from(orderEvents)
+    .where(eq(orderEvents.orderId, order.id))
+    .orderBy(asc(orderEvents.createdAt), asc(orderEvents.id))
+  const invoices = await listOrderInvoices(tx, context, order.id)
   return {
     id: order.id,
     orderNumber: order.orderNumber,
