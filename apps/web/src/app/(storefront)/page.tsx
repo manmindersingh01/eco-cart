@@ -1,24 +1,30 @@
+import type { HomeSection } from '@ecokart/core'
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { connection } from 'next/server'
 import { BrandDiscovery } from '@/components/storefront/brand-discovery'
+import { ProductGrid } from '@/components/storefront/product-card'
 import { Card, EmptyState, StatusBadge } from '@/components/ui/feedback'
 import { getPublicBrands, getPublicCategories } from '@/lib/public-catalogue'
 import { countCategories } from '@/lib/public-home'
 import type { PublicCategory } from '@/lib/seller-products'
+import { readHomePage } from '@/lib/storefront'
 
 export const metadata: Metadata = {
   // absolute: the root template would add a second "| EcoKart".
   title: { absolute: 'EcoKart | Independent sellers across India' },
   description:
-    'Explore EcoKart categories and active brands while our reviewed marketplace catalogue is prepared.',
+    'Shop reviewed products from independent sellers across India, with prices that include GST.',
 }
 
 export default async function HomePage() {
   await connection()
-  const [categories, brands] = await Promise.all([
+  const [categories, brands, sections] = await Promise.all([
     getPublicCategories(),
     getPublicBrands({ limit: 12 }),
+    readHomePage(),
   ])
+  const shelves = sections.filter((section) => section.products.length > 0)
 
   return (
     <main id="main-content" className="min-w-0 flex-1">
@@ -33,22 +39,21 @@ export default async function HomePage() {
               marketplace.
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-muted">
-              EcoKart is preparing a reviewed catalogue across home, lifestyle,
-              personal care, and everyday essentials. Explore the real category
-              and brand choices already available to our sellers.
+              Shop a reviewed catalogue across home, lifestyle, personal care,
+              and everyday essentials, from independent sellers across India.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <a
-                href="#categories"
+                href={shelves.length ? '#new-arrivals' : '#categories'}
                 className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-strong"
               >
-                Explore categories
+                {shelves.length ? 'Shop new arrivals' : 'Explore categories'}
               </a>
               <a
-                href="#brands"
+                href="#categories"
                 className="inline-flex min-h-11 items-center justify-center rounded-lg border bg-surface px-4 py-2 text-sm font-semibold hover:border-brand hover:text-brand-strong"
               >
-                Discover brands
+                Browse categories
               </a>
             </div>
           </div>
@@ -69,7 +74,7 @@ export default async function HomePage() {
               />
               <PromiseCard
                 title="Clear pricing"
-                text="Prices will include GST and use familiar Indian formatting."
+                text="Prices include GST and use familiar Indian formatting."
               />
               <PromiseCard
                 title="Seller ownership"
@@ -84,6 +89,19 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {shelves.length ? (
+        shelves.map((section) => (
+          <Shelf key={section.category?.id ?? section.kind} section={section} />
+        ))
+      ) : (
+        <section className="page-container pt-14 sm:pt-20">
+          <EmptyState
+            title="Products are on their way"
+            description="Sellers' listings appear here once they are reviewed. Browse the categories below in the meantime."
+          />
+        </section>
+      )}
+
       <section
         id="categories"
         className="page-container scroll-mt-28 py-14 sm:py-20"
@@ -96,9 +114,8 @@ export default async function HomePage() {
             Active categories
           </h2>
           <p className="mt-3 text-muted">
-            These are the live catalogue choices available to EcoKart sellers.
-            Product browsing will open after listings are reviewed and
-            published.
+            Open a category to see its products, with filters for brand, price,
+            and stock.
           </p>
         </div>
         {categories.length ? (
@@ -136,23 +153,6 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
-
-      <section className="page-container py-14 sm:py-20">
-        <Card className="overflow-hidden border-brand/30 bg-brand-soft p-7 sm:p-10">
-          <div className="max-w-3xl">
-            <StatusBadge tone="warning">Shopping is coming next</StatusBadge>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight">
-              The catalogue is real. Commerce opens after product approval.
-            </h2>
-            <p className="mt-3 text-muted">
-              This release establishes secure administrator and seller portals.
-              Public products, search, basket, checkout, payments, and orders
-              arrive in later planned backend steps, so this page does not show
-              placeholder products or broken shopping actions.
-            </p>
-          </div>
-        </Card>
-      </section>
     </main>
   )
 }
@@ -171,7 +171,12 @@ function CategoryCard({ category }: { category: PublicCategory }) {
     <Card flush>
       <div className="border-b bg-brand-soft p-5">
         <h3 className="text-xl font-semibold text-brand-strong">
-          {category.name}
+          <Link
+            href={`/categories/${category.slug}`}
+            className="hover:underline"
+          >
+            {category.name}
+          </Link>
         </h3>
       </div>
       <div className="p-5">
@@ -179,14 +184,24 @@ function CategoryCard({ category }: { category: PublicCategory }) {
           <ul className="grid gap-4">
             {category.children.map((child) => (
               <li key={child.id}>
-                <p className="font-semibold">{child.name}</p>
+                <p className="font-semibold">
+                  <Link
+                    href={`/categories/${child.slug}`}
+                    className="hover:text-brand-strong hover:underline"
+                  >
+                    {child.name}
+                  </Link>
+                </p>
                 {child.children.length ? (
                   <ul className="mt-2 flex flex-wrap gap-2">
                     {child.children.map((leaf) => (
                       <li key={leaf.id}>
-                        <span className="inline-flex rounded-full border bg-surface-subtle px-3 py-1 text-sm text-muted">
+                        <Link
+                          href={`/categories/${leaf.slug}`}
+                          className="inline-flex min-h-9 items-center rounded-full border bg-surface-subtle px-3 text-sm text-muted hover:border-brand hover:text-brand-strong"
+                        >
                           {leaf.name}
-                        </span>
+                        </Link>
                       </li>
                     ))}
                   </ul>
@@ -205,5 +220,43 @@ function CategoryCard({ category }: { category: PublicCategory }) {
         )}
       </div>
     </Card>
+  )
+}
+
+/** New arrivals, or one top-level category's latest products. */
+function Shelf({ section }: { section: HomeSection }) {
+  const heading = section.category ? section.category.name : 'New arrivals'
+  const id = section.category
+    ? `shelf-${section.category.slug}`
+    : 'new-arrivals'
+  return (
+    <section
+      id={id}
+      aria-labelledby={`${id}-title`}
+      className="page-container scroll-mt-28 pt-14 sm:pt-20"
+    >
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h2
+          id={`${id}-title`}
+          className="text-2xl font-semibold tracking-tight"
+        >
+          {heading}
+        </h2>
+        {section.category ? (
+          <Link
+            href={`/categories/${section.category.slug}`}
+            className="text-sm font-semibold text-brand-strong underline-offset-4 hover:underline"
+          >
+            See all in {section.category.name}
+          </Link>
+        ) : null}
+      </div>
+      <div className="mt-5">
+        <ProductGrid
+          products={section.products}
+          priority={section.kind === 'new_arrivals' ? 6 : 0}
+        />
+      </div>
+    </section>
   )
 }

@@ -25,10 +25,10 @@ export async function CategoryNavigation() {
         )}
         <div className="flex min-w-0 flex-1 items-center gap-5 overflow-x-auto py-1">
           <Link
-            href="/#categories"
+            href="/#new-arrivals"
             className="shrink-0 rounded-md font-semibold text-brand-strong"
           >
-            Explore catalogue
+            New arrivals
           </Link>
           <Link
             href="/#brands"
@@ -36,9 +36,6 @@ export async function CategoryNavigation() {
           >
             Discover brands
           </Link>
-          <span className="shrink-0 text-muted">
-            Shopping opens after catalogue review
-          </span>
         </div>
       </div>
     </nav>
@@ -54,25 +51,40 @@ function CategoryMenu({
     <ul className="grid gap-4 sm:grid-cols-2">
       {categories.map((category) => (
         <li key={category.id}>
-          <p className="font-semibold">{category.name}</p>
+          <Link
+            href={`/categories/${category.slug}`}
+            className="font-semibold hover:text-brand-strong hover:underline"
+          >
+            {category.name}
+          </Link>
           {category.children.length ? (
             <ul className="mt-2 grid gap-2 border-l pl-3 text-muted">
               {category.children.map((child) => (
                 <li key={child.id}>
-                  <p className="font-medium text-foreground">{child.name}</p>
+                  <Link
+                    href={`/categories/${child.slug}`}
+                    className="font-medium text-foreground hover:text-brand-strong hover:underline"
+                  >
+                    {child.name}
+                  </Link>
                   {child.children.length ? (
-                    <p className="mt-1 text-xs">
-                      {child.children.map((leaf) => leaf.name).join(' · ')}
-                    </p>
+                    <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                      {child.children.map((leaf) => (
+                        <li key={leaf.id}>
+                          <Link
+                            href={`/categories/${leaf.slug}`}
+                            className="hover:text-brand-strong hover:underline"
+                          >
+                            {leaf.name}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
                   ) : null}
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="mt-1 text-xs text-muted">
-              Category details coming soon
-            </p>
-          )}
+          ) : null}
         </li>
       ))}
     </ul>

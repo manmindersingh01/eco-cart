@@ -41,16 +41,18 @@ export function IconButton({ className, ...props }: IconButtonProps) {
   return <Button className={cx('size-11 shrink-0 p-0', className)} {...props} />
 }
 
-type LinkButtonProps = LinkProps<Route> &
-  Omit<AnchorHTMLAttributes<HTMLAnchorElement>, keyof LinkProps<Route>> & {
+// Generic like Link itself, so a dynamic address such as
+// `/categories/${slug}` is checked against the app's routes.
+type LinkButtonProps<RouteType> = LinkProps<RouteType> &
+  Omit<AnchorHTMLAttributes<HTMLAnchorElement>, keyof LinkProps<RouteType>> & {
     variant?: ButtonVariant
   }
 
-export function LinkButton({
+export function LinkButton<RouteType = Route>({
   className,
   variant = 'primary',
   ...props
-}: LinkButtonProps) {
+}: LinkButtonProps<RouteType>) {
   return <Link className={cx(base, variants[variant], className)} {...props} />
 }
 
