@@ -22,7 +22,13 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="en-IN" className="h-full antialiased">
+    // data-scroll-behavior: Next.js turns the smooth scrolling in
+    // globals.css off during page changes, so a new page starts at the top.
+    <html
+      lang="en-IN"
+      className="h-full antialiased"
+      data-scroll-behavior="smooth"
+    >
       <body className="flex min-h-full flex-col">
         <a className="skip-link" href="#main-content">
           Skip to main content
