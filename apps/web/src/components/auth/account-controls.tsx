@@ -122,6 +122,8 @@ export function AccountControls({
       : null
   // Inside that portal already, its link would only reload the page.
   const inPortal = portal ? pathname.startsWith(portal.href) : false
+  const inPortalArea =
+    pathname.startsWith('/seller') || pathname.startsWith('/admin')
   // On a phone the row keeps to one link and Sign out, so it fits beside
   // the logo. `max-sm:hidden` rather than `hidden`: a variant comes later in
   // the stylesheet, so it wins over a button's own inline-flex.
@@ -145,12 +147,23 @@ export function AccountControls({
           {label}
         </span>
       ) : null}
+      {/* In the shop, a buyer's orders and addresses. Its tabs also lead to
+          the seller application, so on a phone this one link is enough. */}
+      {account.roles.includes('buyer') && !inPortalArea ? (
+        <LinkButton href="/account/orders" variant="quiet">
+          <span className="sm:hidden">Orders</span>
+          <span className="max-sm:hidden">Your orders</span>
+        </LinkButton>
+      ) : null}
       {/* Approval adds the seller role, and then the seller portal link
           takes the application's place. */}
       {account.roles.includes('buyer') && !account.roles.includes('seller') ? (
-        <LinkButton href="/account/seller-application" variant="quiet">
-          <span className="sm:hidden">Sell</span>
-          <span className="max-sm:hidden">Seller application</span>
+        <LinkButton
+          href="/account/seller-application"
+          variant="quiet"
+          className="max-sm:hidden"
+        >
+          Seller application
         </LinkButton>
       ) : null}
       <Button

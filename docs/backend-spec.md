@@ -1649,3 +1649,6 @@ Green Basket's 101st call of the day is refused with 429, "You have used todayâ€
 - 21 October 2026: Added the catalogue portal extension over the existing product, media, moderation and import contracts.
   Added a browser-safe contract export and a regression test for simultaneous registrations at the photo cap.
   Task 05 records the implementation and verification results.
+- 19 November 2026: Buyer screens for the shop, cart, addresses, checkout, and the buyer's orders were built (frontend tasks 06, 07, and 08 in part).
+  One backend addition came with them: `resumeOnlinePayment` in the checkout module and `GET /api/account/orders/[id]/payment`, which hand the browser Razorpay's checkout details again for the buyer's own order that is still waiting for its online payment.
+  It reuses the order's Razorpay order, refuses an order that is paid, cancelled, or expired, and adds no new way to confirm a payment; the design doc says so in section 6.3, step 5.

@@ -493,6 +493,7 @@ export { formatRupees } from './lib/money.ts'
 export {
   checkoutOptions,
   placeOrder,
+  resumeOnlinePayment,
   type BuyerAccount,
   type PlacedOrder,
 } from './modules/checkout/service.ts'
@@ -586,6 +587,7 @@ export type {
   BuyerOrderSummary,
   BuyerOrderView,
   DispatchRequest,
+  LineStatus,
   OrderLineView,
   OrderProgress,
   PaymentState,

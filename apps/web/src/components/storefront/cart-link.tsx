@@ -49,9 +49,8 @@ export function CartLink() {
   const label =
     count === null ? 'Cart' : `Cart, ${count} ${count === 1 ? 'item' : 'items'}`
   return (
-    // An address object: the cart page is its own journey, built next.
     <Link
-      href={{ pathname: '/cart' }}
+      href="/cart"
       aria-label={label}
       className="relative inline-flex size-11 shrink-0 items-center justify-center rounded-lg border bg-surface text-foreground hover:border-brand hover:text-brand-strong"
     >

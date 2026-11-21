@@ -9,6 +9,8 @@ type ConfirmationDialogProps = {
   trigger: ReactNode
   triggerVariant?: ButtonProps['variant']
   confirmLabel: string
+  /** The button that closes the dialog and does nothing. */
+  dismissLabel?: string
   onConfirm: () => void
   danger?: boolean
   triggerDisabled?: boolean
@@ -21,6 +23,7 @@ export function ConfirmationDialog({
   trigger,
   triggerVariant = 'secondary',
   confirmLabel,
+  dismissLabel = 'Cancel',
   onConfirm,
   danger = false,
   triggerDisabled = false,
@@ -92,7 +95,7 @@ export function ConfirmationDialog({
           </p>
           <div className="mt-6 flex flex-wrap justify-end gap-3">
             <Button variant="secondary" onClick={closeDialog}>
-              Cancel
+              {dismissLabel}
             </Button>
             <Button
               variant={danger ? 'danger' : 'primary'}

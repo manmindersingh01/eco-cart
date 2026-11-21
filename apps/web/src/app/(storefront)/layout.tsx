@@ -3,8 +3,12 @@ import { Suspense } from 'react'
 import { AccountControls } from '@/components/auth/account-controls'
 import { CartLink } from '@/components/storefront/cart-link'
 import { CategoryNavigation } from '@/components/storefront/category-navigation'
+import { HeaderSearch } from '@/components/storefront/header-search'
 import { SearchBox } from '@/components/storefront/search-box'
 import { Skeleton } from '@/components/ui/feedback'
+
+const headerSearchClass =
+  'order-3 w-[calc(100%-3.75rem)] md:order-2 md:w-auto md:max-w-xl md:flex-1'
 
 export default function StorefrontLayout({ children }: LayoutProps<'/'>) {
   return (
@@ -30,10 +34,15 @@ export default function StorefrontLayout({ children }: LayoutProps<'/'>) {
           <div className="order-2 ml-auto md:order-3 md:ml-0">
             <AccountControls compact />
           </div>
-          <SearchBox
-            id="header-search"
-            className="order-3 w-[calc(100%-3.75rem)] md:order-2 md:w-auto md:max-w-xl md:flex-1"
-          />
+          {/* The search page's words come from the address, which is read
+              in the browser, so the layout stays the same for every page. */}
+          <Suspense
+            fallback={
+              <SearchBox id="header-search" className={headerSearchClass} />
+            }
+          >
+            <HeaderSearch id="header-search" className={headerSearchClass} />
+          </Suspense>
           <div className="order-4">
             <CartLink />
           </div>

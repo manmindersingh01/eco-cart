@@ -87,9 +87,11 @@ export function ListingControls({
     <form
       onSubmit={apply}
       noValidate
-      className="grid gap-3 rounded-xl border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-end"
+      // Phone: brand and sort, then the two prices, side by side, so the
+      // results start near the top. Wide: one row of four.
+      className="grid grid-cols-2 gap-3 rounded-xl border bg-surface p-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-end"
     >
-      <Field label="Brand" htmlFor="listing-brand">
+      <Field label="Brand" htmlFor="listing-brand" className="order-1">
         <Select
           value={brand}
           onChange={(event) => setBrand(event.target.value)}
@@ -102,7 +104,11 @@ export function ListingControls({
           ))}
         </Select>
       </Field>
-      <Field label="Lowest price (₹)" htmlFor="listing-min-price">
+      <Field
+        label="Lowest price (₹)"
+        htmlFor="listing-min-price"
+        className="order-3 lg:order-2"
+      >
         <Input
           value={minPrice}
           onChange={(event) => setMinPrice(event.target.value)}
@@ -110,7 +116,11 @@ export function ListingControls({
           placeholder="0"
         />
       </Field>
-      <Field label="Highest price (₹)" htmlFor="listing-max-price">
+      <Field
+        label="Highest price (₹)"
+        htmlFor="listing-max-price"
+        className="order-4 lg:order-3"
+      >
         <Input
           value={maxPrice}
           onChange={(event) => setMaxPrice(event.target.value)}
@@ -118,7 +128,11 @@ export function ListingControls({
           placeholder="Any"
         />
       </Field>
-      <Field label="Sort by" htmlFor="listing-sort">
+      <Field
+        label="Sort by"
+        htmlFor="listing-sort"
+        className="order-2 lg:order-4"
+      >
         <Select
           value={sort}
           onChange={(event) => {
@@ -133,7 +147,7 @@ export function ListingControls({
           ))}
         </Select>
       </Field>
-      <div className="flex flex-wrap items-center justify-between gap-3 sm:col-span-2 lg:col-span-4">
+      <div className="order-5 col-span-2 flex flex-wrap items-center justify-between gap-3 lg:col-span-4">
         <label
           htmlFor="listing-out-of-stock"
           className="flex min-h-11 items-center gap-2 text-sm"
@@ -165,7 +179,7 @@ export function ListingControls({
       {error ? (
         <p
           role="alert"
-          className="text-sm font-medium text-danger sm:col-span-2 lg:col-span-4"
+          className="order-6 col-span-2 text-sm font-medium text-danger lg:col-span-4"
         >
           {error}
         </p>
