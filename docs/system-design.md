@@ -1079,6 +1079,8 @@ This is the flow that has to be correct under concurrency, so it is spelled out 
 3. After the transaction commits, call the Razorpay Orders API to create a gateway order for the total amount. The API call is deliberately outside the transaction so a slow gateway never holds database locks.
 4. If the Razorpay call fails, a compensating transaction cancels the order, adds the stock back, decrements the coupon counter, and records the failure. The buyer sees an error and their cart is restored.
 5. The browser opens Razorpay hosted checkout with the gateway order id.
+   If the buyer closes Razorpay's window without paying, the order page offers "Pay now" until the order expires.
+   It opens Razorpay's checkout again with the same gateway order id and amount, so one order can never be paid twice, and the payment is confirmed exactly as in step 6.
 6. Payment confirmation arrives two ways and both go through the same idempotent `confirmOrderPayment` function:
    - The webhook (`payment.captured` or `order.paid`): verify the signature with the webhook secret, insert into `payment_events` with `ON CONFLICT DO NOTHING`, and stop if it was a replay.
    - The browser return: verify the checkout signature and, as a safety net, fetch the payment status from the Razorpay API.

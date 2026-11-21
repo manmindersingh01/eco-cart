@@ -554,7 +554,9 @@ describe('who sees returns', () => {
       queued.push(...page.items.map((item) => item.id))
       cursor = page.nextCursor ?? undefined
     } while (cursor)
-    expect(queued.at(-1)).toBe(opened.id)
+    // Other test files can add requests to this shared administrator queue.
+    expect(queued).toContain(opened.id)
+    expect(new Set(queued).size).toBe(queued.length)
     await expect(
       as(buyer, (tx) => listReturns(tx, buyer, photos)),
     ).rejects.toThrow(ForbiddenError)

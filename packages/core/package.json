@@ -8,7 +8,8 @@
     "./worker": "./src/worker.ts",
     "./cache": "./src/cache.ts",
     "./testing": "./src/testing/index.ts",
-    "./states": "./src/lib/states.ts"
+    "./states": "./src/lib/states.ts",
+    "./catalogue-contracts": "./src/catalogue-contracts.ts"
   },
   "scripts": {
     "typecheck": "tsc",

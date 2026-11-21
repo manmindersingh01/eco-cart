@@ -4,9 +4,8 @@ import Link from 'next/link'
 import { connection } from 'next/server'
 import { BrandDiscovery } from '@/components/storefront/brand-discovery'
 import { ProductGrid } from '@/components/storefront/product-card'
-import { Card, EmptyState, StatusBadge } from '@/components/ui/feedback'
+import { Card, EmptyState } from '@/components/ui/feedback'
 import { getPublicBrands, getPublicCategories } from '@/lib/public-catalogue'
-import { countCategories } from '@/lib/public-home'
 import type { PublicCategory } from '@/lib/seller-products'
 import { readHomePage } from '@/lib/storefront'
 
@@ -28,64 +27,30 @@ export default async function HomePage() {
 
   return (
     <main id="main-content" className="min-w-0 flex-1">
+      {/* Short, so the first products show without scrolling on a phone. */}
       <section className="border-b bg-[linear-gradient(145deg,var(--brand-soft),var(--surface)_58%,var(--background))]">
-        <div className="page-container grid gap-10 py-16 sm:py-24 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)] lg:items-center">
-          <div>
-            <StatusBadge tone="success">
-              Built for shopping across India
-            </StatusBadge>
-            <h1 className="mt-6 max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-6xl">
-              Thoughtful products from independent sellers, in one trusted
-              marketplace.
-            </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-muted">
-              Shop a reviewed catalogue across home, lifestyle, personal care,
-              and everyday essentials, from independent sellers across India.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <a
-                href={shelves.length ? '#new-arrivals' : '#categories'}
-                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-strong"
-              >
-                {shelves.length ? 'Shop new arrivals' : 'Explore categories'}
-              </a>
-              <a
-                href="#categories"
-                className="inline-flex min-h-11 items-center justify-center rounded-lg border bg-surface px-4 py-2 text-sm font-semibold hover:border-brand hover:text-brand-strong"
-              >
-                Browse categories
-              </a>
-            </div>
+        <div className="page-container py-8 sm:py-12">
+          <h1 className="max-w-3xl text-3xl font-semibold tracking-tight text-balance sm:text-5xl">
+            Thoughtful products from independent sellers across India.
+          </h1>
+          <p className="mt-3 max-w-2xl text-muted sm:mt-4 sm:text-lg">
+            Every listing is reviewed before it goes on sale, and every price
+            includes GST.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-3 sm:mt-6">
+            <a
+              href={shelves.length ? '#new-arrivals' : '#categories'}
+              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-strong"
+            >
+              {shelves.length ? 'Shop new arrivals' : 'Explore categories'}
+            </a>
+            <a
+              href="#categories"
+              className="inline-flex min-h-11 items-center justify-center rounded-lg border bg-surface px-4 py-2 text-sm font-semibold hover:border-brand hover:text-brand-strong"
+            >
+              Browse categories
+            </a>
           </div>
-          <Card className="grid gap-5 p-6 sm:p-8">
-            <div>
-              <p className="text-sm font-semibold text-brand-strong">
-                Catalogue preview
-              </p>
-              <p className="mt-2 text-3xl font-semibold">
-                {countCategories(categories).toLocaleString('en-IN')} visible
-                categories
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-              <PromiseCard
-                title="Reviewed listings"
-                text="Sellers prepare listings before products reach buyers."
-              />
-              <PromiseCard
-                title="Clear pricing"
-                text="Prices include GST and use familiar Indian formatting."
-              />
-              <PromiseCard
-                title="Seller ownership"
-                text="Each business manages its own catalogue and stock."
-              />
-              <PromiseCard
-                title="Safe photos"
-                text="Every product photo is checked and resized before display."
-              />
-            </div>
-          </Card>
         </div>
       </section>
 
@@ -134,7 +99,36 @@ export default async function HomePage() {
         )}
       </section>
 
-      <section id="brands" className="scroll-mt-28 border-y bg-surface-subtle">
+      <section
+        aria-labelledby="promises-title"
+        className="border-t bg-surface-subtle"
+      >
+        <div className="page-container py-10 sm:py-14">
+          <h2 id="promises-title" className="sr-only">
+            Why shop on EcoKart
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <PromiseCard
+              title="Reviewed listings"
+              text="Every listing is checked before it reaches buyers."
+            />
+            <PromiseCard
+              title="Clear pricing"
+              text="Prices include GST, in familiar Indian formatting."
+            />
+            <PromiseCard
+              title="Independent sellers"
+              text="Each business manages its own catalogue and stock."
+            />
+            <PromiseCard
+              title="Safe photos"
+              text="Every product photo is checked and resized before display."
+            />
+          </div>
+        </div>
+      </section>
+
+      <section id="brands" className="scroll-mt-28 border-y">
         <div className="page-container py-14 sm:py-20">
           <div className="max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-brand-strong">
@@ -159,8 +153,8 @@ export default async function HomePage() {
 
 function PromiseCard({ title, text }: { title: string; text: string }) {
   return (
-    <div className="rounded-lg border bg-surface-subtle p-4">
-      <h2 className="font-semibold">{title}</h2>
+    <div className="rounded-lg border bg-surface p-4">
+      <h3 className="font-semibold">{title}</h3>
       <p className="mt-1 text-sm text-muted">{text}</p>
     </div>
   )

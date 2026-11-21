@@ -59,10 +59,10 @@ Confirm actual remote names again when implementation starts.
 | 02 | [Backend integration and role compatibility](02-integration-and-roles.md) | 01 | Current `step-2-marketplace-completion` branch | Yes | Complete; role, API demo, browser and full checks passed |
 | 03 | [Remarks decisions and backend changes](03-remarks-backend.md) | 02 | Current `step-2-marketplace-completion` branch | Yes | Complete; retained policies verified and reproduced defects fixed |
 | 04 | [Seller applications and verification](04-seller-onboarding.md) | 02 | Current `step-2-marketplace-completion` branch | Yes | Complete; application/document journeys and full checks passed |
-| 05 | [Catalogue lifecycle, quantity, media, imports](05-catalogue-operations.md) | 02; 04 for applicant journey | `frontend/step-5-catalogue-operations` | No | Planned |
-| 06 | [Public shop and keyword search](06-storefront.md) | 05 | `frontend/step-6-storefront` | No | Planned |
-| 07 | [Buyer account, addresses, cart, coupons](07-account-and-cart.md) | 06 | `frontend/step-7-account-cart` | No | Planned |
-| 08 | [Checkout, orders, fulfilment, invoices](08-checkout-and-orders.md) | 07 | `frontend/step-8-checkout-orders` | No | Planned |
+| 05 | [Catalogue lifecycle, quantity, media, imports](05-catalogue-operations.md) | 02; 04 for applicant journey | Current `step-2-marketplace-completion` branch | Yes | Complete; C01-C08, catalogue/Chrome/smoke browser runs and `pnpm check` passed |
+| 06 | [Public shop and keyword search](06-storefront.md) | 05 | `frontend/step-6-storefront` | Yes | `implemented_pending_verification`: home shelves, category, product, and search pages checked by hand in the browser at phone and desktop widths on 19 November 2026; its proposed browser suites are not written yet |
+| 07 | [Buyer account, addresses, cart, coupons](07-account-and-cart.md) | 06 | `frontend/step-7-account-cart` | Partly | `in_progress`: cart with quantities and coupons, guest cart moving into the account at sign-in, and the address book are built and checked by hand; profile editing, phone sign-in, and the administrator coupon screen are not built |
+| 08 | [Checkout, orders, fulfilment, invoices](08-checkout-and-orders.md) | 07 | `frontend/step-8-checkout-orders` | Partly | `in_progress`: checkout with cash on delivery and Razorpay, Pay now for an unpaid order, and the buyer's order list and detail with cancellation and invoice download are built; cash on delivery was checked in the browser and online payment through the real API against the stand-in Razorpay; Razorpay's own window still needs a check with real test keys; the seller dispatch and administrator order screens are not built |
 | 09 | [Returns, refunds, seller money](09-returns-and-settlements.md) | 08 | `frontend/step-9-returns-settlements` | No | Planned |
 | 10 | [Reviews, policies, operations tools](10-content-and-operations.md) | 08; 09 for refund support | `frontend/step-10-content-operations` | No | Planned |
 | 11 | [AI features and reporting](11-ai-features.md) | 05, 06, 10 | `frontend/step-11-ai-features` | No | Planned |
@@ -71,7 +71,8 @@ Confirm actual remote names again when implementation starts.
 Task numbers are a recommended chronological execution sequence.
 The dependency column is the actual blocking relationship.
 Tasks 02 through 04 were approved and completed together on the existing branch; their [shared evidence](evidence/2026-10-20-onboarding.md) records implementation, tests and remaining release checks.
-The current document and media policies are resolved; task 05 is the next implementation task.
+The current document and media policies are resolved; task 05 is complete with [catalogue evidence](evidence/2026-10-21-catalogue.md).
+Task 06 is built and tasks 07 and 08 are partly built (19 November 2026); the rows above say what is left.
 Prioritise payment integrity, order accuracy, catalogue, and the buyer journey over AI convenience.
 Reassess the 31 October launch scope after task 02; do not promise this whole programme fits the remaining days.
 

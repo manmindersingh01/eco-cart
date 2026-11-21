@@ -31,7 +31,10 @@ export const browserProjects = [
 
 export interface BrowserFixtures {
   categoryId: string
-  accounts: Record<string, { sellerEmail: string; adminEmail: string }>
+  accounts: Record<
+    string,
+    { sellerEmail: string; adminEmail: string; otherSellerEmail: string }
+  >
 }
 
 export async function prepareFixtures(
@@ -74,7 +77,7 @@ export async function prepareFixtures(
           return category.id
         })
       }
-      const seller = await createSeller({ db, accounts: directory }, context, {
+      const sellerInput = {
         owner: { email: sellerEmail, name: `Test seller ${index}` },
         displayName: `Browser test seller ${index}`,
         legalName: `Test seller ${index} Limited`,
@@ -87,9 +90,31 @@ export async function prepareFixtures(
         supportEmail: sellerEmail,
         supportPhone: '+919800000000',
         invoicePrefix: `E${index}T`,
-      })
+      }
+      const seller = await createSeller(
+        { db, accounts: directory },
+        context,
+        sellerInput,
+      )
       await approveSeller(db, context, seller.id)
-      accounts[project] = { adminEmail, sellerEmail }
+      const otherSellerEmail = `other-seller-${env.E2E_RUN_ID}-${index}@ecokart.test`
+      const otherSeller = await createSeller(
+        { db, accounts: directory },
+        context,
+        {
+          ...sellerInput,
+          owner: {
+            email: otherSellerEmail,
+            name: `Other test seller ${index}`,
+          },
+          displayName: `Other browser seller ${index}`,
+          legalName: `Other test seller ${index} Limited`,
+          supportEmail: otherSellerEmail,
+          invoicePrefix: `E${index}X`,
+        },
+      )
+      await approveSeller(db, context, otherSeller.id)
+      accounts[project] = { adminEmail, sellerEmail, otherSellerEmail }
     }
     return { categoryId, accounts }
   } finally {

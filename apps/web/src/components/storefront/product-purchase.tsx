@@ -275,7 +275,7 @@ export function ProductPurchase({
             {outcome.itemCount === 1 ? 'item' : 'items'}.
           </p>
           <Link
-            href={{ pathname: '/cart' }}
+            href="/cart"
             className="mt-2 inline-block font-semibold underline underline-offset-4"
           >
             View cart

@@ -1300,7 +1300,7 @@ const steps: Step[] = [
     },
   },
   {
-    name: 'The buyer pays online through Razorpay, and a replayed webhook changes nothing',
+    name: 'The buyer pays online through Razorpay, Pay now reopens the same payment, and a replayed webhook changes nothing',
     async run() {
       if (!razorpay) skip(razorpayOff ?? 'online payment is off')
 
@@ -1328,8 +1328,36 @@ const steps: Step[] = [
         fail(`the order is ${text(placed, 'order.status')} before payment`)
       }
 
+      // The buyer closes Razorpay's window, then chooses "Pay now" on the
+      // order: it must reopen the same Razorpay order for the same amount,
+      // so one order can never be paid twice, and only for its own buyer.
+      const razorpayOrderId = text(placed, 'payment.razorpayOrderId')
+      const resumed = expectStatus(
+        await buyer.get(`/api/account/orders/${orderId}/payment`),
+        200,
+        'Pay now on the unpaid order',
+      )
+      if (
+        text(resumed, 'payment.razorpayOrderId') !== razorpayOrderId ||
+        text(resumed, 'payment.amountPaise') !==
+          text(placed, 'payment.amountPaise')
+      ) {
+        fail(
+          `Pay now reopened ${text(resumed, 'payment.razorpayOrderId')} for ${text(resumed, 'payment.amountPaise')} paise, not ${razorpayOrderId} for ${text(placed, 'payment.amountPaise')}`,
+        )
+      }
+      // 404 for an account that also buys, 403 for a seller-only account.
+      const stranger = await seller.get(
+        `/api/account/orders/${orderId}/payment`,
+      )
+      if (stranger.status !== 404 && stranger.status !== 403) {
+        fail(
+          `Pay now on another buyer’s order answered ${describe(stranger)}, expected 404 or 403`,
+        )
+      }
+
       // The buyer pays on Razorpay's checkout, and Razorpay tells EcoKart.
-      const payment = razorpay.pay(text(placed, 'payment.razorpayOrderId'))
+      const payment = razorpay.pay(razorpayOrderId)
       const delivery = razorpay.webhook('payment.captured', payment)
       const deliver = async (signature: string) => {
         const response = await fetch(`${baseUrl}/api/webhooks/razorpay`, {
@@ -1386,7 +1414,12 @@ const steps: Step[] = [
       if (forged.status < 400 || forged.status >= 500) {
         fail(`a forged signature answered ${forged.status}`)
       }
-      return `${orderNumber} ${first.outcome} and ${paymentState}; the replay answered ${replay.outcome}; stock ${stockBefore} -> ${stockAfter} once, 1 sale in the ledger; a forged signature got ${forged.status}`
+      expectStatus(
+        await buyer.get(`/api/account/orders/${orderId}/payment`),
+        409,
+        'Pay now once the order is paid',
+      )
+      return `${orderNumber} ${first.outcome} and ${paymentState}; Pay now reopened the same Razorpay order before payment, refused another buyer, and refused once paid; the replay answered ${replay.outcome}; stock ${stockBefore} -> ${stockAfter} once, 1 sale in the ledger; a forged signature got ${forged.status}`
     },
   },
   {

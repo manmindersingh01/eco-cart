@@ -1,5 +1,7 @@
 import { parseRupeesToPaise, parseWholeNumber } from './admin-settings'
 
+export const SKU_INPUT_PATTERN = '[A-Za-z0-9][A-Za-z0-9._\\/\\-]{0,63}'
+
 export const PRODUCT_STATUSES = [
   'draft',
   'pending_review',
@@ -60,6 +62,7 @@ export type VariantFormValue = {
 }
 
 export type ProductFormValues = {
+  minOrderQuantity?: string
   categoryId: string
   brandId: string
   title: string
@@ -72,6 +75,7 @@ export type ProductFormValues = {
 }
 
 export type ProductInput = {
+  minOrderQuantity: number
   categoryId: string
   brandId: string | null
   title: string
@@ -165,6 +169,14 @@ export function serialiseProduct(
   values: ProductFormValues,
 ): ProductSerialiseResult {
   const issues: string[] = []
+  const minimum = Number(values.minOrderQuantity ?? '1')
+  if (
+    !/^\d+$/.test(values.minOrderQuantity ?? '1') ||
+    !Number.isInteger(minimum) ||
+    minimum < 1 ||
+    minimum > 1000
+  )
+    issues.push('minOrderQuantity must be a whole number from 1 to 1000')
   const title = values.title.trim()
   if (!values.categoryId) issues.push('categoryId is required')
   if (title.length < 3) issues.push('title must be at least 3 characters')
@@ -275,6 +287,7 @@ export function serialiseProduct(
     ok: true,
     value: {
       categoryId: values.categoryId,
+      minOrderQuantity: minimum,
       brandId: values.brandId || null,
       title,
       description: values.description.trim(),

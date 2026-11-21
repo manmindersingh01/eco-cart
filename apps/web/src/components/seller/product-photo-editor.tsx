@@ -12,6 +12,7 @@ import { ConfirmationDialog } from '@/components/ui/confirmation-dialog'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
 import { Field, Input, Select } from '@/components/ui/form-controls'
 import { ApiError, apiRequest } from '@/lib/api-client'
+import { useClientReady } from '@/lib/use-client-ready'
 import {
   canEditListing,
   MAX_PRODUCT_PHOTOS,
@@ -50,6 +51,7 @@ export function ProductPhotoEditor({
   onReload: () => Promise<void>
 }) {
   const editable = canEditListing(product.status)
+  const ready = useClientReady()
   const inputRef = useRef<HTMLInputElement>(null)
   const pollAttempt = useRef(0)
   const [uploads, setUploads] = useState<UploadItem[]>([])
@@ -68,19 +70,17 @@ export function ProductPhotoEditor({
     }
     let stopped = false
     let timer: number | undefined
-    let controller: AbortController | undefined
 
     const stopRequest = () => {
       if (timer !== undefined) window.clearTimeout(timer)
       timer = undefined
-      controller?.abort()
-      controller = undefined
     }
 
     const schedule = (attempt: number) => {
       stopRequest()
       if (
         stopped ||
+        attempt >= 60 ||
         !shouldPollImages(
           product.images,
           document.visibilityState === 'visible',
@@ -89,15 +89,25 @@ export function ProductPhotoEditor({
         return
       }
       timer = window.setTimeout(async () => {
-        controller = new AbortController()
         try {
+          // Ignore late reads instead of aborting them: WebKit can report an
+          // aborted same-origin read as an access-control page error.
           const response = await apiRequest<{ product: SellerProduct }>(
             `/api/seller/products/${product.id}`,
-            { signal: controller.signal },
+            { keepalive: true },
           )
           if (stopped) return
           setPollError(null)
           pollAttempt.current += 1
+          if (
+            pollAttempt.current >= 60 &&
+            response.product.images.some(
+              (image) => image.status === 'processing',
+            )
+          )
+            setPollError(
+              'Photo processing is taking longer. Reload the server product to check again.',
+            )
           onProduct(response.product)
         } catch (cause) {
           if (
@@ -111,10 +121,12 @@ export function ProductPhotoEditor({
             )
             return
           }
-          setPollError(
-            'Photo status could not be refreshed. Polling will try again.',
-          )
           pollAttempt.current += 1
+          setPollError(
+            pollAttempt.current >= 60
+              ? 'Photo status could not be refreshed. Reload the server product to check again.'
+              : 'Photo status could not be refreshed. Polling will try again.',
+          )
           schedule(pollAttempt.current)
         }
       }, nextPollDelay(attempt))
@@ -227,73 +239,80 @@ export function ProductPhotoEditor({
             Product photos
           </h2>
           <p className="mt-1 text-sm text-muted">
-            Ready photos use the resized backend URLs. Original uploads are
-            never displayed.
+            The first photo is the cover. Use Move earlier to choose it. Photos
+            appear after processing.
           </p>
         </div>
         <StatusBadge>
-          {product.images.length} of {MAX_PRODUCT_PHOTOS} photos
+          {product.images.filter((image) => image.status !== 'failed').length}{' '}
+          of {MAX_PRODUCT_PHOTOS} photos
         </StatusBadge>
       </div>
 
       {editable ? (
         <Card>
-          <h3 className="font-semibold">Upload photos</h3>
-          <p className="mt-1 text-sm text-muted">
-            JPEG, PNG, WebP, or AVIF, up to 10 MB each. The longer side must be
-            at least 600 pixels after the worker inspects it.
-          </p>
-          <input
-            ref={inputRef}
-            type="file"
-            aria-label="Product photos"
-            accept="image/jpeg,image/png,image/webp,image/avif"
-            multiple
-            className="sr-only"
-            onChange={(event) => void chooseFiles(event)}
-          />
-          <Button
-            className="mt-4"
-            onClick={() => inputRef.current?.click()}
-            disabled={
-              product.images.filter((image) => image.status !== 'failed')
-                .length >= MAX_PRODUCT_PHOTOS
-            }
-          >
-            Choose photos
-          </Button>
-          {uploads.length ? (
-            <ul className="mt-4 grid gap-2">
-              {uploads.map((upload) => (
-                <li key={upload.id} className="rounded-lg border p-3 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="break-all font-medium">{upload.name}</span>
-                    <StatusBadge
-                      tone={upload.stage === 'failed' ? 'danger' : 'warning'}
-                    >
-                      {stageLabel(upload.stage)}
-                    </StatusBadge>
-                  </div>
-                  {upload.error ? (
-                    <p className="mt-2 text-danger">{upload.error}</p>
-                  ) : null}
-                  {upload.stage === 'failed' ? (
-                    <Button
-                      variant="quiet"
-                      className="mt-2"
-                      onClick={() =>
-                        setUploads((current) =>
-                          current.filter((item) => item.id !== upload.id),
-                        )
-                      }
-                    >
-                      Remove failed upload
-                    </Button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <form autoComplete="off" onSubmit={(event) => event.preventDefault()}>
+            <h3 className="font-semibold">Upload photos</h3>
+            <p className="mt-1 text-sm text-muted">
+              JPEG, PNG, WebP, or AVIF, up to 10 MB each. The longer side must
+              be at least 600 pixels after the worker inspects it.
+            </p>
+            <input
+              ref={inputRef}
+              type="file"
+              aria-label="Product photos"
+              accept="image/jpeg,image/png,image/webp,image/avif"
+              multiple
+              disabled={!ready}
+              className="sr-only"
+              onChange={(event) => void chooseFiles(event)}
+            />
+            <Button
+              className="mt-4"
+              onClick={() => inputRef.current?.click()}
+              disabled={
+                !ready ||
+                product.images.filter((image) => image.status !== 'failed')
+                  .length >= MAX_PRODUCT_PHOTOS
+              }
+            >
+              Choose photos
+            </Button>
+            {uploads.length ? (
+              <ul className="mt-4 grid gap-2">
+                {uploads.map((upload) => (
+                  <li key={upload.id} className="rounded-lg border p-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="break-all font-medium">
+                        {upload.name}
+                      </span>
+                      <StatusBadge
+                        tone={upload.stage === 'failed' ? 'danger' : 'warning'}
+                      >
+                        {stageLabel(upload.stage)}
+                      </StatusBadge>
+                    </div>
+                    {upload.error ? (
+                      <p className="mt-2 text-danger">{upload.error}</p>
+                    ) : null}
+                    {upload.stage === 'failed' ? (
+                      <Button
+                        variant="quiet"
+                        className="mt-2"
+                        onClick={() =>
+                          setUploads((current) =>
+                            current.filter((item) => item.id !== upload.id),
+                          )
+                        }
+                      >
+                        Remove failed upload
+                      </Button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </form>
         </Card>
       ) : (
         <Notice>
@@ -443,6 +462,9 @@ function ImageEditor({
         )}
       </div>
       <form onSubmit={saveMetadata} noValidate>
+        <p className="px-5 pt-4 font-semibold">
+          {index === 0 ? 'Cover photo' : `Supporting photo ${index}`}
+        </p>
         <div className="grid gap-4 p-5 sm:grid-cols-2">
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
             <StatusBadge

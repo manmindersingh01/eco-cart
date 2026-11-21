@@ -11,6 +11,7 @@ const navigation = [
   { href: '/admin/seller-documents', label: 'Document review' },
   { href: '/admin/categories', label: 'Categories' },
   { href: '/admin/brands', label: 'Brands' },
+  { href: '/admin/moderation', label: 'Product moderation' },
 ] as const
 
 // Entering a protected area may block on the server's session decision.

@@ -54,3 +54,36 @@ export async function getOrderNumbers(
     .where(inArray(orders.id, [...new Set(ids)]))
   return new Map(rows.map((row) => [row.id, row.orderNumber]))
 }
+
+/**
+ * The buyer's own order with what an online payment needs, or null when
+ * `userId` has no order with that id. Row-level security hides other
+ * buyers' orders too.
+ */
+export async function findBuyerOrderForPayment(
+  tx: Transaction,
+  orderId: string,
+  userId: string,
+): Promise<{
+  id: string
+  status: string
+  paymentMethod: string
+  totalPaise: number
+  buyerName: string
+  buyerEmail: string | null
+  buyerPhone: string
+} | null> {
+  const [row] = await tx
+    .select({
+      id: orders.id,
+      status: orders.status,
+      paymentMethod: orders.paymentMethod,
+      totalPaise: orders.totalPaise,
+      buyerName: orders.buyerName,
+      buyerEmail: orders.buyerEmail,
+      buyerPhone: orders.buyerPhone,
+    })
+    .from(orders)
+    .where(and(eq(orders.id, orderId), eq(orders.userId, userId)))
+  return row ?? null
+}

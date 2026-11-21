@@ -30,7 +30,11 @@ export default function AccessDeniedPage(props: AccessDeniedPageProps) {
 
 async function AccessDeniedContent({ searchParams }: AccessDeniedPageProps) {
   const query = await searchParams
-  const area = firstValue(query.area) === 'seller' ? 'seller' : 'administrator'
+  const requested = firstValue(query.area)
+  const area =
+    requested === 'seller' || requested === 'buyer'
+      ? requested
+      : 'administrator'
   const sellerNotReady = firstValue(query.reason) === 'seller-not-ready'
 
   return (
@@ -43,7 +47,9 @@ async function AccessDeniedContent({ searchParams }: AccessDeniedPageProps) {
         <Notice tone="warning" title="Your account cannot open this area">
           {sellerNotReady
             ? 'This seller account is not set up yet. Ask an administrator to complete its business record.'
-            : `Your current account does not have ${area} access.`}
+            : area === 'buyer'
+              ? 'Administrator accounts cannot shop. Sign in with a buyer account to buy.'
+              : `Your current account does not have ${area} access.`}
         </Notice>
         <div className="flex flex-wrap gap-3">
           <LinkButton href="/" variant="secondary">

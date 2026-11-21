@@ -4,13 +4,20 @@ import { withContext, type RequestContext } from '../../db/context.ts'
 import {
   ConflictError,
   ForbiddenError,
+  NotFoundError,
   TooManyRequestsError,
   UnavailableError,
 } from '../../errors.ts'
 import { formatRupees } from '../../lib/money.ts'
 import type { JobQueue } from '../../lib/queue.ts'
 import type { Razorpay } from '../../lib/razorpay.ts'
-import { idOf, paise, parseInput, strictObject } from '../../lib/validation.ts'
+import {
+  idOf,
+  isUuid,
+  paise,
+  parseInput,
+  strictObject,
+} from '../../lib/validation.ts'
 import { getShippingAddress } from '../addresses/service.ts'
 import {
   couponProblem,
@@ -38,7 +45,10 @@ import {
   takeStock,
 } from '../catalogue/stock.ts'
 import { consumeRateLimit } from '../rate-limits/service.ts'
-import { countOrdersAwaitingPayment } from '../orders/queries.ts'
+import {
+  countOrdersAwaitingPayment,
+  findBuyerOrderForPayment,
+} from '../orders/queries.ts'
 import {
   cancelUnpaidOrder,
   createOrder,
@@ -50,6 +60,7 @@ import {
   attachRazorpayOrder,
   createPayment,
   failPayment,
+  paymentsOfOrder,
 } from '../payments/service.ts'
 import { getCommissionRates } from '../sellers/service.ts'
 import { getSetting } from '../settings/service.ts'
@@ -225,6 +236,62 @@ export async function placeOrder(
         email: placed.order.buyerEmail,
         contact: placed.order.buyerPhone,
       },
+    },
+  }
+}
+
+/**
+ * What the browser opens Razorpay's checkout with again, for the buyer's
+ * order that is still waiting for its online payment: for example Asha
+ * closed the payment window, then chose "Pay now" on her order. It reuses
+ * the order's Razorpay order, so Razorpay never takes two payments for one
+ * order, and the payment is confirmed the usual way, by
+ * confirmCheckoutPayment or the webhook. Once the order has expired it can
+ * no longer be paid.
+ */
+export async function resumeOnlinePayment(
+  db: Database,
+  razorpay: Razorpay | null,
+  context: RequestContext,
+  orderId: string,
+): Promise<NonNullable<PlacedOrder['payment']>> {
+  if (context.role !== 'buyer') {
+    throw new ForbiddenError('This needs a buyer account')
+  }
+  if (!razorpay) throw new NotFoundError('Online payment is not switched on')
+  const found = isUuid(orderId)
+    ? await withContext(db, context, async (tx) => {
+        const order = await findBuyerOrderForPayment(
+          tx,
+          orderId,
+          context.userId,
+        )
+        if (!order) return null
+        const payment = (await paymentsOfOrder(tx, order.id)).findLast(
+          (row) => row.provider === 'razorpay',
+        )
+        return { order, razorpayOrderId: payment?.providerOrderId ?? null }
+      })
+    : null
+  if (!found) throw new NotFoundError('There is no order with that id')
+  const { order, razorpayOrderId } = found
+  if (
+    order.status !== 'pending_payment' ||
+    order.paymentMethod !== 'razorpay' ||
+    !razorpayOrderId
+  ) {
+    throw new ConflictError('This order is not waiting for an online payment')
+  }
+  return {
+    provider: 'razorpay',
+    keyId: razorpay.keyId,
+    razorpayOrderId,
+    amountPaise: order.totalPaise,
+    currency: 'INR',
+    prefill: {
+      name: order.buyerName,
+      email: order.buyerEmail,
+      contact: order.buyerPhone,
     },
   }
 }

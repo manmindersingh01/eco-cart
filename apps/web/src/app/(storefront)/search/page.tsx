@@ -12,18 +12,13 @@ import { Suspense } from 'react'
 import { ListingControls } from '@/components/storefront/listing-controls'
 import { ListingPager } from '@/components/storefront/listing-pager'
 import { ProductGrid } from '@/components/storefront/product-card'
-import { SearchBox } from '@/components/storefront/search-box'
 import { LinkButton } from '@/components/ui/button'
 import { EmptyState, Notice } from '@/components/ui/feedback'
 import { ContentLoading } from '@/components/ui/page-loading'
 import { getDatabase } from '@/lib/db'
 import { getPublicBrands } from '@/lib/public-catalogue'
 import { getStorage } from '@/lib/storage'
-import {
-  LIST_SORTS,
-  listingQuery,
-  queryRecord,
-} from '@/lib/storefront-display'
+import { LIST_SORTS, listingQuery, queryRecord } from '@/lib/storefront-display'
 
 export const metadata: Metadata = {
   title: 'Search',
@@ -38,15 +33,14 @@ const SEARCH_SORTS = [
 export default function SearchPage(props: PageProps<'/search'>) {
   return (
     <main id="main-content" className="page-container flex-1 py-8 sm:py-10">
-      <div className="grid gap-6">
-        <h1 className="text-3xl font-semibold tracking-tight">Search</h1>
-        {/* Keyword search is never cached: each search is logged for the
-            catalogue gap report and limited per address. Natural-language
-            and photo search come with the AI features and sit beside it. */}
-        <Suspense fallback={<ContentLoading />}>
+      {/* Keyword search is never cached: each search is logged for the
+          catalogue gap report and limited per address. The words are typed
+          in the header's search box, which keeps them on this page. */}
+      <Suspense fallback={<ContentLoading />}>
+        <div className="grid gap-6">
           <SearchResults {...props} />
-        </Suspense>
-      </div>
+        </div>
+      </Suspense>
     </main>
   )
 }
@@ -57,10 +51,10 @@ async function SearchResults({ searchParams }: PageProps<'/search'>) {
   if (!keyword) {
     return (
       <>
-        <SearchBox defaultValue="" />
+        <h1 className="text-3xl font-semibold tracking-tight">Search</h1>
         <EmptyState
           title="What are you looking for?"
-          description="Search by product name, brand, or what it is made of, for example bamboo toothbrush."
+          description="Type in the search box at the top: a product name, a brand, or what it is made of, for example bamboo toothbrush."
         />
       </>
     )
@@ -81,7 +75,7 @@ async function SearchResults({ searchParams }: PageProps<'/search'>) {
     if (cause instanceof TooManyRequestsError) {
       return (
         <>
-          <SearchBox defaultValue={keyword} />
+          <ResultsHeading keyword={keyword} />
           <Notice tone="warning" title="Too many searches for a moment">
             Wait a minute, then search again.
           </Notice>
@@ -91,7 +85,7 @@ async function SearchResults({ searchParams }: PageProps<'/search'>) {
     if (cause instanceof ValidationError) {
       return (
         <>
-          <SearchBox defaultValue={keyword} />
+          <ResultsHeading keyword={keyword} />
           <Notice tone="danger" title="This search could not be used">
             <ul className="list-disc pl-5">
               {cause.issues.map((issue) => (
@@ -115,7 +109,7 @@ async function SearchResults({ searchParams }: PageProps<'/search'>) {
 
   return (
     <>
-      <SearchBox defaultValue={keyword} />
+      <ResultsHeading keyword={keyword} />
       {result.match === 'similar' && result.items.length ? (
         <Notice tone="neutral" title={`No exact matches for “${keyword}”`}>
           These products have similar words, which may be what you meant.
@@ -148,5 +142,13 @@ async function SearchResults({ searchParams }: PageProps<'/search'>) {
         nextCursor={result.nextCursor}
       />
     </>
+  )
+}
+
+function ResultsHeading({ keyword }: { keyword: string }) {
+  return (
+    <h1 className="text-2xl font-semibold tracking-tight break-words sm:text-3xl">
+      Results for “{keyword}”
+    </h1>
   )
 }

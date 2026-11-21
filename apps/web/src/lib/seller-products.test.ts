@@ -4,6 +4,7 @@ import {
   flattenLeafCategories,
   productListHref,
   serialiseProduct,
+  SKU_INPUT_PATTERN,
   type ProductFormValues,
   type PublicCategory,
 } from './seller-products'
@@ -90,6 +91,7 @@ describe('draft product serialization', () => {
       ok: true,
       value: {
         categoryId: 'home-storage',
+        minOrderQuantity: 1,
         brandId: null,
         title: 'Bamboo storage box',
         description: '',
@@ -165,4 +167,12 @@ describe('draft product serialization', () => {
       issues: ['variants.0.mrpPaise must be at least pricePaise'],
     })
   })
+})
+
+test('C01 SKU input pattern accepts the supported punctuation in Unicode v mode', () => {
+  const pattern = new RegExp(`^(?:${SKU_INPUT_PATTERN})$`, 'v')
+  for (const sku of ['BOWL-ONE', 'A/B', 'A_1.2'])
+    expect(pattern.test(sku)).toBe(true)
+  for (const sku of ['-BOWL', 'BOWL ONE', 'A@B'])
+    expect(pattern.test(sku)).toBe(false)
 })
