@@ -57,7 +57,17 @@ pnpm --filter @ecokart/web exec playwright test --list
 
 The second command only lists tests; actual execution must go through the launcher.
 To test an installed Google Chrome, set `$env:E2E_CHROME = '1'`, run `pnpm test:e2e`, then remove that environment override.
-This selects `chrome-desktop` and `chrome-phone` instead of the bundled-engine projects.
+This selects `chrome-desktop` (1440 x 900), `chrome-medium` (768 x 1024) and `chrome-phone` (390 x 844) instead of the bundled-engine projects.
+As agreed on 24 November 2026, frontend task verification uses one browser at these three sizes and focused journey, permission and error checks.
+The broader browser projects remain available for investigating a specific problem; they are not a task completion requirement.
+
+For seller order task 01:
+
+```powershell
+$env:E2E_CHROME = '1'
+pnpm test:e2e -- --project=chrome-desktop --project=chrome-medium --project=chrome-phone seller-orders.spec.ts
+Remove-Item Env:E2E_CHROME
+```
 
 `test:e2e:verify-harness` runs ownership/provider-isolation unit tests plus three deliberate failure probes.
 Setup failure, interruption after startup and a failed browser assertion must each produce the expected non-zero child result, clean up their resources, and preserve unrelated disposable sentinel data.

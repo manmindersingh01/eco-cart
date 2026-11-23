@@ -19,6 +19,11 @@ import {
   seedDevelopmentData,
   seedExampleProducts,
 } from '../../../../packages/core/src/db/seed.ts'
+import {
+  createTestOrder,
+  createTestProduct,
+  createTestUser,
+} from '@ecokart/core/testing'
 
 export const browserProjects = [
   'chromium-desktop',
@@ -31,6 +36,17 @@ export const browserProjects = [
 
 export interface BrowserFixtures {
   categoryId: string
+  orderProducts: Record<
+    string,
+    {
+      sellerEmail: string
+      otherSellerEmail: string
+      firstVariantId: string
+      secondVariantId: string
+      firstTitle: string
+      secondTitle: string
+    }
+  >
   accounts: Record<
     string,
     { sellerEmail: string; adminEmail: string; otherSellerEmail: string }
@@ -39,7 +55,10 @@ export interface BrowserFixtures {
 
 export async function prepareFixtures(
   env: NodeJS.ProcessEnv,
+  migrationUrl: string,
 ): Promise<BrowserFixtures> {
+  const fixturePool = createPool(migrationUrl, 'e2e-order-fixtures')
+  const fixtureDb = createDatabase(fixturePool)
   const pool = createPool(env.DATABASE_URL!, 'e2e-fixtures')
   const db = createDatabase(pool)
   const auth = createAppAuth({
@@ -51,9 +70,15 @@ export async function prepareFixtures(
   })
   const directory = createAccountDirectory(auth)
   const accounts: BrowserFixtures['accounts'] = {}
+  const orderProducts: BrowserFixtures['orderProducts'] = {}
   let categoryId = ''
   try {
-    const projects = [...browserProjects, 'chrome-desktop', 'chrome-phone']
+    const projects = [
+      ...browserProjects,
+      'chrome-desktop',
+      'chrome-phone',
+      'chrome-medium',
+    ]
     for (const [index, project] of projects.entries()) {
       const adminEmail = `admin-${env.E2E_RUN_ID}-${index}@ecokart.test`
       const sellerEmail = `seller-${env.E2E_RUN_ID}-${index}@ecokart.test`
@@ -114,11 +139,64 @@ export async function prepareFixtures(
         },
       )
       await approveSeller(db, context, otherSeller.id)
+      const orderSellerEmail = `orders-${sellerEmail}`
+      const orderOtherEmail = `orders-${otherSellerEmail}`
+      const orderSeller = await createSeller(
+        { db, accounts: directory },
+        context,
+        {
+          ...sellerInput,
+          owner: { email: orderSellerEmail, name: 'Order seller' },
+          invoicePrefix: `O${index}T`,
+        },
+      )
+      const orderOther = await createSeller(
+        { db, accounts: directory },
+        context,
+        {
+          ...sellerInput,
+          owner: { email: orderOtherEmail, name: 'Other order seller' },
+          invoicePrefix: `O${index}X`,
+        },
+      )
+      await approveSeller(db, context, orderSeller.id)
+      await approveSeller(db, context, orderOther.id)
+      await directory.addRole(orderSeller.ownerUserId, 'buyer')
+      const first = await createTestProduct(fixtureDb, {
+        sellerId: orderSeller.id,
+        categoryId,
+      })
+      const second = await createTestProduct(fixtureDb, {
+        sellerId: orderOther.id,
+        categoryId,
+      })
+      const buyer = await createTestUser(fixtureDb)
+      // Enough real rows to exercise the seller page's 20-row cursor boundary.
+      for (let count = 0; count < 21; count++) {
+        await createTestOrder(fixtureDb, {
+          buyerId: buyer.id,
+          lines: [
+            {
+              sellerId: orderSeller.id,
+              productId: first.product.id,
+              variantId: first.variant.id,
+            },
+          ],
+        })
+      }
+      orderProducts[project] = {
+        sellerEmail: orderSellerEmail,
+        otherSellerEmail: orderOtherEmail,
+        firstVariantId: first.variant.id,
+        secondVariantId: second.variant.id,
+        firstTitle: first.product.title,
+        secondTitle: second.product.title,
+      }
       accounts[project] = { adminEmail, sellerEmail, otherSellerEmail }
     }
-    return { categoryId, accounts }
+    return { categoryId, accounts, orderProducts }
   } finally {
-    await pool.end()
+    await Promise.all([pool.end(), fixturePool.end()])
   }
 }
 

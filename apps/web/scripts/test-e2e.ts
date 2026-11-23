@@ -106,7 +106,9 @@ try {
   await prepareEnvironment(resources, origin)
   checkInterrupt()
   if (diagnostics === 'setup') throw new Error('Expected harness setup failure')
-  env.E2E_FIXTURES = JSON.stringify(await prepareFixtures(env))
+  env.E2E_FIXTURES = JSON.stringify(
+    await prepareFixtures(env, resources.database.migrationUrl),
+  )
   if (demo) await prepareDemoFixtures(env, resources.database.workerUrl)
   checkInterrupt()
   worker = startNode(

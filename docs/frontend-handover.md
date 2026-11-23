@@ -40,7 +40,7 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, reviews list), `/search` (keyword) |
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
 | Buyer account | `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
-| Seller portal | Overview, business profile, documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports |
+| Seller portal | Overview, business profile, documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list and detail) |
 | Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
@@ -48,7 +48,7 @@ Start your work from the latest `main`.
 
 ### Not built yet
 
-Seller dispatch and seller order screens, administrator order screens, returns (buyer, seller, and administrator), seller earnings and statements, administrator payouts, coupons administration, review writing and moderation, policy pages and their editor, background work tools, the AI screens, and a few account extras.
+Seller dispatch, administrator order screens, returns (buyer, seller, and administrator), seller earnings and statements, administrator payouts, coupons administration, review writing and moderation, policy pages and their editor, background work tools, the AI screens, and a few account extras.
 Section 7 lists each one with its route, its APIs, and what "done" means.
 The backend for every one of them already exists.
 
@@ -261,7 +261,8 @@ This applies to photos, videos, return photos, seller documents, imports, invoic
 - `cx()` in `src/lib/classes.ts` only joins class names; it does not resolve two classes that fight (for example `px-4` and `px-2`).
   Do not pass a size or padding to a component that already sets one; give the component an option instead.
 - Every page must work at phone width (375 pixels) and desktop width with no sideways scrolling.
-  Check every screen in Chrome and Safari at both widths, and fix anything that looks off, even if you did not cause it.
+  Verify one browser (Chrome by default) at large (1440 x 900), medium (768 x 1024) and mobile (390 x 844) sizes, and fix visible issues.
+  The project lead agreed this focused scope on 24 November 2026; it replaces mandatory multi-browser and real Safari checks.
 - Every control needs a visible label or an `aria-label`, buttons must be at least 44 pixels tall (`min-h-11`), and status messages use `Notice`, which announces itself to screen readers.
 
 ## 6. What every finished screen needs
@@ -270,7 +271,8 @@ A screen is done when all of these are true:
 
 1. It works through the real APIs against `pnpm dev`, for the right role, and refuses the wrong one.
 2. It shows loading, empty, error, and success states, and every message from the server.
-3. It looks right at phone and desktop widths, in light and dark mode, in Chrome and Safari.
+3. It looks right at large, medium and mobile sizes in one browser, in light and dark mode, with keyboard access and no horizontal overflow.
+   Focus on the main journey, permissions and important errors; testing every possible scenario is not required.
 4. These pass, run one at a time from the repository root:
 
    ```bash
@@ -313,6 +315,12 @@ They are in launch order: payment and order accuracy first, AI last.
 Each item gives the route to create, the APIs it uses (all listed in section 10), and what to watch for.
 
 ### 7.1 Seller orders and dispatch (shipping)
+
+Task 01 adds `/seller/orders` and `/seller/orders/[id]` on 21 November 2026.
+Task 01 was completed on 24 November 2026, with Chrome checks at all three agreed sizes and `pnpm check` passing.
+The screens show seller-only lines, delivery details, status filters, cursor navigation and seller invoice downloads, with an Orders menu entry.
+Implementation verification is recorded in [task 01](../temp/frontend/step-3-remaining-screens/01-seller-orders.md).
+Dispatch and delivery controls remain task 02; the existing API contracts below are unchanged.
 
 There is no courier company integration.
 The seller books their own courier (for example Delhivery or India Post), then records the courier name and tracking number in EcoKart.
@@ -455,7 +463,8 @@ AI suggestions are only suggestions; nothing is saved or published until a perso
 
 - Natural-language search, photo search, and the assistant need a place in the header or search page; agree the layout with the project lead.
 - The administrator overview (`/admin`) and seller overview (`/seller`) should link to the new pages with counts, for example returns waiting for a decision or orders to dispatch.
-- The task plan `12-release-and-evidence.md` lists the final release checks, including a manual pass on a real iPhone with Safari and with VoiceOver.
+- The older task plan `12-release-and-evidence.md` lists historical release checks.
+  Its mandatory Safari pass is superseded by the one-browser, three-size verification decision of 24 November 2026.
 
 ## 8. Payments with Razorpay
 

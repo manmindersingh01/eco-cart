@@ -223,7 +223,10 @@ pnpm downloads the Node.js version from `devEngines.runtime` in `package.json`, 
 - For a bug, first reproduce it the way a user would hit it (in the browser or through the real API), then fix it, then show the same reproduction passing.
 - A task is done only when typecheck, lint, and the relevant tests pass.
   Show the command you ran and its output as evidence instead of just saying it works.
-- For UI work, check the result in Chrome and Safari at phone and desktop widths, and fix anything that looks off even if it was not part of the task.
+- For UI work, check one browser (Chrome by default) at large (1440 x 900), medium (768 x 1024), and mobile (390 x 844) sizes.
+  Use focused checks for the main journey, permissions, and important errors, rather than every possible scenario.
+  Check keyboard access, light/dark mode, and horizontal overflow, and fix visible issues.
+  This replaces the Chrome-plus-Safari requirement, as agreed on 24 November 2026; broader browser coverage is optional unless a specific defect needs it.
 - If you see a lint error, a failing test, or a flaky test, fix it or raise it.
   Never leave it silently.
 
