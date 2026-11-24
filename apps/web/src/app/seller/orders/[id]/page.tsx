@@ -6,6 +6,7 @@ import { AddressLines } from '@/components/buyer/address-form'
 import { LineThumbnail, optionsText } from '@/components/buyer/line-thumbnail'
 import { InvoiceDownload } from '@/components/seller/invoice-download'
 import { OrderRefresh } from '@/components/seller/order-refresh'
+import { DispatchManager } from '@/components/seller/dispatch-manager'
 import { LinkButton } from '@/components/ui/button'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
@@ -53,6 +54,27 @@ async function Order({ params }: PageProps<'/seller/orders/[id]'>) {
         title={`Order ${order.orderNumber}`}
         description={`Placed ${formatIndianDate(order.placedAt, { includeTime: true })}`}
         actions={<OrderRefresh />}
+      />
+      <DispatchManager
+        orderId={order.id}
+        cod={order.paymentMethod === 'cod'}
+        lines={order.lines.map(
+          ({ id: lineId, title, sku, quantity, status, shipment }) => ({
+            id: lineId,
+            title,
+            sku,
+            quantity,
+            status,
+            shipment: shipment
+              ? {
+                  id: shipment.id,
+                  courierName: shipment.courierName,
+                  trackingNumber: shipment.trackingNumber,
+                  status: shipment.status,
+                }
+              : null,
+          }),
+        )}
       />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
         <section aria-labelledby="seller-items" className="grid min-w-0 gap-3">

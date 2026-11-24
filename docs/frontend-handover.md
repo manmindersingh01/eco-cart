@@ -40,7 +40,7 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, reviews list), `/search` (keyword) |
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
 | Buyer account | `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
-| Seller portal | Overview, business profile, documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list and detail) |
+| Seller portal | Overview, business profile, documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list, detail, dispatch and delivery) |
 | Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
@@ -48,7 +48,7 @@ Start your work from the latest `main`.
 
 ### Not built yet
 
-Seller dispatch, administrator order screens, returns (buyer, seller, and administrator), seller earnings and statements, administrator payouts, coupons administration, review writing and moderation, policy pages and their editor, background work tools, the AI screens, and a few account extras.
+Administrator order screens, returns (buyer, seller, and administrator), seller earnings and statements, administrator payouts, coupons administration, review writing and moderation, policy pages and their editor, background work tools, the AI screens, and a few account extras.
 Section 7 lists each one with its route, its APIs, and what "done" means.
 The backend for every one of them already exists.
 
@@ -320,7 +320,9 @@ Task 01 adds `/seller/orders` and `/seller/orders/[id]` on 21 November 2026.
 Task 01 was completed on 24 November 2026, with Chrome checks at all three agreed sizes and `pnpm check` passing.
 The screens show seller-only lines, delivery details, status filters, cursor navigation and seller invoice downloads, with an Orders menu entry.
 Implementation verification is recorded in [task 01](../temp/frontend/step-3-remaining-screens/01-seller-orders.md).
-Dispatch and delivery controls remain task 02; the existing API contracts below are unchanged.
+Task 02 adds line selection, courier details, optional HTTPS tracking links and confirmed delivery actions to the order detail page.
+Its verification evidence is recorded in [task 02](../temp/frontend/step-3-remaining-screens/02-seller-dispatch.md).
+The existing API contracts below are unchanged.
 
 There is no courier company integration.
 The seller books their own courier (for example Delhivery or India Post), then records the courier name and tracking number in EcoKart.

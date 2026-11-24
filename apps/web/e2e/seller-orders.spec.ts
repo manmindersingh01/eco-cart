@@ -23,7 +23,9 @@ async function checkLayout(page: Page) {
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true)
-  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await expect
+    .poll(async () => (await new AxeBuilder({ page }).analyze()).violations)
+    .toEqual([])
 }
 
 test('SO01 seller orders, isolation, cursors and invoice errors', async ({
@@ -207,7 +209,17 @@ test('SO01 seller orders, isolation, cursors and invoice errors', async ({
         order: z.object({ lines: z.array(z.object({ id: z.string() })) }),
       })
       .parse(await read.json()).order
-    const shipped = await other.request.post(
+    await other.getByRole('checkbox').check()
+    await other.getByLabel('Courier name').fill('Test courier')
+    await other.getByLabel(/^Tracking number/).fill('TEST12345')
+    await other
+      .getByLabel('Tracking link (optional)')
+      .fill('https://example.test/tracking/TEST12345')
+    await other
+      .getByRole('button', { name: 'Record dispatch', exact: true })
+      .click()
+    await expect(other.getByText('Tracking: TEST12345')).toBeVisible()
+    const repeated = await other.request.post(
       `/api/seller/orders/${order.id}/shipments`,
       {
         data: {
@@ -217,7 +229,7 @@ test('SO01 seller orders, isolation, cursors and invoice errors', async ({
         },
       },
     )
-    expect(shipped.status()).toBe(201)
+    expect(repeated.status()).toBe(409)
     await other
       .getByRole('button', { name: 'Refresh order', exact: true })
       .click()
@@ -229,13 +241,51 @@ test('SO01 seller orders, isolation, cursors and invoice errors', async ({
         exact: true,
       }),
     ).toBeVisible()
+    await other.goto(`/seller/orders/${order.id}`)
+    await other
+      .getByRole('button', { name: 'Mark delivered', exact: true })
+      .click()
+    await other
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm delivery' })
+      .click()
+    await expect(
+      other.getByRole('button', { name: 'Mark delivered', exact: true }),
+    ).toHaveCount(0)
+    await checkLayout(other)
+    await seller.goto(`/seller/orders/${order.id}`)
+    await seller.getByRole('checkbox').check()
+    await seller.getByLabel('Courier name').fill('Second courier')
+    await seller.getByLabel(/^Tracking number/).fill('SECOND123')
+    await seller
+      .getByRole('button', { name: 'Record dispatch', exact: true })
+      .click()
+    await expect(seller.getByText('Tracking: SECOND123')).toBeVisible()
+    await seller
+      .getByRole('button', { name: 'Mark delivered', exact: true })
+      .click()
+    await seller
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm delivery' })
+      .click()
+    await expect
+      .poll(async () => {
+        const result = await page.request.get(`/api/account/orders/${order.id}`)
+        return z
+          .object({ order: z.object({ paymentState: z.string() }) })
+          .parse(await result.json()).order.paymentState
+      })
+      .toBe('paid')
     await seller.goto('/seller/orders?tab=cancelled')
     await expect(
       seller.getByRole('heading', { name: 'No orders in this status' }),
     ).toBeVisible()
     await seller.goto('/seller/orders?tab=delivered')
     await expect(
-      seller.getByRole('heading', { name: 'No orders in this status' }),
+      seller.getByRole('link', {
+        name: `Order ${order.orderNumber}`,
+        exact: true,
+      }),
     ).toBeVisible()
     await seller.goto('/seller/orders?tab=unknown')
     await expect(

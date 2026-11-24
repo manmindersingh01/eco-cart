@@ -9,7 +9,7 @@ const base =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-55'
 
 const variants: Record<ButtonVariant, string> = {
-  primary: 'bg-brand text-white hover:bg-brand-strong',
+  primary: 'bg-brand text-white hover:bg-brand-strong dark:text-background',
   secondary:
     'border bg-surface text-foreground hover:border-brand hover:text-brand-strong',
   danger: 'bg-danger text-white hover:brightness-90',
