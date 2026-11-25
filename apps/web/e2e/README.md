@@ -61,13 +61,17 @@ This selects `chrome-desktop` (1440 x 900), `chrome-medium` (768 x 1024) and `ch
 As agreed on 24 November 2026, frontend task verification uses one browser at these three sizes and focused journey, permission and error checks.
 The broader browser projects remain available for investigating a specific problem; they are not a task completion requirement.
 
-For seller order task 01:
+For seller order tasks 01 and 02:
 
 ```powershell
 $env:E2E_CHROME = '1'
 pnpm test:e2e -- --project=chrome-desktop --project=chrome-medium --project=chrome-phone seller-orders.spec.ts
 Remove-Item Env:E2E_CHROME
 ```
+
+For administrator order task 03, use the same three Chrome sizes with `admin-orders.spec.ts` instead of `seller-orders.spec.ts`.
+Its focused journey creates a cash-on-delivery order and parcel through the real services, then checks administrator filters, pagination, Back navigation, original order data, invoice access and role restrictions.
+It also checks keyboard filtering, light/dark accessibility and horizontal overflow.
 
 `test:e2e:verify-harness` runs ownership/provider-isolation unit tests plus three deliberate failure probes.
 Setup failure, interruption after startup and a failed browser assertion must each produce the expected non-zero child result, clean up their resources, and preserve unrelated disposable sentinel data.

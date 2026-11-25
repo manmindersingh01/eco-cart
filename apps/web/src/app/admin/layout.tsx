@@ -6,6 +6,7 @@ import Loading from '../loading'
 
 const navigation = [
   { href: '/admin', label: 'Overview' },
+  { href: '/admin/orders', label: 'Orders' },
   { href: '/admin/settings', label: 'Platform settings' },
   { href: '/admin/sellers', label: 'Sellers' },
   { href: '/admin/seller-documents', label: 'Document review' },

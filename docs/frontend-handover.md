@@ -41,7 +41,7 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
 | Buyer account | `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
 | Seller portal | Overview, business profile, documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list, detail, dispatch and delivery) |
-| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation |
+| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list and detail) |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
 Start your work from the latest `main`.
@@ -340,6 +340,13 @@ The buyer sees the tracking details and link on their order page straight away.
 - Add "Orders" to the seller menu.
 
 ### 7.2 Administrator orders
+
+Task 03 adds the administrator order list and detail pages on 25 November 2026.
+The list supports status, full order-number and needs-refund filters, with cursor pagination.
+Applying filters resets pagination; Back to orders preserves the filters and cursor from the list.
+Details show the original order totals and items, delivery address, parcels, payment records, event history and private invoice downloads.
+Implementation and verification evidence is recorded in [task 03](../temp/frontend/step-3-remaining-screens/03-admin-orders.md).
+The action controls below remain task 04.
 
 - `/admin/orders`: `GET /api/admin/orders` with filters `?status=`, `?needsRefund=true` (paid orders that were cancelled and still owe a refund), and `?orderNumber=EK-261018-000123` to find one order.
   Show a clear "needs refund" marker.

@@ -3,8 +3,14 @@
 import { useState } from 'react'
 import { Notice } from '@/components/ui/feedback'
 
-export function InvoiceDownload({ id }: { id: string }) {
-  const href = `/api/invoices/${id}/pdf?as=seller`
+export function InvoiceDownload({
+  id,
+  area = 'seller',
+}: {
+  id: string
+  area?: 'seller' | 'admin'
+}) {
+  const href = `/api/invoices/${id}/pdf${area === 'seller' ? '?as=seller' : ''}`
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   return (
