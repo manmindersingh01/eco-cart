@@ -41,7 +41,7 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
 | Buyer account | `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
 | Seller portal | Overview, business profile, documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list, detail, dispatch and delivery) |
-| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration) |
+| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve and reject) |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
 Start your work from the latest `main`.
@@ -377,6 +377,11 @@ Task 07 adds the seller return list and read-only detail pages, status filters, 
 Seller routes always act in seller context, including dual-role accounts, and only show that business's returns.
 Refund records are omitted by the seller contract; the detail uses the return status without claiming an omitted record means no refund.
 Evidence is recorded in [task 07](../temp/frontend/step-3-remaining-screens/07-seller-returns.md).
+Task 08 adds the administrator return list and detail pages with status filters, private photos, approval with an optional note and rejection with a required note.
+Requested and approved lists use oldest-first service ordering; finished lists use newest-first ordering.
+Confirmed decisions refresh the server view, including when another tab has already decided the return.
+Approval does not issue or record a refund; refund recording remains task 09.
+Evidence is recorded in [task 08](../temp/frontend/step-3-remaining-screens/08-admin-return-decisions.md).
 
 Returns can be asked for only after delivery, within the return window the administrator set (setting `return_window_days`).
 

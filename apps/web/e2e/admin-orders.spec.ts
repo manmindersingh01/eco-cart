@@ -75,7 +75,7 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
   page,
   browser,
 }, info) => {
-  test.setTimeout(240000)
+  test.setTimeout(360000)
   await page.context().setExtraHTTPHeaders(headers())
   const data = z
     .object({
@@ -94,9 +94,13 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
   ]!
   await page.goto('/admin/orders')
   await expect(page).toHaveURL(/\/sign-in\?returnTo=/)
+  await page.goto('/admin/returns')
+  await expect(page).toHaveURL(/\/sign-in\?returnTo=/)
   await page.goto('/seller/returns')
   await expect(page).toHaveURL(/\/sign-in\?returnTo=/)
   await signIn(page)
+  await page.goto('/admin/returns')
+  await expect(page).toHaveURL(/\/access-denied/)
   await page.goto('/seller/returns')
   await expect(page).toHaveURL(/\/access-denied/)
   await page.goto('/admin/orders')
@@ -428,13 +432,79 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
       path: info.outputPath('buyer-return-detail-dark.png'),
       fullPage: true,
     })
+    const adminOrderUrl = admin.url()
+    await admin.goto(`/admin/returns/${returnId}`)
+    await expect(
+      admin.getByRole('button', { name: 'Reject return', exact: true }),
+    ).toBeDisabled()
+    const adminPhoto = await admin
+      .getByRole('link', { name: /Open photo 1/ })
+      .getAttribute('href')
+    expect(adminPhoto).not.toContain('?as=seller')
     expect(
-      (
-        await admin.request.post(`/api/admin/returns/${returnId}/approve`, {
-          data: { note: 'We have approved your return.' },
-        })
-      ).status(),
-    ).toBe(200)
+      (await admin.request.get(adminPhoto!, { maxRedirects: 0 })).status(),
+    ).toBe(302)
+    await admin
+      .getByLabel('Decision note')
+      .fill('We have approved your return.')
+    const staleAdmin = await admin.context().newPage()
+    await staleAdmin.goto(`/admin/returns/${returnId}`)
+    await admin
+      .getByRole('button', { name: 'Approve return', exact: true })
+      .focus()
+    await admin.keyboard.press('Enter')
+    await expect(admin.getByRole('dialog')).toContainText(
+      'does not issue or record a refund',
+    )
+    await checkLayout(admin)
+    await admin.emulateMedia({ colorScheme: 'dark' })
+    await checkLayout(admin)
+    await admin.screenshot({
+      path: info.outputPath('admin-return-approval-dark.png'),
+    })
+    const firstApproval = admin.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/admin/returns/${returnId}/approve`) &&
+        response.request().method() === 'POST',
+    )
+    await admin
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm approval' })
+      .click()
+    expect((await firstApproval).status()).toBe(200)
+    await expect(
+      admin
+        .getByRole('status')
+        .filter({ hasText: 'Return approved. No refund' }),
+    ).toBeVisible()
+    await expect(
+      admin.getByRole('button', { name: 'Approve return', exact: true }),
+    ).toHaveCount(0)
+    await staleAdmin
+      .getByRole('button', { name: 'Approve return', exact: true })
+      .click()
+    const staleResponse = staleAdmin.waitForResponse((response) =>
+      response.url().endsWith(`/api/admin/returns/${returnId}/approve`),
+    )
+    await staleAdmin
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm approval' })
+      .click()
+    expect((await staleResponse).status()).toBe(409)
+    await expect(
+      staleAdmin.getByRole('alert').filter({ hasText: 'already approved' }),
+    ).toBeVisible()
+    await expect(
+      staleAdmin.getByRole('button', { name: 'Approve return', exact: true }),
+    ).toHaveCount(0)
+    await staleAdmin.close()
+    await checkLayout(admin)
+    await admin.emulateMedia({ colorScheme: 'light' })
+    await checkLayout(admin)
+    await admin.screenshot({
+      path: info.outputPath('admin-return-light.png'),
+      fullPage: true,
+    })
     await page.getByRole('button', { name: 'Refresh return' }).click()
     await expect(
       page.getByText('We have approved your return.', { exact: true }),
@@ -493,6 +563,91 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
     expect(
       (await seller.request.get(photoHref!, { maxRedirects: 0 })).status(),
     ).toBe(404)
+    await admin.goto('/admin/returns')
+    await expect(admin.locator('h2 a')).toHaveCount(20)
+    const pendingPage = z
+      .object({
+        items: z.array(z.object({ id: z.string(), createdAt: z.string() })),
+      })
+      .parse(
+        await (await admin.request.get('/api/admin/returns?limit=20')).json(),
+      ).items
+    const adminIds = await admin
+      .locator('h2 a')
+      .evaluateAll((links) =>
+        links.map((link) =>
+          new URL(link.getAttribute('href') ?? '', location.origin).pathname
+            .split('/')
+            .at(-1),
+        ),
+      )
+    expect(adminIds).toEqual(pendingPage.map((item) => item.id))
+    const timestamps = pendingPage.map((item) => Date.parse(item.createdAt))
+    expect(timestamps).toEqual(timestamps.toSorted((a, b) => a - b))
+    await admin.getByRole('link', { name: 'Next returns', exact: true }).click()
+    await expect(admin).toHaveURL(/cursor=/)
+    const reviewCursor = admin.url()
+    await admin.locator('h2 a').first().click()
+    await admin.getByRole('link', { name: 'Back to returns' }).click()
+    await expect(admin).toHaveURL(reviewCursor)
+    await admin.getByRole('link', { name: 'Approved', exact: true }).click()
+    await expect(admin).not.toHaveURL(/cursor=/)
+    await admin.goto(`/admin/returns/${pendingPage[0]!.id}`)
+    await admin
+      .getByRole('button', { name: 'Approve return', exact: true })
+      .click()
+    await admin
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm approval' })
+      .click()
+    await expect(
+      admin.getByRole('button', { name: 'Approve return', exact: true }),
+    ).toHaveCount(0)
+    await expect(
+      admin.getByRole('button', { name: 'Reject return', exact: true }),
+    ).toBeDisabled()
+    await admin
+      .getByLabel('Decision note')
+      .fill('The return was not received. Please contact support.')
+    await admin
+      .getByRole('button', { name: 'Reject return', exact: true })
+      .click()
+    await checkLayout(admin)
+    await admin.screenshot({
+      path: info.outputPath('admin-return-rejection-light.png'),
+    })
+    await admin
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm rejection' })
+      .click()
+    await expect(
+      admin.getByText('Not approved', { exact: true }).first(),
+    ).toBeVisible()
+    await expect(
+      admin.getByText('The return was not received. Please contact support.', {
+        exact: true,
+      }),
+    ).toBeVisible()
+    await expect(
+      admin.getByRole('button', { name: 'Reject return', exact: true }),
+    ).toHaveCount(0)
+    await admin.goto('/admin/returns?status=invalid')
+    await expect(
+      admin
+        .getByRole('alert')
+        .filter({ hasText: 'This return list could not be opened' }),
+    ).toBeVisible()
+    await admin.goto('/admin/returns?cursor=invalid')
+    await expect(
+      admin
+        .getByRole('alert')
+        .filter({ hasText: 'This return list could not be opened' }),
+    ).toBeVisible()
+    await admin.goto('/admin/returns/not-an-id')
+    await expect(
+      admin.getByRole('heading', { name: 'Return not found' }),
+    ).toBeVisible()
+    await admin.goto(adminOrderUrl)
     await admin
       .getByRole('link', { name: 'Back to orders', exact: true })
       .click()

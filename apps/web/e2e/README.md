@@ -77,6 +77,7 @@ Task 05 extends AO01 with the buyer return form after delivery, required Other d
 Task 06 extends that journey with buyer return tracking, private photo access, approval notes, a recorded bank refund and refusal of another buyer.
 BR01 checks empty states, a seeded 21-row return list, cursor navigation, Back links and invalid URLs.
 Task 07 extends AO01 with seller return filters, pagination, list/API agreement, dual-role access, another seller's refusal, private seller photo links and read-only controls.
+Task 08 adds administrator ordering and pagination, private photos, confirmed approval with and without a note, rejection validation, and stale-tab recovery.
 The refund fixture seeds a captured payment through the existing confirmation service; it never contacts a live payment provider.
 
 `test:e2e:verify-harness` runs ownership/provider-isolation unit tests plus three deliberate failure probes.
