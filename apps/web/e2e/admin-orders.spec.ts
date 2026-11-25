@@ -203,6 +203,22 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
       fullPage: true,
     })
     await admin
+      .getByRole('button', { name: 'Mark delivered', exact: true })
+      .click()
+    await expect(admin.getByRole('dialog')).toContainText(
+      'confirm payment was collected',
+    )
+    await admin
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm delivery' })
+      .click()
+    await expect(
+      admin.getByText('Cash collected', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      admin.getByRole('button', { name: 'Mark delivered', exact: true }),
+    ).toHaveCount(0)
+    await admin
       .getByRole('link', { name: 'Back to orders', exact: true })
       .click()
     await expect(admin).toHaveURL(
@@ -239,4 +255,171 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
     await sellerContext.close()
     await adminContext.close()
   }
+})
+
+test('AO02 administrator cancellation, refund recording and invoice requests', async ({
+  page,
+}, info) => {
+  test.setTimeout(180000)
+  await page.context().setExtraHTTPHeaders(headers())
+  const data = z
+    .object({
+      orderProducts: z.record(
+        z.string(),
+        z.object({ refundOrderId: z.string() }),
+      ),
+    })
+    .parse(JSON.parse(process.env.E2E_FIXTURES ?? '{}')).orderProducts[
+    info.project.name
+  ]!
+  await signIn(page, fixturesFor(info.project.name).adminEmail)
+  const path = `/admin/orders/${data.refundOrderId}`
+  await page.goto(path)
+  await expect(
+    page.getByRole('button', { name: 'Cancel order', exact: true }),
+  ).toBeDisabled()
+  await page
+    .getByLabel('Cancellation reason')
+    .fill('The seller cannot supply this item')
+  const stale = await page.context().newPage()
+  await stale.goto(path)
+  await stale
+    .getByLabel('Cancellation reason')
+    .fill('Already cancelled in another tab')
+  await page.getByRole('button', { name: 'Cancel order', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('dialog')).toContainText(
+    'make the refund separately',
+  )
+  await checkLayout(page)
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await checkLayout(page)
+  await page.screenshot({
+    path: info.outputPath('admin-cancel-dialog-dark.png'),
+  })
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Confirm cancellation' })
+    .click()
+  await expect(
+    page.getByRole('heading', { name: 'Record an already-made refund' }),
+  ).toBeVisible()
+  await stale.getByRole('button', { name: 'Cancel order', exact: true }).click()
+  const conflict = stale.waitForResponse((response) =>
+    response.url().endsWith(`/api/admin/orders/${data.refundOrderId}/cancel`),
+  )
+  await stale
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Confirm cancellation' })
+    .click()
+  expect((await conflict).status()).toBe(409)
+  await expect(
+    stale.getByRole('button', { name: 'Cancel order', exact: true }),
+  ).toHaveCount(0)
+  await expect(
+    stale.getByRole('alert').filter({ hasText: /cancelled/ }),
+  ).toBeVisible()
+  await stale.close()
+  await expect(
+    page.getByText('No money is moved', { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByLabel('Refund amount (₹)')).toHaveValue('123.45')
+  await page.getByLabel('Refund amount (₹)').fill('123.456')
+  await expect(
+    page.getByRole('button', { name: 'Record refund', exact: true }),
+  ).toBeDisabled()
+  await page.getByLabel('Refund amount (₹)').fill('123.44')
+  await page
+    .getByLabel('Razorpay refund ID', { exact: false })
+    .fill(
+      `rfnd_${'A'.repeat(13)}${info.project.name === 'chrome-phone' ? 'P' : info.project.name === 'chrome-medium' ? 'M' : 'D'}`,
+    )
+  await page.getByRole('button', { name: 'Record refund', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('No money is moved')
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Confirm refund record' })
+    .click()
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'That refund cannot be recorded' }),
+  ).toContainText('123.45')
+  await page.getByLabel('Refund amount (₹)').fill('123.45')
+  await checkLayout(page)
+  await page.screenshot({
+    path: info.outputPath('admin-refund-dark.png'),
+    fullPage: true,
+  })
+  await page.emulateMedia({ colorScheme: 'light' })
+  await checkLayout(page)
+  await page.screenshot({
+    path: info.outputPath('admin-refund-light.png'),
+    fullPage: true,
+  })
+  await page.getByRole('button', { name: 'Record refund', exact: true }).click()
+  const refund = page.waitForRequest(
+    (request) =>
+      request
+        .url()
+        .endsWith(`/api/admin/orders/${data.refundOrderId}/refund`) &&
+      request.method() === 'POST',
+  )
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Confirm refund record' })
+    .click()
+  expect((await refund).postDataJSON()).toMatchObject({
+    amountPaise: 12345,
+    method: 'gateway',
+  })
+  await expect(page.getByText('Refunded', { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Record refund', exact: true }),
+  ).toHaveCount(0)
+  await expect(
+    page.getByRole('region', { name: 'Order history' }),
+  ).toContainText('Refund recorded')
+  const invoiceRoute = '**/api/admin/invoices/*/render'
+  await page.route(invoiceRoute, (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: 'The invoice queue is unavailable. Try again.',
+      }),
+    }),
+  )
+  await page.getByRole('button', { name: 'Make PDF again' }).click()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Queue invoice PDF' })
+    .click()
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'invoice queue is unavailable' }),
+  ).toBeVisible()
+  await page.unroute(invoiceRoute)
+  await page.getByRole('button', { name: 'Make PDF again' }).click()
+  const queued = page.waitForResponse((response) =>
+    /\/api\/admin\/invoices\/[^/]+\/render$/.test(response.url()),
+  )
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Queue invoice PDF' })
+    .click()
+  expect((await queued).status()).toBe(202)
+  await expect(
+    page.getByRole('status').filter({ hasText: 'PDF generation queued' }),
+  ).toBeVisible()
+  await expect
+    .poll(
+      async () => {
+        await page.reload()
+        return page
+          .getByRole('link', { name: 'Download PDF', exact: true })
+          .count()
+      },
+      { timeout: 60000 },
+    )
+    .toBe(1)
 })

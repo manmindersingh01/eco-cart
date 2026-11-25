@@ -69,9 +69,11 @@ pnpm test:e2e -- --project=chrome-desktop --project=chrome-medium --project=chro
 Remove-Item Env:E2E_CHROME
 ```
 
-For administrator order task 03, use the same three Chrome sizes with `admin-orders.spec.ts` instead of `seller-orders.spec.ts`.
+For administrator order tasks 03 and 04, use the same three Chrome sizes with `admin-orders.spec.ts` instead of `seller-orders.spec.ts`.
 Its focused journey creates a cash-on-delivery order and parcel through the real services, then checks administrator filters, pagination, Back navigation, original order data, invoice access and role restrictions.
 It also checks keyboard filtering, light/dark accessibility and horizontal overflow.
+Task 04 adds cancellation and stale-tab recovery, exact refund recording, delivery overrides, and invoice request failure and queue acceptance.
+The refund fixture seeds a captured payment through the existing confirmation service; it never contacts a live payment provider.
 
 `test:e2e:verify-harness` runs ownership/provider-isolation unit tests plus three deliberate failure probes.
 Setup failure, interruption after startup and a failed browser assertion must each produce the expected non-zero child result, clean up their resources, and preserve unrelated disposable sentinel data.

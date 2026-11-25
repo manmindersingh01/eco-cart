@@ -12,6 +12,8 @@ import {
   loadAuthConfig,
   updateSetting,
   withContext,
+  startJobQueue,
+  confirmOrderPayment,
   type RequestContext,
 } from '@ecokart/core'
 import {
@@ -21,9 +23,14 @@ import {
 } from '../../../../packages/core/src/db/seed.ts'
 import {
   createTestOrder,
+  createTestOrderWithLines,
   createTestProduct,
   createTestUser,
 } from '@ecokart/core/testing'
+import {
+  createPayment,
+  attachRazorpayOrder,
+} from '../../../../packages/core/src/modules/payments/service.ts'
 
 export const browserProjects = [
   'chromium-desktop',
@@ -45,6 +52,7 @@ export interface BrowserFixtures {
       secondVariantId: string
       firstTitle: string
       secondTitle: string
+      refundOrderId: string
     }
   >
   accounts: Record<
@@ -59,6 +67,7 @@ export async function prepareFixtures(
 ): Promise<BrowserFixtures> {
   const fixturePool = createPool(migrationUrl, 'e2e-order-fixtures')
   const fixtureDb = createDatabase(fixturePool)
+  const queue = await startJobQueue(env.DATABASE_URL!, 'e2e-order-fixtures')
   const pool = createPool(env.DATABASE_URL!, 'e2e-fixtures')
   const db = createDatabase(pool)
   const auth = createAppAuth({
@@ -184,7 +193,41 @@ export async function prepareFixtures(
           ],
         })
       }
+      // Seed a captured online payment without contacting a payment provider.
+      // Browser actions still use the real cancellation and refund endpoints.
+      const refundable = await createTestOrderWithLines(fixtureDb, {
+        buyerId: buyer.id,
+        paymentMethod: 'razorpay',
+        status: 'pending_payment',
+        lines: [
+          {
+            sellerId: orderSeller.id,
+            productId: first.product.id,
+            variantId: first.variant.id,
+            unitPricePaise: 12345,
+          },
+        ],
+      })
+      await withContext(db, { role: 'system' }, async (tx) => {
+        const payment = await createPayment(tx, {
+          orderId: refundable.order.id,
+          provider: 'razorpay',
+          amountPaise: 12345,
+        })
+        const providerId = `order_${env.E2E_RUN_ID}${index}`
+        await attachRazorpayOrder(tx, payment.id, providerId)
+        await confirmOrderPayment(tx, queue, {
+          id: `pay_${env.E2E_RUN_ID}${index}`,
+          orderId: providerId,
+          amountPaise: 12345,
+          currency: 'INR',
+          status: 'captured',
+          method: 'upi',
+          errorDescription: null,
+        })
+      })
       orderProducts[project] = {
+        refundOrderId: refundable.order.id,
         sellerEmail: orderSellerEmail,
         otherSellerEmail: orderOtherEmail,
         firstVariantId: first.variant.id,
@@ -196,7 +239,7 @@ export async function prepareFixtures(
     }
     return { categoryId, accounts, orderProducts }
   } finally {
-    await Promise.all([pool.end(), fixturePool.end()])
+    await Promise.all([pool.end(), fixturePool.end(), queue.stop()])
   }
 }
 

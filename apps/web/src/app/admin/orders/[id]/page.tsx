@@ -2,6 +2,11 @@ import { getAdminOrder, NotFoundError, withContext } from '@ecokart/core'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
+import {
+  AdminOrderActions,
+  AdminDeliveryAction,
+  AdminInvoiceAction,
+} from '@/components/admin/order-actions'
 import { AddressLines } from '@/components/buyer/address-form'
 import { LineThumbnail, optionsText } from '@/components/buyer/line-thumbnail'
 import { OrderTotals } from '@/components/buyer/order-totals'
@@ -75,7 +80,9 @@ async function Order({
         <StatusBadge>
           {order.paymentState === 'paid' && order.paymentMethod === 'cod'
             ? 'Cash collected'
-            : PAYMENT_STATE[order.paymentState]}
+            : order.paymentState === 'refund_due'
+              ? 'Refund due'
+              : PAYMENT_STATE[order.paymentState]}
         </StatusBadge>
       </div>
       {order.needsRefund ? (
@@ -86,6 +93,22 @@ async function Order({
       {order.cancelReason ? (
         <Notice title="Cancellation reason">{order.cancelReason}</Notice>
       ) : null}
+      <AdminOrderActions
+        key={order.id}
+        orderId={order.id}
+        orderNumber={order.orderNumber}
+        canCancel={order.canCancel}
+        needsRefund={order.needsRefund}
+        paidOnline={
+          order.paymentMethod === 'razorpay' && order.paymentState === 'paid'
+        }
+        capturedPaise={
+          order.payments.find(
+            (payment) =>
+              payment.provider === 'razorpay' && payment.status === 'captured',
+          )?.amountPaise ?? null
+        }
+      />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
         <div className="grid min-w-0 gap-6">
           <section aria-labelledby="items" className="grid gap-3">
@@ -146,6 +169,12 @@ async function Order({
                   <h3 className="font-semibold">{parcel.courierName}</h3>
                   <p>Tracking: {parcel.trackingNumber}</p>
                   <p>{formatStatusLabel(parcel.status)}</p>
+                  <AdminDeliveryAction
+                    shipmentId={parcel.id}
+                    trackingNumber={parcel.trackingNumber}
+                    cod={order.paymentMethod === 'cod'}
+                    delivered={parcel.status === 'delivered'}
+                  />
                   <p>
                     Dispatched{' '}
                     {formatIndianDate(parcel.dispatchedAt, {
@@ -324,6 +353,10 @@ async function Order({
                         Refresh the order to check again.
                       </Notice>
                     )}
+                    <AdminInvoiceAction
+                      invoiceId={invoice.id}
+                      invoiceNumber={invoice.invoiceNumber}
+                    />
                   </li>
                 ))}
               </ul>

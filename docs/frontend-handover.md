@@ -41,7 +41,7 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
 | Buyer account | `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
 | Seller portal | Overview, business profile, documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list, detail, dispatch and delivery) |
-| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list and detail) |
+| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration) |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
 Start your work from the latest `main`.
@@ -346,7 +346,12 @@ The list supports status, full order-number and needs-refund filters, with curso
 Applying filters resets pagination; Back to orders preserves the filters and cursor from the list.
 Details show the original order totals and items, delivery address, parcels, payment records, event history and private invoice downloads.
 Implementation and verification evidence is recorded in [task 03](../temp/frontend/step-3-remaining-screens/03-admin-orders.md).
-The action controls below remain task 04.
+Task 04 adds confirmed cancellation with a reason, recording an already-made Razorpay refund, parcel delivery overrides and invoice PDF regeneration.
+Refund wording says explicitly that EcoKart does not move money, and rupee input is converted to exact integer paise.
+Actions refresh the server view after success or failure so stale controls are removed.
+Invoice regeneration shows request failures and the accepted queue state; its API does not report when that specific render job finishes or fails.
+An available PDF may still be the previous version, so the UI does not announce a completed regeneration based on availability alone.
+Verification evidence is recorded in [task 04](../temp/frontend/step-3-remaining-screens/04-admin-order-actions.md).
 
 - `/admin/orders`: `GET /api/admin/orders` with filters `?status=`, `?needsRefund=true` (paid orders that were cancelled and still owe a refund), and `?orderNumber=EK-261018-000123` to find one order.
   Show a clear "needs refund" marker.
