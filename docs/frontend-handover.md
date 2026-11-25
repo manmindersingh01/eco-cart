@@ -373,6 +373,10 @@ Evidence is recorded in [task 05](../temp/frontend/step-3-remaining-screens/05-b
 Task 06 adds `/account/returns` and `/account/returns/[id]` with cursor pagination, status wording, decision notes, recorded refunds and protected photo links.
 The account tabs and returned order lines link to tracking; details provide a refresh button and a link back to the originating list page.
 Evidence is recorded in [task 06](../temp/frontend/step-3-remaining-screens/06-buyer-returns.md).
+Task 07 adds the seller return list and read-only detail pages, status filters, cursor pagination, administrator notes and protected photos opened with `?as=seller`.
+Seller routes always act in seller context, including dual-role accounts, and only show that business's returns.
+Refund records are omitted by the seller contract; the detail uses the return status without claiming an omitted record means no refund.
+Evidence is recorded in [task 07](../temp/frontend/step-3-remaining-screens/07-seller-returns.md).
 
 Returns can be asked for only after delivery, within the return window the administrator set (setting `return_window_days`).
 

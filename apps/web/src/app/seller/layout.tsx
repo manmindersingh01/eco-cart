@@ -10,6 +10,7 @@ const navigation = [
   { href: '/seller/documents', label: 'Documents' },
   { href: '/seller/products', label: 'Products' },
   { href: '/seller/orders', label: 'Orders' },
+  { href: '/seller/returns', label: 'Returns' },
   { href: '/seller/imports', label: 'Catalogue imports' },
 ] as const
 

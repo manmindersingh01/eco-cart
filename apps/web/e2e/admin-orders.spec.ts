@@ -83,6 +83,7 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
         z.string(),
         z.object({
           sellerEmail: z.string(),
+          otherSellerEmail: z.string(),
           firstVariantId: z.string(),
           firstTitle: z.string(),
         }),
@@ -93,7 +94,11 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
   ]!
   await page.goto('/admin/orders')
   await expect(page).toHaveURL(/\/sign-in\?returnTo=/)
+  await page.goto('/seller/returns')
+  await expect(page).toHaveURL(/\/sign-in\?returnTo=/)
   await signIn(page)
+  await page.goto('/seller/returns')
+  await expect(page).toHaveURL(/\/access-denied/)
   await page.goto('/admin/orders')
   await expect(page).toHaveURL(/\/access-denied/)
   expect(
@@ -322,6 +327,97 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
       page.getByText('Awaiting review', { exact: true }).first(),
     ).toBeVisible()
     const returnId = new URL(page.url()).pathname.split('/').at(-1)!
+    await seller.goto('/seller/returns?status=requested')
+    await expect(seller.locator('h2 a')).toHaveCount(20)
+    const sellerList = await seller.request.get(
+      '/api/seller/returns?status=requested&limit=20',
+    )
+    const sellerRows = z
+      .object({ items: z.array(z.object({ id: z.string() })) })
+      .parse(await sellerList.json()).items
+    const visibleIds = await seller
+      .locator('h2 a')
+      .evaluateAll((links) =>
+        links.map((link) =>
+          new URL(link.getAttribute('href') ?? '', location.origin).pathname
+            .split('/')
+            .at(-1),
+        ),
+      )
+    expect(visibleIds).toEqual(sellerRows.map((item) => item.id))
+    await checkLayout(seller)
+    await seller.screenshot({
+      path: info.outputPath('seller-returns-list.png'),
+      fullPage: true,
+    })
+    await seller.getByRole('link', { name: 'Older returns' }).click()
+    await expect(seller).toHaveURL(/cursor=/)
+    const sellerCursor = seller.url()
+    await seller.locator('h2 a').first().click()
+    await seller.getByRole('link', { name: 'Back to returns' }).click()
+    await expect(seller).toHaveURL(sellerCursor)
+    await seller.getByRole('link', { name: 'Approved', exact: true }).click()
+    await expect(seller).not.toHaveURL(/cursor=/)
+    await expect(
+      seller.getByRole('heading', { name: 'No matching returns' }),
+    ).toBeVisible()
+    await seller.goto('/seller/returns?status=requested')
+    await seller
+      .getByRole('link', { name: data.firstTitle, exact: true })
+      .click()
+    await expect(seller).toHaveURL(new RegExp(`/seller/returns/${returnId}`))
+    await expect(
+      seller.getByText('The bottle is damaged', { exact: true }),
+    ).toBeVisible()
+    expect(
+      await seller
+        .getByRole('link', { name: /Open photo 1/ })
+        .getAttribute('href'),
+    ).toMatch(/\?as=seller$/)
+    const sellerPhoto = `/api/return-photos/${(await seller.getByRole('link', { name: /Open photo 1/ }).getAttribute('href'))!.split('/')[3]}/file?as=seller`
+    expect(
+      (await seller.request.get(sellerPhoto, { maxRedirects: 0 })).status(),
+    ).toBe(302)
+    await checkLayout(seller)
+    await seller.screenshot({
+      path: info.outputPath('seller-return-light.png'),
+      fullPage: true,
+    })
+    await seller.emulateMedia({ colorScheme: 'dark' })
+    await checkLayout(seller)
+    await seller.screenshot({
+      path: info.outputPath('seller-return-dark.png'),
+      fullPage: true,
+    })
+    await expect(
+      seller.getByRole('button', { name: /Approve|Reject|Record refund/i }),
+    ).toHaveCount(0)
+    const otherContext = await browser.newContext({
+      baseURL: process.env.E2E_BASE_URL,
+      viewport: page.viewportSize(),
+      extraHTTPHeaders: headers(),
+    })
+    try {
+      const otherSeller = await otherContext.newPage()
+      await signIn(otherSeller, data.otherSellerEmail)
+      await otherSeller.goto(`/seller/returns/${returnId}`)
+      await expect(
+        otherSeller.getByRole('heading', { name: 'Return not found' }),
+      ).toBeVisible()
+      expect(
+        (
+          await otherSeller.request.get(sellerPhoto, { maxRedirects: 0 })
+        ).status(),
+      ).toBe(404)
+      const otherRows = z
+        .object({ items: z.array(z.object({ id: z.string() })) })
+        .parse(
+          await (await otherSeller.request.get('/api/seller/returns')).json(),
+        ).items
+      expect(otherRows.some((item) => item.id === returnId)).toBe(false)
+    } finally {
+      await otherContext.close()
+    }
     const photoLink = page.getByRole('link', { name: /Open photo 1/ })
     const photoHref = await photoLink.getAttribute('href')
     expect(
@@ -366,6 +462,29 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
     ).toBeVisible()
     await expect(
       page.getByText('Method: Bank transfer', { exact: true }),
+    ).toBeVisible()
+    await seller.getByRole('button', { name: 'Refresh return' }).focus()
+    await seller.keyboard.press('Enter')
+    await expect(
+      seller.getByText('Refund recorded', { exact: true }).first(),
+    ).toBeVisible()
+    await expect(
+      seller.getByText('We have approved your return.', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      seller.getByText('No refund has been recorded yet.', { exact: true }),
+    ).toHaveCount(0)
+    await seller.goto('/seller/returns?status=invalid')
+    await expect(
+      seller
+        .getByRole('alert')
+        .filter({ hasText: 'This return list could not be opened' }),
+    ).toBeVisible()
+    await seller.goto('/seller/returns?cursor=invalid')
+    await expect(
+      seller
+        .getByRole('alert')
+        .filter({ hasText: 'This return list could not be opened' }),
     ).toBeVisible()
     await seller.goto(`/account/returns/${returnId}`)
     await expect(
