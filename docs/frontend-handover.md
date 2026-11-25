@@ -406,6 +406,12 @@ Returns can be asked for only after delivery, within the return window the admin
 
 ### 7.4 Seller earnings
 
+Task 10 adds `/seller/earnings`, its seller menu entry, the signed current balance, paginated money history and masked bank summary.
+Negative balances remain negative, and the wording explains whether the seller or EcoKart owes the amount.
+Bank details are read-only for sellers and show only the last four account digits.
+The refresh button reloads server totals; statements and invoice lists remain task 11.
+Evidence is recorded in [task 10](../temp/frontend/step-3-remaining-screens/10-seller-earnings.md).
+
 - `/seller/earnings`:
   - The balance and the ledger from `GET /api/seller/ledger` (`balancePaise` plus a page of entries).
     Entry types: `sale`, `commission`, `refund_reversal`, `commission_reversal`, `payout`, `adjustment`.

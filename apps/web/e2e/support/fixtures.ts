@@ -18,6 +18,9 @@ import {
   markShipmentDelivered,
   openReturn,
   approveReturn,
+  getOwnLedger,
+  setSellerBankAccount,
+  loadLedgerConfig,
   type RequestContext,
   type JobQueue,
 } from '@ecokart/core'
@@ -32,6 +35,7 @@ import {
   createTestOrderWithLines,
   createTestProduct,
   createTestUser,
+  addTestLedgerEntries,
 } from '@ecokart/core/testing'
 import {
   createPayment,
@@ -190,6 +194,11 @@ export async function prepareFixtures(
       await approveSeller(db, context, orderSeller.id)
       await approveSeller(db, context, orderOther.id)
       await directory.addRole(orderSeller.ownerUserId, 'buyer')
+      const earningsContext = {
+        role: 'seller',
+        userId: orderSeller.ownerUserId,
+        sellerId: orderSeller.id,
+      } as const
       const first = await createTestProduct(fixtureDb, {
         sellerId: orderSeller.id,
         categoryId,
@@ -258,6 +267,34 @@ export async function prepareFixtures(
         secondTitle: second.product.title,
       }
       accounts[project] = { adminEmail, sellerEmail, otherSellerEmail }
+      const beforeEarnings = await withContext(db, earningsContext, (tx) =>
+        getOwnLedger(tx, earningsContext),
+      )
+      await addTestLedgerEntries(fixtureDb, orderSeller.id, [
+        {
+          entryType: 'adjustment',
+          amountPaise: -123456789 - beforeEarnings.balancePaise,
+          description: 'Earnings fixture opening adjustment',
+        },
+        ...Array.from({ length: 20 }, (_, count) => ({
+          entryType: 'adjustment' as const,
+          amountPaise: count % 2 === 0 ? 100 : -100,
+          description: `Earnings fixture entry ${count + 1}`,
+        })),
+      ])
+      await withContext(db, context, (tx) =>
+        setSellerBankAccount(
+          tx,
+          loadLedgerConfig(env).encryptionKey,
+          context,
+          orderSeller.id,
+          {
+            accountHolder: 'Earnings Test Seller',
+            accountNumber: '123456784321',
+            ifsc: 'HDFC0001234',
+          },
+        ),
+      )
       // Frozen test orders, then real payment, delivery and return services.
       const refundBuyer = await createTestUser(fixtureDb)
       const refundProduct = await createTestProduct(fixtureDb, {

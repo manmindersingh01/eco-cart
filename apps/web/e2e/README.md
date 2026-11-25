@@ -80,6 +80,7 @@ Task 07 extends AO01 with seller return filters, pagination, list/API agreement,
 Task 08 adds administrator ordering and pagination, private photos, confirmed approval with and without a note, rejection validation, and stale-tab recovery.
 Task 09 uses `return-refunds.spec.ts` at the same three Chrome sizes for exact refund money, maximum values, method-specific references, stale-state recovery and seller ledger reversals.
 Its approved fixtures use the existing payment confirmation, dispatch, delivery and return services; no live provider is called.
+Task 10 uses `seller-earnings.spec.ts` at the same three Chrome sizes for balance signs and grouping, ledger pagination, masked read-only bank details, seller isolation and refresh after a real administrator adjustment.
 The refund fixture seeds a captured payment through the existing confirmation service; it never contacts a live payment provider.
 
 `test:e2e:verify-harness` runs ownership/provider-isolation unit tests plus three deliberate failure probes.
