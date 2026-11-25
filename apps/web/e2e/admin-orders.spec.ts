@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { AxeBuilder } from '@axe-core/playwright'
 import { randomInt } from 'node:crypto'
 import { z } from 'zod'
+import sharp from 'sharp'
 import { signIn } from './support/auth.ts'
 import { fixturesFor } from './support/test.ts'
 
@@ -218,6 +219,51 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
     await expect(
       admin.getByRole('button', { name: 'Mark delivered', exact: true }),
     ).toHaveCount(0)
+    await page.goto(`/account/orders/${order.id}`)
+    await page
+      .getByRole('button', { name: 'Request a return', exact: true })
+      .click()
+    await page.getByLabel('Return reason').selectOption('other')
+    await expect(
+      page.getByRole('button', { name: 'Send return request' }),
+    ).toBeDisabled()
+    await page.getByLabel('Reason details').fill('The bottle is damaged')
+    await page.getByLabel('Return quantity').fill('2')
+    await page.getByRole('button', { name: 'Send return request' }).click()
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Return could not be sent' }),
+    ).toContainText('at most 1')
+    await expect(page.getByLabel('Reason details')).toHaveValue(
+      'The bottle is damaged',
+    )
+    await page.getByLabel('Return quantity').fill('1')
+    const buffer = await sharp({
+      create: { width: 800, height: 800, channels: 3, background: '#276e55' },
+    })
+      .png()
+      .toBuffer()
+    await page
+      .getByLabel('Return photo (optional)')
+      .setInputFiles({ name: 'damage.png', mimeType: 'image/png', buffer })
+    await expect(page.getByText('Photo 1: Ready', { exact: true })).toBeVisible(
+      { timeout: 60000 },
+    )
+    await checkLayout(page)
+    await page.screenshot({
+      path: info.outputPath('buyer-return-light.png'),
+      fullPage: true,
+    })
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await checkLayout(page)
+    await page.screenshot({
+      path: info.outputPath('buyer-return-dark.png'),
+      fullPage: true,
+    })
+    await page.getByRole('button', { name: 'Send return request' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(
+      page.getByText('Return requested', { exact: true }).first(),
+    ).toBeVisible()
     await admin
       .getByRole('link', { name: 'Back to orders', exact: true })
       .click()

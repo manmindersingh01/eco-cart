@@ -365,6 +365,13 @@ Verification evidence is recorded in [task 04](../temp/frontend/step-3-remaining
 
 ### 7.3 Returns
 
+Task 05 adds return requests to delivered lines on the buyer order detail page.
+The form supports quantity, the existing reasons and optional photos uploaded directly to storage and checked by the worker before submission.
+Other requires an explanation; request errors preserve the form, and photo polling stops when the form closes or unmounts.
+Blank quantity asks the server to return everything still eligible.
+Evidence is recorded in [task 05](../temp/frontend/step-3-remaining-screens/05-buyer-return-request.md).
+Return tracking pages remain task 06.
+
 Returns can be asked for only after delivery, within the return window the administrator set (setting `return_window_days`).
 
 - **Buyer, from a delivered line on `/account/orders/[id]`:** a "Return" action opens a form with quantity (default: everything still returnable), reason (`damaged`, `defective`, `wrong_item`, `not_as_described`, `missing_parts`, `no_longer_needed`, `other`; `other` needs text), and optional photos.
