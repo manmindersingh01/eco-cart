@@ -324,6 +324,14 @@ function OrderLine({ line }: { line: OrderLineView }) {
         {line.status === 'delivered' ? (
           <ReturnRequest lineId={line.id} />
         ) : null}
+        {line.status === 'return_requested' || line.status === 'returned' ? (
+          <Link
+            href="/account/returns"
+            className="mt-3 inline-flex min-h-11 items-center text-brand-strong underline"
+          >
+            Track your returns
+          </Link>
+        ) : null}
       </div>
     </Card>
   )

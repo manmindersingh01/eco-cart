@@ -4,6 +4,7 @@ import type { ReturnPhotoView, ReturnPhotoUpload } from '@ecokart/core'
 import { useRouter } from 'next/navigation'
 import { useEffect, useId, useRef, useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
+import Link from 'next/link'
 import { Notice } from '@/components/ui/feedback'
 import { Field, Input, Select, Textarea } from '@/components/ui/form-controls'
 import { ApiError, apiRequest } from '@/lib/api-client'
@@ -122,7 +123,10 @@ export function ReturnRequest({ lineId }: { lineId: string }) {
   if (success)
     return (
       <Notice tone="success" title="Return requested">
-        Your request has been sent for review.
+        Your request has been sent for review.{' '}
+        <Link className="underline" href="/account/returns">
+          Track your returns
+        </Link>
       </Notice>
     )
   if (!open)

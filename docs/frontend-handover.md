@@ -370,7 +370,9 @@ The form supports quantity, the existing reasons and optional photos uploaded di
 Other requires an explanation; request errors preserve the form, and photo polling stops when the form closes or unmounts.
 Blank quantity asks the server to return everything still eligible.
 Evidence is recorded in [task 05](../temp/frontend/step-3-remaining-screens/05-buyer-return-request.md).
-Return tracking pages remain task 06.
+Task 06 adds `/account/returns` and `/account/returns/[id]` with cursor pagination, status wording, decision notes, recorded refunds and protected photo links.
+The account tabs and returned order lines link to tracking; details provide a refresh button and a link back to the originating list page.
+Evidence is recorded in [task 06](../temp/frontend/step-3-remaining-screens/06-buyer-returns.md).
 
 Returns can be asked for only after delivery, within the return window the administrator set (setting `return_window_days`).
 

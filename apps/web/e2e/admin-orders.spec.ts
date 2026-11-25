@@ -9,6 +9,57 @@ import { fixturesFor } from './support/test.ts'
 const headers = () => ({
   'x-forwarded-for': `198.18.${randomInt(256)}.${randomInt(1, 255)}`,
 })
+
+test('BR01 buyer return pagination and empty states', async ({
+  page,
+}, info) => {
+  test.setTimeout(120000)
+  await page.context().setExtraHTTPHeaders(headers())
+  await page.goto('/account/returns')
+  await expect(page).toHaveURL(/\/sign-in\?returnTo=/)
+  await signIn(page)
+  await page.goto('/account/returns')
+  await expect(
+    page.getByRole('heading', { name: 'No returns yet' }),
+  ).toBeVisible()
+  await page.context().clearCookies()
+  const data = z
+    .object({
+      orderProducts: z.record(
+        z.string(),
+        z.object({ returnsBuyerEmail: z.string() }),
+      ),
+    })
+    .parse(JSON.parse(process.env.E2E_FIXTURES ?? '{}')).orderProducts[
+    info.project.name
+  ]!
+  await signIn(page, data.returnsBuyerEmail)
+  await page.goto('/account/returns')
+  await expect(page.locator('h2 a')).toHaveCount(20)
+  await page.getByRole('link', { name: 'Older returns', exact: true }).click()
+  await expect(page.locator('h2 a')).toHaveCount(1)
+  const cursorUrl = page.url()
+  await page.locator('h2 a').click()
+  await page.getByRole('link', { name: 'Back to returns' }).click()
+  await expect(page).toHaveURL(cursorUrl)
+  await page.getByRole('link', { name: 'Show your latest returns' }).click()
+  await expect(page.locator('h2 a')).toHaveCount(20)
+  await checkLayout(page)
+  await page.screenshot({
+    path: info.outputPath('buyer-returns-list.png'),
+    fullPage: true,
+  })
+  await page.goto('/account/returns?cursor=invalid')
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'This page of returns could not be shown' }),
+  ).toBeVisible()
+  await page.goto('/account/returns/not-an-id')
+  await expect(
+    page.getByRole('heading', { name: 'Return not found' }),
+  ).toBeVisible()
+})
 async function checkLayout(page: Page) {
   expect(
     await page.evaluate(
@@ -264,6 +315,65 @@ test('AO01 administrator filters, order snapshots and permissions', async ({
     await expect(
       page.getByText('Return requested', { exact: true }).first(),
     ).toBeVisible()
+    await page.goto('/account/returns')
+    await page.getByRole('link', { name: data.firstTitle, exact: true }).click()
+    await expect(page).toHaveURL(/\/account\/returns\/[0-9a-f-]{36}$/)
+    await expect(
+      page.getByText('Awaiting review', { exact: true }).first(),
+    ).toBeVisible()
+    const returnId = new URL(page.url()).pathname.split('/').at(-1)!
+    const photoLink = page.getByRole('link', { name: /Open photo 1/ })
+    const photoHref = await photoLink.getAttribute('href')
+    expect(
+      (await page.request.get(photoHref!, { maxRedirects: 0 })).status(),
+    ).toBe(302)
+    await checkLayout(page)
+    await page.screenshot({
+      path: info.outputPath('buyer-return-detail-dark.png'),
+      fullPage: true,
+    })
+    expect(
+      (
+        await admin.request.post(`/api/admin/returns/${returnId}/approve`, {
+          data: { note: 'We have approved your return.' },
+        })
+      ).status(),
+    ).toBe(200)
+    await page.getByRole('button', { name: 'Refresh return' }).click()
+    await expect(
+      page.getByText('We have approved your return.', { exact: true }),
+    ).toBeVisible()
+    await page.emulateMedia({ colorScheme: 'light' })
+    await checkLayout(page)
+    await page.screenshot({
+      path: info.outputPath('buyer-return-detail-light.png'),
+      fullPage: true,
+    })
+    expect(
+      (
+        await admin.request.post(`/api/admin/returns/${returnId}/refund`, {
+          data: {
+            method: 'bank_transfer',
+            amountPaise: 50000,
+            note: 'TEST-BANK-TRANSFER',
+          },
+        })
+      ).status(),
+    ).toBe(200)
+    await page.reload()
+    await expect(
+      page.getByText('Refund recorded', { exact: true }).first(),
+    ).toBeVisible()
+    await expect(
+      page.getByText('Method: Bank transfer', { exact: true }),
+    ).toBeVisible()
+    await seller.goto(`/account/returns/${returnId}`)
+    await expect(
+      seller.getByRole('heading', { name: 'Return not found' }),
+    ).toBeVisible()
+    expect(
+      (await seller.request.get(photoHref!, { maxRedirects: 0 })).status(),
+    ).toBe(404)
     await admin
       .getByRole('link', { name: 'Back to orders', exact: true })
       .click()

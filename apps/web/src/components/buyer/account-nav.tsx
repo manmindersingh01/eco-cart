@@ -3,6 +3,7 @@ import { cx } from '@/lib/classes'
 
 const LINKS = [
   { href: '/account/orders', label: 'Orders' },
+  { href: '/account/returns', label: 'Returns' },
   { href: '/account/addresses', label: 'Addresses' },
   { href: '/account/seller-application', label: 'Sell on EcoKart' },
 ] as const

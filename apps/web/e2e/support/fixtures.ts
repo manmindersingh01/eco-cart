@@ -23,6 +23,7 @@ import {
 } from '../../../../packages/core/src/db/seed.ts'
 import {
   createTestOrder,
+  createTestReturnRequest,
   createTestOrderWithLines,
   createTestProduct,
   createTestUser,
@@ -53,6 +54,7 @@ export interface BrowserFixtures {
       firstTitle: string
       secondTitle: string
       refundOrderId: string
+      returnsBuyerEmail: string
     }
   >
   accounts: Record<
@@ -227,6 +229,7 @@ export async function prepareFixtures(
         })
       })
       orderProducts[project] = {
+        returnsBuyerEmail: buyer.email,
         refundOrderId: refundable.order.id,
         sellerEmail: orderSellerEmail,
         otherSellerEmail: orderOtherEmail,
@@ -236,6 +239,12 @@ export async function prepareFixtures(
         secondTitle: second.product.title,
       }
       accounts[project] = { adminEmail, sellerEmail, otherSellerEmail }
+      for (let count = 0; count < 21; count++) {
+        await createTestReturnRequest(fixtureDb, {
+          buyerId: buyer.id,
+          sellerId: orderSeller.id,
+        })
+      }
     }
     return { categoryId, accounts, orderProducts }
   } finally {
