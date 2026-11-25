@@ -1,8 +1,14 @@
-import { getReturn, NotFoundError, withContext } from '@ecokart/core'
+import {
+  getReturn,
+  getAdminOrder,
+  NotFoundError,
+  withContext,
+} from '@ecokart/core'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
 import { ReturnDecisions } from '@/components/admin/return-decisions'
+import { ReturnRefund } from '@/components/admin/return-refund'
 import { LineThumbnail, optionsText } from '@/components/buyer/line-thumbnail'
 import { ReturnRefresh } from '@/components/buyer/return-refresh'
 import { LinkButton } from '@/components/ui/button'
@@ -39,10 +45,22 @@ async function Return({
   const status = first(query.status)
   const cursor = first(query.cursor)
   let item
+  let paymentMethod
   try {
-    item = await withContext(getDatabase(), context, (tx) =>
-      getReturn(tx, context, getStorage(), id),
-    )
+    ;({ item, paymentMethod } = await withContext(
+      getDatabase(),
+      context,
+      async (tx) => {
+        const found = await getReturn(tx, context, getStorage(), id)
+        const order = await getAdminOrder(
+          tx,
+          context,
+          getStorage(),
+          found.orderId,
+        )
+        return { item: found, paymentMethod: order.paymentMethod }
+      },
+    ))
   } catch (cause) {
     if (cause instanceof NotFoundError) notFound()
     throw cause
@@ -79,6 +97,13 @@ async function Return({
               : 'A refund has been recorded for this return.'}
       </Notice>
       <ReturnDecisions key={item.id} returnId={item.id} status={item.status} />
+      <ReturnRefund
+        key={`${item.id}-${paymentMethod}`}
+        returnId={item.id}
+        status={item.status}
+        maxRefundPaise={item.maxRefundPaise}
+        paymentMethod={paymentMethod}
+      />
       <Card className="grid gap-3">
         <div className="flex items-start gap-3">
           <LineThumbnail url={item.item.imageUrl} />

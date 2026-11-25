@@ -14,7 +14,12 @@ import {
   withContext,
   startJobQueue,
   confirmOrderPayment,
+  dispatchLines,
+  markShipmentDelivered,
+  openReturn,
+  approveReturn,
   type RequestContext,
+  type JobQueue,
 } from '@ecokart/core'
 import {
   DEVELOPMENT_SETTINGS,
@@ -32,6 +37,8 @@ import {
   createPayment,
   attachRazorpayOrder,
 } from '../../../../packages/core/src/modules/payments/service.ts'
+import { onOrderConfirmed } from '../../../../packages/core/src/modules/orders/service.ts'
+import { SEND_EMAIL_QUEUE } from '../../../../packages/core/src/modules/notifications/jobs.ts'
 
 export const browserProjects = [
   'chromium-desktop',
@@ -55,6 +62,8 @@ export interface BrowserFixtures {
       secondTitle: string
       refundOrderId: string
       returnsBuyerEmail: string
+      gatewayReturnId: string
+      bankReturnId: string
     }
   >
   accounts: Record<
@@ -70,8 +79,16 @@ export async function prepareFixtures(
   const fixturePool = createPool(migrationUrl, 'e2e-order-fixtures')
   const fixtureDb = createDatabase(fixturePool)
   const queue = await startJobQueue(env.DATABASE_URL!, 'e2e-order-fixtures')
+  // Fixture commerce emails would delay the real OTP jobs behind them.
+  const refundFixtureQueue: JobQueue = {
+    ...queue,
+    async send(tx, name, data) {
+      if (name !== SEND_EMAIL_QUEUE) await queue.send(tx, name, data)
+    },
+  }
   const pool = createPool(env.DATABASE_URL!, 'e2e-fixtures')
   const db = createDatabase(pool)
+  const storage = createObjectStorage(loadStorageConfig(env))
   const auth = createAppAuth({
     db,
     config: loadAuthConfig(env),
@@ -229,6 +246,8 @@ export async function prepareFixtures(
         })
       })
       orderProducts[project] = {
+        gatewayReturnId: '',
+        bankReturnId: '',
         returnsBuyerEmail: buyer.email,
         refundOrderId: refundable.order.id,
         sellerEmail: orderSellerEmail,
@@ -239,6 +258,86 @@ export async function prepareFixtures(
         secondTitle: second.product.title,
       }
       accounts[project] = { adminEmail, sellerEmail, otherSellerEmail }
+      // Frozen test orders, then real payment, delivery and return services.
+      const refundBuyer = await createTestUser(fixtureDb)
+      const refundProduct = await createTestProduct(fixtureDb, {
+        sellerId: seller.id,
+        categoryId,
+      })
+      for (const method of ['razorpay', 'cod'] as const) {
+        const ready = await createTestOrderWithLines(fixtureDb, {
+          buyerId: refundBuyer.id,
+          paymentMethod: method,
+          status: method === 'razorpay' ? 'pending_payment' : 'confirmed',
+          lines: [
+            {
+              sellerId: seller.id,
+              productId: refundProduct.product.id,
+              variantId: refundProduct.variant.id,
+              unitPricePaise: 12345,
+            },
+          ],
+        })
+        await withContext(db, { role: 'system' }, async (tx) => {
+          const payment = await createPayment(tx, {
+            orderId: ready.order.id,
+            provider: method,
+            amountPaise: 12345,
+          })
+          if (method === 'razorpay') {
+            const providerId = `order_return_${env.E2E_RUN_ID}${index}`
+            await attachRazorpayOrder(tx, payment.id, providerId)
+            await confirmOrderPayment(tx, refundFixtureQueue, {
+              id: `pay_return_${env.E2E_RUN_ID}${index}`,
+              orderId: providerId,
+              amountPaise: 12345,
+              currency: 'INR',
+              status: 'captured',
+              method: 'upi',
+              errorDescription: null,
+            })
+          } else {
+            await onOrderConfirmed(
+              tx,
+              refundFixtureQueue,
+              ready.order,
+              ready.items,
+            )
+          }
+        })
+        const dispatched = await dispatchLines(
+          db,
+          { queue: refundFixtureQueue, photos: storage },
+          {
+            role: 'seller',
+            userId: seller.ownerUserId,
+            sellerId: seller.id,
+          },
+          ready.order.id,
+          {
+            lineIds: ready.items.map((item) => item.id),
+            courierName: 'Return fixture courier',
+            trackingNumber: `RETURN${index}${method}`,
+          },
+        )
+        await markShipmentDelivered(
+          db,
+          context,
+          dispatched.lines[0]!.shipment!.id,
+        )
+        const requested = await openReturn(
+          db,
+          { photos: storage },
+          { role: 'buyer', userId: refundBuyer.id },
+          { orderItemId: ready.items[0]!.id, reasonCode: 'damaged' },
+        )
+        await approveReturn(db, { photos: storage }, context, requested.id, {
+          note: 'Approved for refund review.',
+        })
+        if (method === 'razorpay')
+          orderProducts[project].gatewayReturnId = requested.id
+        else orderProducts[project].bankReturnId = requested.id
+      }
       for (let count = 0; count < 21; count++) {
         await createTestReturnRequest(fixtureDb, {
           buyerId: buyer.id,

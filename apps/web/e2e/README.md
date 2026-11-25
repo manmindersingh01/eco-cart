@@ -78,6 +78,8 @@ Task 06 extends that journey with buyer return tracking, private photo access, a
 BR01 checks empty states, a seeded 21-row return list, cursor navigation, Back links and invalid URLs.
 Task 07 extends AO01 with seller return filters, pagination, list/API agreement, dual-role access, another seller's refusal, private seller photo links and read-only controls.
 Task 08 adds administrator ordering and pagination, private photos, confirmed approval with and without a note, rejection validation, and stale-tab recovery.
+Task 09 uses `return-refunds.spec.ts` at the same three Chrome sizes for exact refund money, maximum values, method-specific references, stale-state recovery and seller ledger reversals.
+Its approved fixtures use the existing payment confirmation, dispatch, delivery and return services; no live provider is called.
 The refund fixture seeds a captured payment through the existing confirmation service; it never contacts a live payment provider.
 
 `test:e2e:verify-harness` runs ownership/provider-isolation unit tests plus three deliberate failure probes.
