@@ -37,6 +37,7 @@ import {
   createTestOrderWithLines,
   createTestProduct,
   createTestUser,
+  createTestCoupon,
   addTestLedgerEntries,
   orderToInvoiceFor,
 } from '@ecokart/core/testing'
@@ -59,6 +60,7 @@ export const browserProjects = [
 
 export interface BrowserFixtures {
   categoryId: string
+  couponExamples: Record<string, { id: string; code: string }>
   reviewProducts: Record<string, { slug: string; buyerEmail: string }>
   adminMoney: Record<
     string,
@@ -118,6 +120,7 @@ export async function prepareFixtures(
   const adminMoney: BrowserFixtures['adminMoney'] = {}
   const orderProducts: BrowserFixtures['orderProducts'] = {}
   const reviewProducts: BrowserFixtures['reviewProducts'] = {}
+  const couponExamples: BrowserFixtures['couponExamples'] = {}
   let categoryId = ''
   try {
     const projects = [
@@ -136,6 +139,19 @@ export async function prepareFixtures(
       const admin = await directory.findByEmail(adminEmail)
       if (!admin) throw new Error('Administrator fixture was not created')
       const context: RequestContext = { role: 'admin', userId: admin.id }
+      if (index === 0) {
+        for (let count = 0; count < 21; count++)
+          await createTestCoupon(fixtureDb, admin.id)
+      }
+      const exhaustedCoupon = await createTestCoupon(fixtureDb, admin.id, {
+        usedCount: 2,
+        usageLimit: 2,
+        startsAt: new Date('2026-01-01T00:00:00Z'),
+      })
+      couponExamples[project] = {
+        id: exhaustedCoupon.id,
+        code: exhaustedCoupon.code,
+      }
       if (!categoryId) {
         categoryId = await withContext(db, context, async (tx) => {
           for (const [key, value] of Object.entries(DEVELOPMENT_SETTINGS)) {
@@ -485,7 +501,14 @@ export async function prepareFixtures(
         )
       }
     }
-    return { categoryId, accounts, orderProducts, adminMoney, reviewProducts }
+    return {
+      categoryId,
+      accounts,
+      orderProducts,
+      adminMoney,
+      reviewProducts,
+      couponExamples,
+    }
   } finally {
     await Promise.all([pool.end(), fixturePool.end(), queue.stop()])
   }
