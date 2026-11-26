@@ -37,18 +37,18 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Area | Screens |
 | --- | --- |
 | Sign-in | `/sign-in` (email code and phone code when SMS is enabled), `/access-denied` |
-| Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, reviews list), `/search` (keyword) |
+| Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, review list and buyer review form), `/search` (keyword) |
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
 | Buyer account | `/account` (profile and display name), `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
 | Seller portal | Overview, business profile, verification documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list, detail, dispatch and delivery), read-only returns, earnings with statements and masked bank summary, invoice list |
-| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds), seller balances, bank/ledger details, external payout and adjustment recording, settlement statements |
+| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds), seller balances, bank/ledger details, external payout and adjustment recording, settlement statements, customer review moderation |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
 Start your work from the latest `main`.
 
 ### Not built yet
 
-Coupons administration, review writing and moderation, policy pages and their editor, background work tools, the AI screens, and a few account extras.
+Coupons administration, policy pages and their editor, background work tools, the AI screens, and a few account extras.
 Section 7 lists each one with its route, its APIs, and what "done" means.
 The backend for every one of them already exists.
 
@@ -484,6 +484,12 @@ See [task 15](../temp/frontend/step-3-remaining-screens/15-buyer-name.md) and [t
 - Switch a coupon off with `{ "isActive": false }`; coupons are never deleted.
 
 ### 7.8 Review moderation
+
+Tasks 17 and 19 add buyer review creation/editing on product pages, published-review pagination and administrator moderation on `frontend/step-3-buyer-reviews-moderation`.
+The buyer's own review is loaded privately, including hidden reviews, and editing a hidden review does not republish it.
+Product rating summaries and verified-purchase badges use the server's values.
+`/admin/reviews` filters published and hidden reviews, follows cursor pages, links to products and confirms hide/show decisions.
+See [task 17](../temp/frontend/step-3-remaining-screens/17-buyer-reviews.md) and [task 19](../temp/frontend/step-3-remaining-screens/19-admin-reviews.md) for verification evidence.
 
 - `/admin/reviews`: `GET /api/admin/reviews?status=published|hidden`, and hide or show one with `PATCH /api/admin/reviews/{id}` and `{ "status": "hidden" }`.
   Link each review to its product.
