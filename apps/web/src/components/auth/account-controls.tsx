@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/feedback'
 import { ApiError, apiRequest } from '@/lib/api-client'
 import { authClient } from '@/lib/auth-client'
 import type { CurrentAccount } from '@/lib/auth-routing'
+import { ACCOUNT_UPDATED } from '@/lib/account-events'
 
 type AccountControlsProps = {
   initialAccount?: CurrentAccount
@@ -27,37 +28,46 @@ export function AccountControls({
   const pathname = usePathname()
 
   useEffect(() => {
-    if (initialAccount !== undefined) return undefined
-
-    const controller = new AbortController()
+    let controller = new AbortController()
     let active = true
-    apiRequest<CurrentAccount>('/api/me', { signal: controller.signal })
-      .then((currentAccount) => {
-        if (!active) return undefined
-        setAccount(currentAccount)
-        setUnavailable(false)
-        return undefined
+    function loadAccount() {
+      controller.abort()
+      controller = new AbortController()
+      const request = controller
+      apiRequest<CurrentAccount>('/api/me', {
+        signal: request.signal,
+        cache: 'no-store',
       })
-      .catch((error: unknown) => {
-        if (!active) return undefined
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          return undefined
-        }
-        if (error instanceof ApiError && error.status === 401) {
-          setAccount(null)
+        .then((currentAccount) => {
+          if (!active || request.signal.aborted) return undefined
+          setAccount(currentAccount)
           setUnavailable(false)
           return undefined
-        }
-        setUnavailable(true)
-        return undefined
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
+        })
+        .catch((error: unknown) => {
+          if (!active || request.signal.aborted) return undefined
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            return undefined
+          }
+          if (error instanceof ApiError && error.status === 401) {
+            setAccount(null)
+            setUnavailable(false)
+            return undefined
+          }
+          setUnavailable(true)
+          return undefined
+        })
+        .finally(() => {
+          if (active && !request.signal.aborted) setLoading(false)
+        })
+    }
+    if (initialAccount === undefined) loadAccount()
+    window.addEventListener(ACCOUNT_UPDATED, loadAccount)
 
     return () => {
       active = false
       controller.abort()
+      window.removeEventListener(ACCOUNT_UPDATED, loadAccount)
     }
   }, [initialAccount])
 
