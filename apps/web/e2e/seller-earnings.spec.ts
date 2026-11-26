@@ -91,7 +91,12 @@ test('SE01 seller earnings signs, pagination, masking and isolation', async ({
   expect(await page.content()).not.toContain('123456784321')
   const bank = await (await page.request.get('/api/seller/bank-account')).text()
   expect(bank).not.toContain('123456784321')
-  await expect(page.locator('input, textarea, select')).toHaveCount(0)
+  await expect(
+    page
+      .getByRole('heading', { name: 'Bank account for payouts' })
+      .locator('..')
+      .locator('input, textarea, select'),
+  ).toHaveCount(0)
   expect(
     (
       await page.request.put('/api/seller/bank-account', {

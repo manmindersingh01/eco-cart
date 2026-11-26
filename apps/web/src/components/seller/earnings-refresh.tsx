@@ -4,7 +4,11 @@ import { useRouter } from 'next/navigation'
 import { useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 
-export function EarningsRefresh() {
+export function EarningsRefresh({
+  label = 'Refresh earnings',
+}: {
+  label?: string
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   return (
@@ -13,7 +17,7 @@ export function EarningsRefresh() {
       disabled={pending}
       onClick={() => startTransition(() => router.refresh())}
     >
-      {pending ? 'Refreshing...' : 'Refresh earnings'}
+      {pending ? 'Refreshing...' : label}
     </Button>
   )
 }

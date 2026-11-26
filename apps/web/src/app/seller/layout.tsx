@@ -12,6 +12,7 @@ const navigation = [
   { href: '/seller/orders', label: 'Orders' },
   { href: '/seller/returns', label: 'Returns' },
   { href: '/seller/earnings', label: 'Earnings' },
+  { href: '/seller/invoices', label: 'Invoices' },
   { href: '/seller/imports', label: 'Catalogue imports' },
 ] as const
 

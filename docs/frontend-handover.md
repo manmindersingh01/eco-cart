@@ -40,7 +40,7 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, reviews list), `/search` (keyword) |
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
 | Buyer account | `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
-| Seller portal | Overview, business profile, documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list, detail, dispatch and delivery) |
+| Seller portal | Overview, business profile, verification documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list, detail, dispatch and delivery), read-only returns, earnings with statements and masked bank summary, invoice list |
 | Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds) |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
@@ -409,8 +409,12 @@ Returns can be asked for only after delivery, within the return window the admin
 Task 10 adds `/seller/earnings`, its seller menu entry, the signed current balance, paginated money history and masked bank summary.
 Negative balances remain negative, and the wording explains whether the seller or EcoKart owes the amount.
 Bank details are read-only for sellers and show only the last four account digits.
-The refresh button reloads server totals; statements and invoice lists remain task 11.
+The refresh button reloads server totals.
 Evidence is recorded in [task 10](../temp/frontend/step-3-remaining-screens/10-seller-earnings.md).
+Task 11 adds statement requests and history to earnings and the separate seller invoice list.
+Statement status updates while processing, displays failure reasons and stops polling after completion or unmount.
+Ready CSV and PDF files use protected seller-context routes, with unavailable-file messages and no signed storage URL stored in the page.
+Evidence is recorded in [task 11](../temp/frontend/step-3-remaining-screens/11-seller-documents.md).
 
 - `/seller/earnings`:
   - The balance and the ledger from `GET /api/seller/ledger` (`balancePaise` plus a page of entries).

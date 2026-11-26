@@ -7,6 +7,7 @@ import {
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { EarningsRefresh } from '@/components/seller/earnings-refresh'
+import { StatementsSection } from '@/components/seller/statements-section'
 import { LinkButton } from '@/components/ui/button'
 import { Card, EmptyState, Notice } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
@@ -37,8 +38,12 @@ export default function EarningsPage(props: PageProps<'/seller/earnings'>) {
 
 async function Earnings({ searchParams }: PageProps<'/seller/earnings'>) {
   const context = await requireSellerPageContext('/seller/earnings')
-  const raw = (await searchParams).cursor
+  const query = await searchParams
+  const raw = query.cursor
   const cursor = Array.isArray(raw) ? raw.at(-1) : raw
+  const statementCursor = Array.isArray(query.statementCursor)
+    ? query.statementCursor.at(-1)
+    : query.statementCursor
   let result
   try {
     result = await withContext(getDatabase(), context, async (tx) => ({
@@ -116,6 +121,13 @@ async function Earnings({ searchParams }: PageProps<'/seller/earnings'>) {
           </p>
         </Card>
       </div>
+      <Suspense fallback={<ContentLoading />}>
+        <StatementsSection
+          context={context}
+          cursor={statementCursor}
+          ledgerCursor={cursor}
+        />
+      </Suspense>
       <section aria-labelledby="ledger-heading" className="grid gap-3">
         <h2 id="ledger-heading" className="text-lg font-semibold">
           Money history
@@ -187,13 +199,25 @@ async function Earnings({ searchParams }: PageProps<'/seller/earnings'>) {
         )}
         <nav aria-label="Ledger pages" className="flex flex-wrap gap-3">
           {cursor ? (
-            <LinkButton href="/seller/earnings" variant="secondary">
+            <LinkButton
+              href={{
+                pathname: '/seller/earnings',
+                query: statementCursor ? { statementCursor } : {},
+              }}
+              variant="secondary"
+            >
               Show the latest entries
             </LinkButton>
           ) : null}
           {ledger.nextCursor ? (
             <LinkButton
-              href={`/seller/earnings?${new URLSearchParams({ cursor: ledger.nextCursor })}`}
+              href={{
+                pathname: '/seller/earnings',
+                query: {
+                  cursor: ledger.nextCursor,
+                  ...(statementCursor ? { statementCursor } : {}),
+                },
+              }}
             >
               Older entries
             </LinkButton>

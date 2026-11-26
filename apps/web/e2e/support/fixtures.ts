@@ -21,6 +21,7 @@ import {
   getOwnLedger,
   setSellerBankAccount,
   loadLedgerConfig,
+  issueInvoices,
   type RequestContext,
   type JobQueue,
 } from '@ecokart/core'
@@ -36,6 +37,7 @@ import {
   createTestProduct,
   createTestUser,
   addTestLedgerEntries,
+  orderToInvoiceFor,
 } from '@ecokart/core/testing'
 import {
   createPayment,
@@ -43,6 +45,7 @@ import {
 } from '../../../../packages/core/src/modules/payments/service.ts'
 import { onOrderConfirmed } from '../../../../packages/core/src/modules/orders/service.ts'
 import { SEND_EMAIL_QUEUE } from '../../../../packages/core/src/modules/notifications/jobs.ts'
+import { settlementStatements } from '../../../../packages/core/src/db/schema/index.ts'
 
 export const browserProjects = [
   'chromium-desktop',
@@ -89,6 +92,10 @@ export async function prepareFixtures(
     async send(tx, name, data) {
       if (name !== SEND_EMAIL_QUEUE) await queue.send(tx, name, data)
     },
+  }
+  const unrenderedInvoiceQueue: JobQueue = {
+    ...queue,
+    send: () => Promise.resolve(),
   }
   const pool = createPool(env.DATABASE_URL!, 'e2e-fixtures')
   const db = createDatabase(pool)
@@ -210,7 +217,7 @@ export async function prepareFixtures(
       const buyer = await createTestUser(fixtureDb)
       // Enough real rows to exercise the seller page's 20-row cursor boundary.
       for (let count = 0; count < 21; count++) {
-        await createTestOrder(fixtureDb, {
+        const seededOrder = await createTestOrder(fixtureDb, {
           buyerId: buyer.id,
           lines: [
             {
@@ -220,6 +227,15 @@ export async function prepareFixtures(
             },
           ],
         })
+        // Keep one PDF unavailable without racing the real render worker.
+        if (count === 0)
+          await withContext(db, { role: 'system' }, (tx) =>
+            issueInvoices(
+              tx,
+              unrenderedInvoiceQueue,
+              orderToInvoiceFor(seededOrder.order, seededOrder.items),
+            ),
+          )
       }
       // Seed a captured online payment without contacting a payment provider.
       // Browser actions still use the real cancellation and refund endpoints.
@@ -295,6 +311,24 @@ export async function prepareFixtures(
           },
         ),
       )
+      // Stable worker states for the statement history UI; no jobs scheduled.
+      await fixtureDb.insert(settlementStatements).values([
+        {
+          sellerId: orderSeller.id,
+          requestedBy: admin.id,
+          periodStart: '2026-01-01',
+          periodEnd: '2026-01-02',
+          status: 'processing',
+        },
+        {
+          sellerId: orderSeller.id,
+          requestedBy: admin.id,
+          periodStart: '2026-01-03',
+          periodEnd: '2026-01-04',
+          status: 'failed',
+          failureReason: 'The test statement file could not be written.',
+        },
+      ])
       // Frozen test orders, then real payment, delivery and return services.
       const refundBuyer = await createTestUser(fixtureDb)
       const refundProduct = await createTestProduct(fixtureDb, {
