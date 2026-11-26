@@ -5,6 +5,7 @@ import { CartLink } from '@/components/storefront/cart-link'
 import { CategoryNavigation } from '@/components/storefront/category-navigation'
 import { HeaderSearch } from '@/components/storefront/header-search'
 import { SearchBox } from '@/components/storefront/search-box'
+import { PolicyFooter } from '@/components/storefront/policy-footer'
 import { Skeleton } from '@/components/ui/feedback'
 
 const headerSearchClass =
@@ -62,11 +63,7 @@ export default function StorefrontLayout({ children }: LayoutProps<'/'>) {
         </Suspense>
       </header>
       {children}
-      <footer className="mt-auto border-t bg-surface">
-        <div className="page-container py-6 text-sm text-muted">
-          EcoKart connects buyers with independent sellers across India.
-        </div>
-      </footer>
+      <PolicyFooter />
     </div>
   )
 }
