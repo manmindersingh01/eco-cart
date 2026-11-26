@@ -6,6 +6,10 @@ import {
   type RequestContext,
 } from '@ecokart/core'
 import { BankAccountForm } from './bank-account-form'
+import { LedgerEntryForm } from './ledger-entry-form'
+import { SellerStatements } from './seller-statements'
+import { Suspense } from 'react'
+import { ContentLoading } from '@/components/ui/page-loading'
 import { EarningsRefresh } from '@/components/seller/earnings-refresh'
 import { LinkButton } from '@/components/ui/button'
 import { Card, EmptyState, Notice } from '@/components/ui/feedback'
@@ -17,14 +21,19 @@ export async function SellerMoney({
   context,
   cursor,
   balanceCursor,
+  statementCursor,
 }: {
   sellerId: string
   context: RequestContext
   cursor?: string
   balanceCursor?: string
+  statementCursor?: string
 }) {
   const pathname = `/admin/sellers/${sellerId}` as const
-  const baseQuery = balanceCursor ? { balanceCursor } : {}
+  const baseQuery = {
+    ...(balanceCursor ? { balanceCursor } : {}),
+    ...(statementCursor ? { statementCursor } : {}),
+  }
   const bank = await withContext(getDatabase(), context, (tx) =>
     getSellerBankAccount(tx, context, sellerId),
   )
@@ -123,6 +132,31 @@ export async function SellerMoney({
           last4={bank?.accountNumberLast4}
         />
       </Card>
+      <div className="grid min-w-0 gap-5 lg:grid-cols-2">
+        <LedgerEntryForm
+          key={`${sellerId}-payout`}
+          sellerId={sellerId}
+          kind="payout"
+          bank={bank}
+          balancePaise={ledger.balancePaise}
+        />
+        <LedgerEntryForm
+          key={`${sellerId}-adjustment`}
+          sellerId={sellerId}
+          kind="adjustment"
+          bank={bank}
+          balancePaise={ledger.balancePaise}
+        />
+      </div>
+      <Suspense fallback={<ContentLoading />}>
+        <SellerStatements
+          context={context}
+          sellerId={sellerId}
+          cursor={statementCursor}
+          ledgerCursor={cursor}
+          balanceCursor={balanceCursor}
+        />
+      </Suspense>
       <section aria-labelledby="admin-ledger-heading" className="grid gap-3">
         <h3 id="admin-ledger-heading" className="text-lg font-semibold">
           Money history

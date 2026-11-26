@@ -42,6 +42,9 @@ export default async function SellerDetailPage({
   const balanceCursor = Array.isArray(query.balanceCursor)
     ? query.balanceCursor.at(-1)
     : query.balanceCursor
+  const statementCursor = Array.isArray(query.statementCursor)
+    ? query.statementCursor.at(-1)
+    : query.statementCursor
   return (
     <SellerDetailManager
       initialSeller={serialised}
@@ -52,6 +55,7 @@ export default async function SellerDetailPage({
             context={context}
             cursor={cursor}
             balanceCursor={balanceCursor}
+            statementCursor={statementCursor}
           />
         </Suspense>
       }

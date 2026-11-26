@@ -10,7 +10,13 @@ import { Field, Input } from '@/components/ui/form-controls'
 import { ApiError, apiRequest } from '@/lib/api-client'
 import { useClientReady } from '@/lib/use-client-ready'
 
-export function StatementRequest({ visibleIds }: { visibleIds: string[] }) {
+export function StatementRequest({
+  visibleIds,
+  sellerId,
+}: {
+  visibleIds: string[]
+  sellerId?: string
+}) {
   const router = useRouter()
   const ready = useClientReady()
   const lock = useRef(false)
@@ -36,10 +42,15 @@ export function StatementRequest({ visibleIds }: { visibleIds: string[] }) {
             try {
               const { statement } = await apiRequest<{
                 statement: SettlementStatementView
-              }>('/api/seller/settlement-statements', {
-                method: 'POST',
-                json: { from, to },
-              })
+              }>(
+                sellerId
+                  ? `/api/admin/sellers/${sellerId}/settlement-statements`
+                  : '/api/seller/settlement-statements',
+                {
+                  method: 'POST',
+                  json: { from, to },
+                },
+              )
               setCreated(statement)
             } catch (cause) {
               setProblem(
@@ -69,9 +80,9 @@ export function StatementRequest({ visibleIds }: { visibleIds: string[] }) {
         >
           <h3 className="font-semibold">Request a statement</h3>
           <p className="text-sm text-muted">
-            A CSV file of your money history with opening and closing balances.
-            Dates use India time and include both ends. A statement can cover at
-            most 366 days.
+            A CSV file of {sellerId ? 'this seller’s' : 'your'} money history
+            with opening and closing balances. Dates use India time and include
+            both ends. A statement can cover at most 366 days.
           </p>
           {problem ? (
             <Notice tone="danger" title="Statement could not be requested">
@@ -113,7 +124,11 @@ export function StatementRequest({ visibleIds }: { visibleIds: string[] }) {
         </form>
       </Card>
       {created && !visibleIds.includes(created.id) ? (
-        <StatementStatus key={created.id} initial={created} />
+        <StatementStatus
+          key={created.id}
+          initial={created}
+          area={sellerId ? 'admin' : 'seller'}
+        />
       ) : null}
     </div>
   )

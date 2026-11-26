@@ -10,8 +10,10 @@ import { formatIndianDate, formatInr } from '@/lib/format'
 
 export function StatementStatus({
   initial,
+  area = 'seller',
 }: {
   initial: SettlementStatementView
+  area?: 'seller' | 'admin'
 }) {
   const [item, setItem] = useState(initial)
   const [checking, setChecking] = useState(true)
@@ -24,10 +26,13 @@ export function StatementStatus({
       try {
         const { statement } = await apiRequest<{
           statement: SettlementStatementView
-        }>(`/api/settlement-statements/${item.id}?as=seller`, {
-          signal: abort.signal,
-          cache: 'no-store',
-        })
+        }>(
+          `/api/settlement-statements/${item.id}${area === 'seller' ? '?as=seller' : ''}`,
+          {
+            signal: abort.signal,
+            cache: 'no-store',
+          },
+        )
         if (abort.signal.aborted) return
         setItem(statement)
         if (statement.status === 'processing')
@@ -48,7 +53,7 @@ export function StatementStatus({
       abort.abort()
       clearTimeout(timer)
     }
-  }, [item.id, item.status, checking])
+  }, [item.id, item.status, checking, area])
   return (
     <Card className="grid min-w-0 gap-3" data-statement-id={item.id}>
       <h3 className="font-semibold">
@@ -133,7 +138,7 @@ export function StatementStatus({
             </p>
           ) : null}
           <PrivateFileDownload
-            href={`/api/settlement-statements/${item.id}/file?as=seller`}
+            href={`/api/settlement-statements/${item.id}/file${area === 'seller' ? '?as=seller' : ''}`}
             label="Download CSV"
             unavailableTitle="Statement unavailable"
             help="Refresh the page and try again. Request a new statement if this file stays unavailable."
