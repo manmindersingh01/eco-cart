@@ -6,9 +6,10 @@ import { Breadcrumbs } from '@/components/storefront/breadcrumbs'
 import { Rating } from '@/components/storefront/product-card'
 import { ProductGallery } from '@/components/storefront/product-gallery'
 import { ProductPurchase } from '@/components/storefront/product-purchase'
-import { Card, StatusBadge } from '@/components/ui/feedback'
+import { StatusBadge } from '@/components/ui/feedback'
 import { PageLoading } from '@/components/ui/page-loading'
-import { formatIndianDate } from '@/lib/format'
+import { PublicReviews } from '@/components/storefront/public-reviews'
+import { OwnReviewForm } from '@/components/storefront/own-review'
 import { readProductPage, readProductReviews } from '@/lib/storefront'
 import { formatRating } from '@/lib/storefront-display'
 
@@ -167,54 +168,15 @@ async function ProductContent({ params }: PageProps<'/products/[slug]'>) {
             </p>
           ) : null}
         </div>
-        {reviews.items.length ? (
-          <ul className="grid gap-3 md:grid-cols-2">
-            {reviews.items.map((review) => (
-              <li key={review.id}>
-                <Card className="h-full">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Stars rating={review.rating} />
-                    {review.verifiedPurchase ? (
-                      <StatusBadge tone="success">
-                        Verified purchase
-                      </StatusBadge>
-                    ) : null}
-                  </div>
-                  {review.title ? (
-                    <h3 className="mt-2 font-semibold">{review.title}</h3>
-                  ) : null}
-                  {review.body ? (
-                    <p className="mt-1 whitespace-pre-line break-words text-sm">
-                      {review.body}
-                    </p>
-                  ) : null}
-                  <p className="mt-3 text-xs text-muted">
-                    {review.authorName}, {formatIndianDate(review.createdAt)}
-                  </p>
-                </Card>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted">No reviews yet.</p>
-        )}
-        {reviews.nextCursor ? (
-          <p className="text-sm text-muted">
-            Showing the first {REVIEWS_SHOWN} reviews.
-          </p>
-        ) : null}
+        <PublicReviews
+          key={reviews.items
+            .map((item) => `${item.id}-${item.updatedAt.toISOString()}`)
+            .join(',')}
+          slug={product.slug}
+          initial={reviews}
+        />
       </section>
+      <OwnReviewForm key={product.slug} slug={product.slug} />
     </div>
-  )
-}
-
-function Stars({ rating }: { rating: number }) {
-  return (
-    <p className="text-warning" aria-label={`${rating} out of 5 stars`}>
-      <span aria-hidden="true">
-        {'★'.repeat(rating)}
-        <span className="text-border">{'★'.repeat(5 - rating)}</span>
-      </span>
-    </p>
   )
 }

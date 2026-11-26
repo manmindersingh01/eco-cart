@@ -22,6 +22,7 @@ import {
   setSellerBankAccount,
   loadLedgerConfig,
   issueInvoices,
+  writeReview,
   type RequestContext,
   type JobQueue,
 } from '@ecokart/core'
@@ -58,6 +59,7 @@ export const browserProjects = [
 
 export interface BrowserFixtures {
   categoryId: string
+  reviewProducts: Record<string, { slug: string; buyerEmail: string }>
   adminMoney: Record<
     string,
     { sellerId: string; sellerEmail: string; ledgerSellerId: string }
@@ -115,6 +117,7 @@ export async function prepareFixtures(
   const accounts: BrowserFixtures['accounts'] = {}
   const adminMoney: BrowserFixtures['adminMoney'] = {}
   const orderProducts: BrowserFixtures['orderProducts'] = {}
+  const reviewProducts: BrowserFixtures['reviewProducts'] = {}
   let categoryId = ''
   try {
     const projects = [
@@ -444,8 +447,45 @@ export async function prepareFixtures(
           sellerId: orderSeller.id,
         })
       }
+      const reviewed = await createTestProduct(fixtureDb, {
+        sellerId: seller.id,
+        categoryId,
+      })
+      const reviewer = await createTestUser(fixtureDb)
+      await createTestOrderWithLines(fixtureDb, {
+        buyerId: reviewer.id,
+        status: 'completed',
+        lines: [
+          {
+            sellerId: seller.id,
+            productId: reviewed.product.id,
+            variantId: reviewed.variant.id,
+            status: 'delivered',
+          },
+        ],
+      })
+      reviewProducts[project] = {
+        slug: reviewed.product.slug,
+        buyerEmail: reviewer.email,
+      }
+      for (let count = 0; count < 11; count++) {
+        const author = await createTestUser(fixtureDb)
+        await withContext(db, { role: 'buyer', userId: author.id }, (tx) =>
+          writeReview(
+            tx,
+            { role: 'buyer', userId: author.id },
+            reviewed.product.slug,
+            {
+              rating: 4,
+              authorName: `Review fixture ${index}-${count}`,
+              title: `Seeded review ${index}-${count}`,
+              body: 'A seeded review for cursor pagination.',
+            },
+          ),
+        )
+      }
     }
-    return { categoryId, accounts, orderProducts, adminMoney }
+    return { categoryId, accounts, orderProducts, adminMoney, reviewProducts }
   } finally {
     await Promise.all([pool.end(), fixturePool.end(), queue.stop()])
   }
