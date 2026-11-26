@@ -58,6 +58,10 @@ export const browserProjects = [
 
 export interface BrowserFixtures {
   categoryId: string
+  adminMoney: Record<
+    string,
+    { sellerId: string; sellerEmail: string; ledgerSellerId: string }
+  >
   orderProducts: Record<
     string,
     {
@@ -109,6 +113,7 @@ export async function prepareFixtures(
   })
   const directory = createAccountDirectory(auth)
   const accounts: BrowserFixtures['accounts'] = {}
+  const adminMoney: BrowserFixtures['adminMoney'] = {}
   const orderProducts: BrowserFixtures['orderProducts'] = {}
   let categoryId = ''
   try {
@@ -200,6 +205,30 @@ export async function prepareFixtures(
       )
       await approveSeller(db, context, orderSeller.id)
       await approveSeller(db, context, orderOther.id)
+      const balanceEmail = `balance-${sellerEmail}`
+      const balanceSeller = await createSeller(
+        { db, accounts: directory },
+        context,
+        {
+          ...sellerInput,
+          owner: { email: balanceEmail, name: 'Balance fixture owner' },
+          displayName: `Balance fixture ${index}`,
+          invoicePrefix: `B${index}T`,
+        },
+      )
+      await approveSeller(db, context, balanceSeller.id)
+      await addTestLedgerEntries(fixtureDb, balanceSeller.id, [
+        {
+          entryType: 'adjustment',
+          amountPaise: 100000000 + index,
+          description: 'Balance list fixture',
+        },
+      ])
+      adminMoney[project] = {
+        sellerId: balanceSeller.id,
+        sellerEmail: balanceEmail,
+        ledgerSellerId: orderSeller.id,
+      }
       await directory.addRole(orderSeller.ownerUserId, 'buyer')
       const earningsContext = {
         role: 'seller',
@@ -416,7 +445,7 @@ export async function prepareFixtures(
         })
       }
     }
-    return { categoryId, accounts, orderProducts }
+    return { categoryId, accounts, orderProducts, adminMoney }
   } finally {
     await Promise.all([pool.end(), fixturePool.end(), queue.stop()])
   }
