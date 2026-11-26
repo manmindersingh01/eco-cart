@@ -41,14 +41,14 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
 | Buyer account | `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
 | Seller portal | Overview, business profile, verification documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list, detail, dispatch and delivery), read-only returns, earnings with statements and masked bank summary, invoice list |
-| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds) |
+| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds), seller balances and seller bank/ledger details |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
 Start your work from the latest `main`.
 
 ### Not built yet
 
-Administrator order screens, returns (buyer, seller, and administrator), seller earnings and statements, administrator payouts, coupons administration, review writing and moderation, policy pages and their editor, background work tools, the AI screens, and a few account extras.
+Administrator payout and adjustment recording, administrator statements, coupons administration, review writing and moderation, policy pages and their editor, background work tools, the AI screens, and a few account extras.
 Section 7 lists each one with its route, its APIs, and what "done" means.
 The backend for every one of them already exists.
 
@@ -430,6 +430,13 @@ Evidence is recorded in [task 11](../temp/frontend/step-3-remaining-screens/11-s
 - Add "Earnings" and "Invoices" to the seller menu.
 
 ### 7.5 Administrator payouts and seller money
+
+Task 12 adds the balance list and seller-detail bank and ledger screens on `frontend/step-3-admin-seller-money`.
+The bank form starts empty, confirms only the new account's last four digits and clears all entry fields after success.
+It also clears the number after a failed save attempt.
+The balance list uses the service's largest-first non-zero ordering and cursor pages; seller ledgers show the full balance alongside newest-first entries.
+See [task 12](../temp/frontend/step-3-remaining-screens/12-admin-seller-money.md) for verification evidence.
+The payout, adjustment and administrator statement controls below remain for tasks 13 and 14.
 
 - `/admin/payouts`: sellers with a balance from `GET /api/admin/seller-balances`, largest first, with their bank account's last 4 digits or "no bank account yet".
 - On the seller detail page (`/admin/sellers/[id]`), add:
