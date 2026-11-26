@@ -36,10 +36,10 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 
 | Area | Screens |
 | --- | --- |
-| Sign-in | `/sign-in` (email code), `/access-denied` |
+| Sign-in | `/sign-in` (email code and phone code when SMS is enabled), `/access-denied` |
 | Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, reviews list), `/search` (keyword) |
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
-| Buyer account | `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
+| Buyer account | `/account` (profile and display name), `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
 | Seller portal | Overview, business profile, verification documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list, detail, dispatch and delivery), read-only returns, earnings with statements and masked bank summary, invoice list |
 | Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds), seller balances, bank/ledger details, external payout and adjustment recording, settlement statements |
 
@@ -459,10 +459,18 @@ See [task 13](../temp/frontend/step-3-remaining-screens/13-admin-payout-recordin
 
 ### 7.6 Buyer account extras
 
+Tasks 15 and 16 add display-name editing at `/account` and phone sign-in on `frontend/step-3-buyer-profile-phone-sign-in`.
+The profile uses the existing buyer access rule and refreshes the header after a successful name save.
+It keeps contact details read-only and hides placeholder email addresses.
+An expired session preserves the draft name and links back through sign-in.
+Phone sign-in uses the existing SMS configuration and is offered only while that channel is enabled.
+Email sign-in and safe return URLs remain supported.
+See [task 15](../temp/frontend/step-3-remaining-screens/15-buyer-name.md) and [task 16](../temp/frontend/step-3-remaining-screens/16-phone-sign-in.md) for verification evidence.
+
 - **Name:** there is no EcoKart route for it; use Better Auth's `authClient.updateUser({ name })` from `src/lib/auth-client.ts`.
   Changing an email address or phone number needs a verified flow; agree it with the project lead first.
 - **Phone sign-in:** the backend supports it (Better Auth's phone plugin; in development each code lands in Mailpit as an email to the number without its plus sign at `sms.mailpit.test`, for example `919812345678@sms.mailpit.test`).
-  Add `phoneNumberClient()` (from `better-auth/client/plugins`) to `src/lib/auth-client.ts`, then offer "Sign in with phone" on `/sign-in` using `authClient.phoneNumber.sendOtp` and `authClient.phoneNumber.verify`.
+  `src/lib/auth-client.ts` includes `phoneNumberClient()` (from `better-auth/client/plugins`), and `/sign-in` offers "Sign in with phone" using `authClient.phoneNumber.sendOtp` and `authClient.phoneNumber.verify` when SMS is enabled.
   Phone-only accounts get a placeholder email ending in `.invalid`; never show it.
 - **Reviews:** on the product page, a signed-in buyer writes one review (`POST /api/products/{slug}/reviews` with `{ "rating": 1-5, "authorName", "title", "body" }`) and edits it later (`GET` and `PATCH .../reviews/mine`).
   The "Verified purchase" badge comes from the server; never decide it in the browser.
