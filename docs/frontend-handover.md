@@ -39,16 +39,17 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Sign-in | `/sign-in` (email code and phone code when SMS is enabled), `/access-denied` |
 | Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, review list and buyer review form), `/search` (keyword) |
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
+| Policies | `/policies/[slug]` for all six published policies, plus footer links and company details |
 | Buyer account | `/account` (profile and display name), `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
 | Seller portal | Overview, business profile, verification documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list, detail, dispatch and delivery), read-only returns, earnings with statements and masked bank summary, invoice list |
-| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds), seller balances, bank/ledger details, external payout and adjustment recording, settlement statements, customer review moderation, coupon management |
+| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds), seller balances, bank/ledger details, external payout and adjustment recording, settlement statements, customer review moderation, coupon management, policy editor |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
 Start your work from the latest `main`.
 
 ### Not built yet
 
-Policy pages and their editor, background work tools, the AI screens, and a few account extras.
+Background work tools, the AI screens, and a few account extras.
 Section 7 lists each one with its route, its APIs, and what "done" means.
 The backend for every one of them already exists.
 
@@ -502,6 +503,15 @@ See [task 17](../temp/frontend/step-3-remaining-screens/17-buyer-reviews.md) and
   Link each review to its product.
 
 ### 7.9 Policy pages and the footer
+
+Tasks 20 and 21 add public policies, the company footer and the administrator policy editor on `frontend/step-3-policies`.
+The administrator menu includes Policy pages, with `/admin/content` and `/admin/content/[slug]` for drafts and publishing.
+The public page and unsaved preview share a Markdown renderer that disables raw HTML and omits images.
+Drafts stay private, public reads use the existing cache tags, and saving uses the existing audit and invalidation services.
+Missing company settings leave the footer links available.
+Save errors retain edits, and uncertain results require checking the saved version before another write.
+Development placeholders still need client-approved text before launch.
+See [task 20](../temp/frontend/step-3-remaining-screens/20-public-policies.md) and [task 21](../temp/frontend/step-3-remaining-screens/21-policy-editor.md) for evidence.
 
 - Public `/policies/[slug]` for `terms`, `privacy`, `shipping`, `returns`, `refunds`, and `seller-agreement`, read through `readContentPage` in `src/lib/storefront.ts` (cached).
   Render the Markdown safely (raw HTML off) and show a not-found page for a draft.
