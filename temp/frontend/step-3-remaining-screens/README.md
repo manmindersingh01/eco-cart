@@ -36,39 +36,66 @@ Dependencies are the actual prerequisites; task numbers give the suggested order
 Payment and order accuracy come first, AI last.
 Tasks started as planned; each task file records its current implementation and verification status.
 
-| Task | Scope | Depends on |
+| Task | Scope | Depends on | Status |
+| --- | --- | --- | --- |
+| [01](./01-seller-orders.md) | Seller order list and detail | None | complete |
+| [02](./02-seller-dispatch.md) | Dispatch and delivery | 01 | complete |
+| [03](./03-admin-orders.md) | Administrator order list and detail | None | complete |
+| [04](./04-admin-order-actions.md) | Administrator order actions | 03 | complete |
+| [05](./05-buyer-return-request.md) | Buyer return request and photos | None | complete |
+| [06](./06-buyer-returns.md) | Buyer return tracking | 05 | complete |
+| [07](./07-seller-returns.md) | Seller return visibility | 05 | complete |
+| [08](./08-admin-return-decisions.md) | Administrator return review | 05 | complete |
+| [09](./09-admin-return-refunds.md) | Administrator return refunds | 08 | complete |
+| [10](./10-seller-earnings.md) | Seller earnings and bank summary | None | complete |
+| [11](./11-seller-documents.md) | Seller statements and invoice list | 10 | complete |
+| [12](./12-admin-seller-money.md) | Administrator balances, bank details and ledger | None | complete |
+| [13](./13-admin-payout-recording.md) | Payouts and adjustments | 12 | complete |
+| [14](./14-admin-statements.md) | Administrator settlement statements | 12 | complete |
+| [15](./15-buyer-name.md) | Buyer display name | None | complete |
+| [16](./16-phone-sign-in.md) | Phone sign-in | None | complete |
+| [17](./17-buyer-reviews.md) | Writing and editing reviews | None | complete |
+| [18](./18-admin-coupons.md) | Coupon administration | None | complete |
+| [19](./19-admin-reviews.md) | Review moderation | 17 | complete |
+| [20](./20-public-policies.md) | Public policy pages and footer | None | complete |
+| [21](./21-policy-editor.md) | Administrator policy editor | 20 | complete |
+| [22](./22-background-work.md) | Background work tools | None | complete |
+| [23](./23-natural-search.md) | Natural-language search | None; search-page modes agreed 27 November 2026 | complete |
+| [24](./24-photo-search.md) | Photo search | 23 | complete |
+| [25](./25-similar-products.md) | Similar product suggestions | None | complete |
+| [26](./26-shopping-assistant.md) | Shopping assistant panel | None; layout choice required | planned |
+| [27](./27-listing-drafts.md) | Seller listing suggestions | None | complete |
+| [28](./28-import-suggestions.md) | AI import mapping suggestions | None | complete |
+| [29](./29-ai-reports.md) | AI usage and search-gap reports | None | planned |
+| [30](./30-portal-navigation.md) | Portal overview links and counts | 01-29 as applicable | planned |
+| [31](./31-release-verification.md) | Local release verification and provider handover | 01-30 | planned |
+
+## Current position - 27 November 2026
+
+27 of the 31 tasks are implemented and locally verified: 01-25, 27 and 28.
+The Status column above and each task's evidence section record what was checked.
+Complete means local implementation and the required local checks passed; it does not claim production sign-off or live-provider verification.
+
+| Remaining task | Current category | Next action |
 | --- | --- | --- |
-| [01](./01-seller-orders.md) | Seller order list and detail | None |
-| [02](./02-seller-dispatch.md) | Dispatch and delivery | 01 |
-| [03](./03-admin-orders.md) | Administrator order list and detail | None |
-| [04](./04-admin-order-actions.md) | Administrator order actions | 03 |
-| [05](./05-buyer-return-request.md) | Buyer return request and photos | None |
-| [06](./06-buyer-returns.md) | Buyer return tracking | 05 |
-| [07](./07-seller-returns.md) | Seller return visibility | 05 |
-| [08](./08-admin-return-decisions.md) | Administrator return review | 05 |
-| [09](./09-admin-return-refunds.md) | Administrator return refunds | 08 |
-| [10](./10-seller-earnings.md) | Seller earnings and bank summary | None |
-| [11](./11-seller-documents.md) | Seller statements and invoice list | 10 |
-| [12](./12-admin-seller-money.md) | Administrator balances, bank details and ledger | None |
-| [13](./13-admin-payout-recording.md) | Payouts and adjustments | 12 |
-| [14](./14-admin-statements.md) | Administrator settlement statements | 12 |
-| [15](./15-buyer-name.md) | Buyer display name | None |
-| [16](./16-phone-sign-in.md) | Phone sign-in | None |
-| [17](./17-buyer-reviews.md) | Writing and editing reviews | None |
-| [18](./18-admin-coupons.md) | Coupon administration | None |
-| [19](./19-admin-reviews.md) | Review moderation | 17 |
-| [20](./20-public-policies.md) | Public policy pages and footer | None |
-| [21](./21-policy-editor.md) | Administrator policy editor | 20 |
-| [22](./22-background-work.md) | Background work tools | None |
-| [23](./23-natural-search.md) | Natural-language search | None; search-page modes agreed 27 November 2026 |
-| [24](./24-photo-search.md) | Photo search | 23 |
-| [25](./25-similar-products.md) | Similar product suggestions | None |
-| [26](./26-shopping-assistant.md) | Shopping assistant panel | None; layout choice required |
-| [27](./27-listing-drafts.md) | Seller listing suggestions | None |
-| [28](./28-import-suggestions.md) | AI import mapping suggestions | None |
-| [29](./29-ai-reports.md) | AI usage and search-gap reports | None |
-| [30](./30-portal-navigation.md) | Portal overview links and counts | 01-29 as applicable |
-| [31](./31-release-verification.md) | Local release verification and provider handover | 01-30 |
+| 26 - Shopping assistant | Needs a layout decision | Choose a collapsible section on product/search pages or a floating button with a side panel; the section is the recommendation. |
+| 29 - AI usage and search-gap reports | Ready for implementation | Build the two administrator reports through existing services; no real provider key is required for local work. |
+| 30 - Portal navigation and overview counts | After the remaining screens | Review menus and overview links once task 26 and the reports exist; use counts only where existing services support them. |
+| 31 - Local release verification and provider handover | Final integration work | Run the complete local marketplace journeys after 01-30 and keep deferred live-provider checks explicit. |
+
+### Inputs and attention before launch
+
+- Confirm the assistant placement for task 26.
+- Configure or confirm Razorpay/OpenRouter credentials and run the separate live-provider checks, including catalogue embeddings and the payment webhook.
+  Local stand-ins and browser response fixtures do not establish real-provider success.
+- Supply or approve the six policy texts and company/legal details; development placeholders are not approved launch content.
+- Choose and configure production email/SMS delivery, including the Indian SMS/DLT requirements.
+  Current local verification uses Mailpit.
+- Resolve the documented payout holdback/full-bank-access process and any price-dependent GST decision with the project lead/accountant.
+  Existing screens continue to use masked bank details, external payout records and the documented category rates.
+- Confirm a revised launch date and provide the milestone PDF for release-scope validation; the historical 31 October 2026 date has passed.
+
+See [handover section 12](../../../docs/frontend-handover.md#12-open-decisions-and-missing-inputs) and [manual preparation](00-manual-preparation.md) for context.
 
 ## Completion rules
 
@@ -106,8 +133,10 @@ Pause the affected implementation when a required decision is still missing.
 - The original milestone PDF is not in the repository.
   Obtain it from the project lead for launch scope validation; this plan is limited to the supplied handover.
 
-## Documentation verification
+## Original planning verification
 
-This delivery changes Markdown only after the separately authorised merge.
-Application tests are not evidence for a documentation-only edit and were not run for this plan.
-Formatting, local link validation and git diff --check are the documentation checks.
+The initial planning delivery changed Markdown only after the separately authorised merge.
+Application tests were not run for that documentation-only pass.
+Its checks were formatting, local links and git diff --check.
+Subsequent implementation and application verification are recorded in each task file.
+The latest batch, tasks 27 and 28, passed `pnpm check` with 1,292 tests and the production build, plus the agreed three-size Chrome journey.
