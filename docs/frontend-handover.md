@@ -37,19 +37,19 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Area | Screens |
 | --- | --- |
 | Sign-in | `/sign-in` (email code and phone code when SMS is enabled), `/access-denied` |
-| Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, review list and buyer review form), `/search` (keyword) |
+| Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, review list, buyer review form and similar products), `/search` (keyword) |
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
 | Policies | `/policies/[slug]` for all six published policies, plus footer links and company details |
 | Buyer account | `/account` (profile and display name), `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
 | Seller portal | Overview, business profile, verification documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports, orders (list, detail, dispatch and delivery), read-only returns, earnings with statements and masked bank summary, invoice list |
-| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds), seller balances, bank/ledger details, external payout and adjustment recording, settlement statements, customer review moderation, coupon management, policy editor |
+| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds), seller balances, bank/ledger details, external payout and adjustment recording, settlement statements, customer review moderation, coupon management, policy editor, background work and email retries |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
 Start your work from the latest `main`.
 
 ### Not built yet
 
-Background work tools, the AI screens, and a few account extras.
+The remaining AI screens and a few account extras.
 Section 7 lists each one with its route, its APIs, and what "done" means.
 The backend for every one of them already exists.
 
@@ -523,6 +523,11 @@ See [task 20](../temp/frontend/step-3-remaining-screens/20-public-policies.md) a
 
 ### 7.10 Background work tools for administrators
 
+Task 22 adds the queue-count panel, filtered work lists and confirmed retry controls on `frontend/step-3-background-work-similar-products`.
+The screen uses existing services and only renders safe metadata, without raw payloads, subjects or error text.
+Sign-in codes cannot be retried, and uncertain retry results require a reload before another attempt.
+See [task 22](../temp/frontend/step-3-remaining-screens/22-background-work.md) for evidence.
+
 - `/admin/background-work`:
   - Queues with waiting, running, and failed counts: `GET /api/admin/queues`.
   - Failed jobs of one queue: `GET /api/admin/queues/{name}/failed-jobs`, retry one with `POST .../failed-jobs/{id}/retry`.
@@ -538,6 +543,8 @@ AI suggestions are only suggestions; nothing is saved or published until a perso
   Offer it on `/search`, for example as a toggle, and show what was understood.
 - **Search by photo:** get a signed form from `POST /api/search/photo/uploads`, upload the photo, then `GET /api/search/photo?photo=<key>`.
 - **Similar products:** `GET /api/products/{slug}/similar` (or `readSimilarProducts` in `src/lib/storefront.ts`) under the product page, loaded without blocking the page.
+  Task 25 adds this section with a separate loading boundary, existing product cards and empty/unavailable states.
+  See [task 25](../temp/frontend/step-3-remaining-screens/25-similar-products.md) for evidence and the distinction between test vectors and real provider embeddings.
 - **Shopping assistant:** a panel that sends `POST /api/assistant` with `{ "question", "history", "productIds" }` (`productIds` are the products the shopper is looking at, for example two to compare).
   The answer is an `AssistantAnswer`: plain-text `answer`, `declined` when it cannot answer from the products, product cards, and an optional `comparison` table.
   Show `answer` as plain text and the products as normal product cards.
