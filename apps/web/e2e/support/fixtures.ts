@@ -53,6 +53,8 @@ import {
   settlementStatements,
   emailOutbox,
   productEmbeddings,
+  aiRequests,
+  searchQueries,
 } from '../../../../packages/core/src/db/schema/index.ts'
 
 export const browserProjects = [
@@ -156,6 +158,69 @@ export async function prepareFixtures(
       if (!admin) throw new Error('Administrator fixture was not created')
       const context: RequestContext = { role: 'admin', userId: admin.id }
       if (index === 0) {
+        const reportDay = new Date('2026-01-01T20:00:00Z')
+        const call = {
+          provider: 'browser-test',
+          model: 'browser-test',
+          inputHash: crypto.randomUUID(),
+          inputTokens: 100,
+          outputTokens: 20,
+          createdAt: reportDay,
+        }
+        await fixtureDb.insert(aiRequests).values([
+          {
+            ...call,
+            feature: 'listing_draft',
+            status: 'succeeded',
+            costMicroUsd: 1234567,
+          },
+          {
+            ...call,
+            inputHash: crypto.randomUUID(),
+            feature: 'listing_draft',
+            status: 'failed',
+            costMicroUsd: 0,
+          },
+          {
+            ...call,
+            inputHash: crypto.randomUUID(),
+            feature: 'assistant',
+            status: 'succeeded',
+            costMicroUsd: null,
+          },
+          {
+            ...call,
+            inputHash: crypto.randomUUID(),
+            feature: 'assistant',
+            status: 'succeeded',
+            costMicroUsd: 1,
+            createdAt: new Date(),
+          },
+          {
+            ...call,
+            inputHash: crypto.randomUUID(),
+            feature: 'embedding',
+            status: 'succeeded',
+            costMicroUsd: 2,
+            createdAt: new Date(),
+          },
+        ])
+        await fixtureDb.insert(searchQueries).values([
+          {
+            kind: 'keyword',
+            queryText: 'Fixture missing product',
+            resultCount: 0,
+            latencyMs: 0,
+            createdAt: new Date(Date.now() - 40 * 86400000),
+          },
+          {
+            kind: 'keyword',
+            queryText: 'fixture missing product',
+            resultCount: 0,
+            latencyMs: 0,
+            createdAt: new Date(Date.now() - 40 * 86400000),
+          },
+        ])
         for (let count = 0; count < 21; count++)
           await createTestCoupon(fixtureDb, admin.id)
         const failedWorker = await startTestWorker(migrationUrl)

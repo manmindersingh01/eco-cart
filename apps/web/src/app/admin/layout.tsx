@@ -12,6 +12,8 @@ const navigation = [
   { href: '/admin/coupons', label: 'Coupons' },
   { href: '/admin/content', label: 'Policy pages' },
   { href: '/admin/background-work', label: 'Background work' },
+  { href: '/admin/ai', label: 'AI usage' },
+  { href: '/admin/search-gaps', label: 'Search gaps' },
   { href: '/admin/payouts', label: 'Payouts' },
   { href: '/admin/settings', label: 'Platform settings' },
   { href: '/admin/sellers', label: 'Sellers' },

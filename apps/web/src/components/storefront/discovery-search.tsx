@@ -13,6 +13,7 @@ import {
   Textarea,
 } from '@/components/ui/form-controls'
 import { ProductGrid } from './product-card'
+import { ShoppingAssistant } from './shopping-assistant'
 import { apiRequest, ApiError } from '@/lib/api-client'
 import { paiseToRupeeInput, parseRupeesToPaise } from '@/lib/admin-settings'
 import {
@@ -426,6 +427,15 @@ export function DiscoverySearch({
           </nav>
         ) : null}
       </section>
+      <ShoppingAssistant
+        key={
+          result?.items
+            .map((item) => item.id)
+            .slice(0, 5)
+            .join(',') ?? 'empty'
+        }
+        productIds={result?.items.map((item) => item.id) ?? []}
+      />
     </div>
   )
 }

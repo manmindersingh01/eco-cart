@@ -11,6 +11,7 @@ import { PageLoading } from '@/components/ui/page-loading'
 import { PublicReviews } from '@/components/storefront/public-reviews'
 import { OwnReviewForm } from '@/components/storefront/own-review'
 import { SimilarProducts } from '@/components/storefront/similar-products'
+import { ShoppingAssistant } from '@/components/storefront/shopping-assistant'
 import { readProductPage, readProductReviews } from '@/lib/storefront'
 import { formatRating } from '@/lib/storefront-display'
 
@@ -154,6 +155,7 @@ async function ProductContent({ params }: PageProps<'/products/[slug]'>) {
         ) : null}
       </div>
 
+      <ShoppingAssistant key={product.id} productIds={[product.id]} />
       <section aria-labelledby="reviews" className="grid gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 id="reviews" className="text-xl font-semibold">

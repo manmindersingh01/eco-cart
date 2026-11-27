@@ -1153,6 +1153,9 @@ Searches are limited per visitor address (120 a minute), counted in `rate_limits
 
 ### 6.9 Shopping assistant
 
+The assistant appears in a collapsible section on product and search pages, using the recommended placement when implementation was requested on 27 November 2026.
+It uses the products currently being viewed as context and keeps a bounded conversation only in the page's memory.
+
 The assistant is stateless on the server.
 The browser sends the question and the last few turns; the server retrieves the most relevant approved, in-stock products by embedding similarity plus any products the buyer named, and calls the text model with a strict instruction to answer only from the supplied product data and to say so when it cannot.
 The response is requested in JSON mode and validated as a structured object with the answer text, the product ids it cited, an optional two-product comparison, and a declined flag, so the storefront can render product cards and links instead of trusting free text.

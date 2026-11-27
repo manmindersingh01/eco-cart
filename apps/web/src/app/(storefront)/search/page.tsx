@@ -20,6 +20,7 @@ import { getPublicBrands } from '@/lib/public-catalogue'
 import { getStorage } from '@/lib/storage'
 import { LIST_SORTS, listingQuery, queryRecord } from '@/lib/storefront-display'
 import { DiscoverySearch } from '@/components/storefront/discovery-search'
+import { ShoppingAssistant } from '@/components/storefront/shopping-assistant'
 
 export const metadata: Metadata = {
   title: 'Search',
@@ -118,6 +119,7 @@ async function SearchResults({
           title="What are you looking for?"
           description="Type in the search box at the top: a product name, a brand, or what it is made of, for example bamboo toothbrush."
         />
+        <ShoppingAssistant productIds={[]} />
       </>
     )
   }
@@ -202,6 +204,13 @@ async function SearchResults({
         path="/search"
         query={query}
         nextCursor={result.nextCursor}
+      />
+      <ShoppingAssistant
+        key={result.items
+          .map((item) => item.id)
+          .slice(0, 5)
+          .join(',')}
+        productIds={result.items.map((item) => item.id)}
       />
     </>
   )
