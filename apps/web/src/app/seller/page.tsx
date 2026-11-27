@@ -1,8 +1,9 @@
 import { getOwnSeller } from '@ecokart/core'
 import type { Metadata } from 'next'
-import { LinkButton } from '@/components/ui/button'
-import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
+import { PortalTools } from '@/components/ui/portal-tools'
+import { Notice, StatusBadge } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/ui/page-header'
+import { sellerTools } from '@/lib/portal-tools'
 import { getDatabase } from '@/lib/db'
 import { requireSellerPageContext } from '@/lib/page-auth'
 import { sellerStatusPresentation } from '@/lib/seller-profile'
@@ -27,36 +28,14 @@ export default async function SellerPage() {
       <Notice title={status.title} tone={status.tone}>
         {status.description}
       </Notice>
-      <section aria-labelledby="seller-tools">
-        <h2 id="seller-tools" className="text-xl font-semibold">
-          Available tools
-        </h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <Card className="flex flex-col items-start">
-            <div className="flex w-full items-start justify-between gap-3">
-              <h3 className="text-lg font-semibold">Business profile</h3>
-              <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-            </div>
-            <p className="mt-2 flex-1 text-sm text-muted">
-              Review legal, tax, address, invoice, commission, and status
-              details. Update your display name and customer support contacts.
-            </p>
-            <LinkButton href="/seller/profile" className="mt-5">
-              View business profile
-            </LinkButton>
-          </Card>
-          <Card className="flex flex-col items-start">
-            <h3 className="text-lg font-semibold">Product catalogue</h3>
-            <p className="mt-2 flex-1 text-sm text-muted">
-              Create and manage draft product listings. Pending sellers can
-              prepare drafts while public selling waits for approval.
-            </p>
-            <LinkButton href="/seller/products" className="mt-5">
-              Manage products
-            </LinkButton>
-          </Card>
-        </div>
-      </section>
+      <PortalTools
+        tools={sellerTools}
+        badges={{
+          '/seller/profile': (
+            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+          ),
+        }}
+      />
     </div>
   )
 }

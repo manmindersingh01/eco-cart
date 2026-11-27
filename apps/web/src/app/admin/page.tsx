@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
-import { LinkButton } from '@/components/ui/button'
-import { Card } from '@/components/ui/feedback'
+import { PortalTools } from '@/components/ui/portal-tools'
+import { adminTools } from '@/lib/portal-tools'
 import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
@@ -16,52 +16,7 @@ export default function AdminPage() {
         title="Administrator portal"
         description="Manage the EcoKart marketplace from one place."
       />
-      <section aria-labelledby="available-tools">
-        <h2 id="available-tools" className="text-xl font-semibold">
-          Available tools
-        </h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <Card className="flex flex-col items-start">
-            <h3 className="text-lg font-semibold">Platform settings</h3>
-            <p className="mt-2 flex-1 text-sm text-muted">
-              Manage commerce values, payment options, the return window, AI
-              limits, moderation terms, and company details.
-            </p>
-            <LinkButton href="/admin/settings" className="mt-5">
-              Manage settings
-            </LinkButton>
-          </Card>
-          <Card className="flex flex-col items-start">
-            <h3 className="text-lg font-semibold">Sellers</h3>
-            <p className="mt-2 flex-1 text-sm text-muted">
-              Create seller accounts, maintain business details, and manage
-              approval or suspension.
-            </p>
-            <LinkButton href="/admin/sellers" className="mt-5">
-              Manage sellers
-            </LinkButton>
-          </Card>
-          <Card className="flex flex-col items-start">
-            <h3 className="text-lg font-semibold">Categories</h3>
-            <p className="mt-2 flex-1 text-sm text-muted">
-              Maintain the three-level category tree, GST rates, HSN defaults,
-              and public visibility.
-            </p>
-            <LinkButton href="/admin/categories" className="mt-5">
-              Manage categories
-            </LinkButton>
-          </Card>
-          <Card className="flex flex-col items-start">
-            <h3 className="text-lg font-semibold">Brands</h3>
-            <p className="mt-2 flex-1 text-sm text-muted">
-              Search and maintain the brand choices available to sellers.
-            </p>
-            <LinkButton href="/admin/brands" className="mt-5">
-              Manage brands
-            </LinkButton>
-          </Card>
-        </div>
-      </section>
+      <PortalTools tools={adminTools} />
     </div>
   )
 }
