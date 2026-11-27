@@ -37,7 +37,7 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Area | Screens |
 | --- | --- |
 | Sign-in | `/sign-in` (email code and phone code when SMS is enabled), `/access-denied` |
-| Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, review list, buyer review form and similar products), `/search` (keyword) |
+| Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, review list, buyer review form and similar products), `/search` (keyword, natural language and photo) |
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
 | Policies | `/policies/[slug]` for all six published policies, plus footer links and company details |
 | Buyer account | `/account` (profile and display name), `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
@@ -536,6 +536,12 @@ See [task 22](../temp/frontend/step-3-remaining-screens/22-background-work.md) f
 
 ### 7.11 AI features
 
+Tasks 23 and 24 add Keyword, Natural language and Photo options on `/search`, with keyword search retained in the header (agreed 27 November 2026).
+Natural search preserves supported filters and cursors in the address and explains the server's keyword fallback without guessing its cause.
+Photo uploads go directly to private storage; the key stays in client state, and the original and signed upload details are not displayed.
+These modes use best-match ordering because their existing contracts do not accept other sorts.
+See [task 23](../temp/frontend/step-3-remaining-screens/23-natural-search.md) and [task 24](../temp/frontend/step-3-remaining-screens/24-photo-search.md) for local evidence and remaining real-provider checks.
+
 Every AI screen must still work when AI is off or fails: the APIs fall back or say so, and the screen must show that calmly.
 AI suggestions are only suggestions; nothing is saved or published until a person chooses it.
 
@@ -558,7 +564,7 @@ AI suggestions are only suggestions; nothing is saved or published until a perso
 
 ### 7.12 Smaller items
 
-- Natural-language search, photo search, and the assistant need a place in the header or search page; agree the layout with the project lead.
+- Natural-language and photo search use the agreed search-page modes; the shopping assistant still needs a placement decision before task 26.
 - The administrator overview (`/admin`) and seller overview (`/seller`) should link to the new pages with counts, for example returns waiting for a decision or orders to dispatch.
 - The older task plan `12-release-and-evidence.md` lists historical release checks.
   Its mandatory Safari pass is superseded by the one-browser, three-size verification decision of 24 November 2026.

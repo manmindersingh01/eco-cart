@@ -60,7 +60,7 @@ Tasks started as planned; each task file records its current implementation and 
 | [20](./20-public-policies.md) | Public policy pages and footer | None |
 | [21](./21-policy-editor.md) | Administrator policy editor | 20 |
 | [22](./22-background-work.md) | Background work tools | None |
-| [23](./23-natural-search.md) | Natural-language search | None; layout choice required |
+| [23](./23-natural-search.md) | Natural-language search | None; search-page modes agreed 27 November 2026 |
 | [24](./24-photo-search.md) | Photo search | 23 |
 | [25](./25-similar-products.md) | Similar product suggestions | None |
 | [26](./26-shopping-assistant.md) | Shopping assistant panel | None; layout choice required |
@@ -95,7 +95,8 @@ Tasks started as planned; each task file records its current implementation and 
 These do not block writing this plan or unrelated tasks.
 Pause the affected implementation when a required decision is still missing.
 
-- Agree where natural search, photo search and the assistant sit before tasks 23, 24 and 26.
+- The user agreed on 27 November 2026 to search-page options for natural and photo search, with the header kept as keyword search (tasks 23 and 24).
+  The assistant's placement still needs agreement before task 26.
 - Keep payouts as records of transfers made outside EcoKart, with masked account numbers.
   The handover leaves payout holdbacks and secure access to full bank details unresolved; do not invent either behaviour.
 - Price-dependent GST remains a client/accountant decision in the design.
