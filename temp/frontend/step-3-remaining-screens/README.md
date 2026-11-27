@@ -67,19 +67,18 @@ Tasks started as planned; each task file records its current implementation and 
 | [27](./27-listing-drafts.md) | Seller listing suggestions | None | complete |
 | [28](./28-import-suggestions.md) | AI import mapping suggestions | None | complete |
 | [29](./29-ai-reports.md) | AI usage and search-gap reports | None | complete |
-| [30](./30-portal-navigation.md) | Portal overview links and counts | 01-29 as applicable | planned |
+| [30](./30-portal-navigation.md) | Portal overview links and counts | 01-29 as applicable | complete |
 | [31](./31-release-verification.md) | Local release verification and provider handover | 01-30 | planned |
 
 ## Current position - 27 November 2026
 
-29 of the 31 tasks are implemented and locally verified: 01-29.
+30 of the 31 tasks are implemented and locally verified: 01-30.
 The Status column above and each task's evidence section record what was checked.
 Complete means local implementation and the required local checks passed; it does not claim production sign-off or live-provider verification.
 
 | Remaining task | Current category | Next action |
 | --- | --- | --- |
-| 30 - Portal navigation and overview counts | Ready for implementation | Review menus and overview links now that tasks 01-29 exist; use counts only where existing services support them. |
-| 31 - Local release verification and provider handover | Final integration work | Run the complete local marketplace journeys after 01-30 and keep deferred live-provider checks explicit. |
+| 31 - Local release verification and provider handover | Ready for final local verification | Run the complete local marketplace journeys now that 01-30 are complete and keep deferred live-provider checks explicit. |
 
 ### Inputs and attention before launch
 
@@ -136,4 +135,4 @@ The initial planning delivery changed Markdown only after the separately authori
 Application tests were not run for that documentation-only pass.
 Its checks were formatting, local links and git diff --check.
 Subsequent implementation and application verification are recorded in each task file.
-The latest batch, tasks 26 and 29, passed `pnpm check` with 1,298 tests and the production build, plus the agreed three-size Chrome journey (`3 passed (2.0m)`).
+The latest implementation, task 30, passed `pnpm check` with 1,298 tests and the production build, plus the agreed three-size Chrome journey (`3 passed (2.8m)`).

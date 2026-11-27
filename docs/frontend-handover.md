@@ -49,7 +49,7 @@ Start your work from the latest `main`.
 
 ### Not built yet
 
-Final portal overview links/counts and release verification remain in this task plan.
+Final release verification remains in this task plan.
 Section 7 lists each one with its route, its APIs, and what "done" means.
 The backend for every one of them already exists.
 
@@ -574,7 +574,11 @@ AI suggestions are only suggestions; nothing is saved or published until a perso
 ### 7.12 Smaller items
 
 - Natural-language and photo search use the agreed search-page modes; the assistant uses the recommended collapsible product/search section.
-- The administrator overview (`/admin`) and seller overview (`/seller`) should link to the new pages with counts, for example returns waiting for a decision or orders to dispatch.
+- Task 30 links every implemented portal tool from both its menu and overview, using shared typed definitions.
+  The administrator overview has 15 tools and the seller overview has eight, with the seller's real business status retained.
+  Order and return totals are not added because the existing services expose cursor pages without efficient total-count contracts; page lengths are not totals.
+  Existing report and earnings pages continue to show their supported server-derived figures.
+  See [task 30](../temp/frontend/step-3-remaining-screens/30-portal-navigation.md) for navigation and access verification.
 - The older task plan `12-release-and-evidence.md` lists historical release checks.
   Its mandatory Safari pass is superseded by the one-browser, three-size verification decision of 24 November 2026.
 
