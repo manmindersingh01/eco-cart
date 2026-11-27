@@ -104,6 +104,20 @@ test('SO01 seller orders, isolation, cursors and invoice errors', async ({
     ).toBeVisible()
     await seller.getByRole('link', { name: 'Next orders', exact: true }).click()
     await expect(seller).toHaveURL(/cursor=/)
+    const target = seller.getByRole('link', {
+      name: `Order ${order.orderNumber}`,
+      exact: true,
+    })
+    const visited = new Set<string>()
+    while (!(await target.count())) {
+      const current = seller.url()
+      expect(visited.has(current)).toBe(false)
+      visited.add(current)
+      await seller
+        .getByRole('link', { name: 'Next orders', exact: true })
+        .click()
+      await expect(seller).not.toHaveURL(current)
+    }
     const cursorUrl = seller.url()
     await seller.reload()
     await expect(

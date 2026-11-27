@@ -4,7 +4,11 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   // Browser tests never share the developer's Next.js cache or server lock.
   ...(process.env.ECOKART_E2E === '1'
-    ? { distDir: '.next-e2e', devIndicators: false }
+    ? {
+        distDir: '.next-e2e',
+        devIndicators: false,
+        experimental: { turbopackFileSystemCacheForDev: false },
+      }
     : {}),
   poweredByHeader: false,
   typedRoutes: true,

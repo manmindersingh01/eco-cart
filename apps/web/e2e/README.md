@@ -43,7 +43,8 @@ Next.js regenerates route type files while serving pages; a concurrent typecheck
 `pnpm test:e2e:demo` runs the API walk-through with its own database, bucket, web server and worker, using the same ownership checks and cleanup as browser runs.
 It also seeds example products because the combined seller/buyer story purchases another seller's product.
 The demo now exercises applying to sell and combined-account shopping rather than skipping them.
-Required-feature skips fail the isolated demo gate; an AI-disabled step is reported explicitly as skipped.
+The demo starts its Razorpay stand-in on loopback and verifies payment confirmation, stock and ledger effects after a webhook replay.
+The only allowed skip is the shopping assistant when AI is disabled.
 The redacted command summary belongs in task evidence, while raw local output is saved in that run's `demo.txt` and remains ignored.
 WebKit is automated engine coverage, not proof of actual Safari on Apple hardware.
 Phone projects exercise responsive widths without claiming physical-device emulation.
