@@ -63,29 +63,26 @@ Tasks started as planned; each task file records its current implementation and 
 | [23](./23-natural-search.md) | Natural-language search | None; search-page modes agreed 27 November 2026 | complete |
 | [24](./24-photo-search.md) | Photo search | 23 | complete |
 | [25](./25-similar-products.md) | Similar product suggestions | None | complete |
-| [26](./26-shopping-assistant.md) | Shopping assistant panel | None; layout choice required | planned |
+| [26](./26-shopping-assistant.md) | Shopping assistant panel | None; recommended collapsible section selected | complete |
 | [27](./27-listing-drafts.md) | Seller listing suggestions | None | complete |
 | [28](./28-import-suggestions.md) | AI import mapping suggestions | None | complete |
-| [29](./29-ai-reports.md) | AI usage and search-gap reports | None | planned |
+| [29](./29-ai-reports.md) | AI usage and search-gap reports | None | complete |
 | [30](./30-portal-navigation.md) | Portal overview links and counts | 01-29 as applicable | planned |
 | [31](./31-release-verification.md) | Local release verification and provider handover | 01-30 | planned |
 
 ## Current position - 27 November 2026
 
-27 of the 31 tasks are implemented and locally verified: 01-25, 27 and 28.
+29 of the 31 tasks are implemented and locally verified: 01-29.
 The Status column above and each task's evidence section record what was checked.
 Complete means local implementation and the required local checks passed; it does not claim production sign-off or live-provider verification.
 
 | Remaining task | Current category | Next action |
 | --- | --- | --- |
-| 26 - Shopping assistant | Needs a layout decision | Choose a collapsible section on product/search pages or a floating button with a side panel; the section is the recommendation. |
-| 29 - AI usage and search-gap reports | Ready for implementation | Build the two administrator reports through existing services; no real provider key is required for local work. |
-| 30 - Portal navigation and overview counts | After the remaining screens | Review menus and overview links once task 26 and the reports exist; use counts only where existing services support them. |
+| 30 - Portal navigation and overview counts | Ready for implementation | Review menus and overview links now that tasks 01-29 exist; use counts only where existing services support them. |
 | 31 - Local release verification and provider handover | Final integration work | Run the complete local marketplace journeys after 01-30 and keep deferred live-provider checks explicit. |
 
 ### Inputs and attention before launch
 
-- Confirm the assistant placement for task 26.
 - Configure or confirm Razorpay/OpenRouter credentials and run the separate live-provider checks, including catalogue embeddings and the payment webhook.
   Local stand-ins and browser response fixtures do not establish real-provider success.
 - Supply or approve the six policy texts and company/legal details; development placeholders are not approved launch content.
@@ -123,7 +120,7 @@ These do not block writing this plan or unrelated tasks.
 Pause the affected implementation when a required decision is still missing.
 
 - The user agreed on 27 November 2026 to search-page options for natural and photo search, with the header kept as keyword search (tasks 23 and 24).
-  The assistant's placement still needs agreement before task 26.
+  Task 26 uses the recommended collapsible product/search section following the instruction to start implementation.
 - Keep payouts as records of transfers made outside EcoKart, with masked account numbers.
   The handover leaves payout holdbacks and secure access to full bank details unresolved; do not invent either behaviour.
 - Price-dependent GST remains a client/accountant decision in the design.
@@ -139,4 +136,4 @@ The initial planning delivery changed Markdown only after the separately authori
 Application tests were not run for that documentation-only pass.
 Its checks were formatting, local links and git diff --check.
 Subsequent implementation and application verification are recorded in each task file.
-The latest batch, tasks 27 and 28, passed `pnpm check` with 1,292 tests and the production build, plus the agreed three-size Chrome journey.
+The latest batch, tasks 26 and 29, passed `pnpm check` with 1,298 tests and the production build, plus the agreed three-size Chrome journey (`3 passed (2.0m)`).

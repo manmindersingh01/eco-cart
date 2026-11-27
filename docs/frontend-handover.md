@@ -37,19 +37,19 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 | Area | Screens |
 | --- | --- |
 | Sign-in | `/sign-in` (email code and phone code when SMS is enabled), `/access-denied` |
-| Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, review list, buyer review form and similar products), `/search` (keyword, natural language and photo) |
+| Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, review list, buyer review form and similar products), `/search` (keyword, natural language and photo), collapsible shopping assistant on product and search pages |
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
 | Policies | `/policies/[slug]` for all six published policies, plus footer links and company details |
 | Buyer account | `/account` (profile and display name), `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
 | Seller portal | Overview, business profile, verification documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports with AI mapping choices, listing suggestions with explicit field selection, orders (list, detail, dispatch and delivery), read-only returns, earnings with statements and masked bank summary, invoice list |
-| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds), seller balances, bank/ledger details, external payout and adjustment recording, settlement statements, customer review moderation, coupon management, policy editor, background work and email retries |
+| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds), seller balances, bank/ledger details, external payout and adjustment recording, settlement statements, customer review moderation, coupon management, policy editor, background work and email retries, AI usage and search-gap reports |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
 Start your work from the latest `main`.
 
 ### Not built yet
 
-The shopping assistant, administrator AI/search-gap reports, final portal overview links and release verification remain in this task plan.
+Final portal overview links/counts and release verification remain in this task plan.
 Section 7 lists each one with its route, its APIs, and what "done" means.
 The backend for every one of them already exists.
 
@@ -554,6 +554,9 @@ AI suggestions are only suggestions; nothing is saved or published until a perso
 - **Shopping assistant:** a panel that sends `POST /api/assistant` with `{ "question", "history", "productIds" }` (`productIds` are the products the shopper is looking at, for example two to compare).
   The answer is an `AssistantAnswer`: plain-text `answer`, `declined` when it cannot answer from the products, product cards, and an optional `comparison` table.
   Show `answer` as plain text and the products as normal product cards.
+  Task 26 uses the recommended collapsible section on product and search pages following the instruction to start implementation.
+  It sends at most five viewed ids and six earlier messages, keeps three exchanges in page memory and leaves shopping usable on errors.
+  See [task 26](../temp/frontend/step-3-remaining-screens/26-shopping-assistant.md) for evidence and live-provider limits.
 - **Listing draft for sellers,** in the product editor once it has a ready photo: `POST /api/seller/listing-drafts` with `{ "productId" }` (202, or 200 with a recent draft), then check `GET /api/seller/listing-drafts/{id}` until `succeeded`.
   Show each suggested field next to the current value and let the seller pick fields; save the picked ones with the normal `PATCH /api/seller/products/{id}`.
   Never overwrite what the seller has typed but not saved.
@@ -565,10 +568,12 @@ AI suggestions are only suggestions; nothing is saved or published until a perso
   Pending AI work is shown without blocking manual choices; late responses never replace those choices, and mapping still requires confirmation before `PUT .../mapping`.
   See [task 28](../temp/frontend/step-3-remaining-screens/28-import-suggestions.md) for evidence.
 - **Administrator reports:** `/admin/ai` from `GET /api/admin/ai/usage?from=&to=` (calls, failures, cost per day and feature, today's use against the limit), and `/admin/search-gaps` from `GET /api/admin/search/gaps?days=30` (searches that found nothing, so the team knows what to stock).
+  Task 29 adds both pages with the service's date/day filters, exact USD costs, explicit unknown costs and today's separate allowance.
+  See [task 29](../temp/frontend/step-3-remaining-screens/29-ai-reports.md) for verification.
 
 ### 7.12 Smaller items
 
-- Natural-language and photo search use the agreed search-page modes; the shopping assistant still needs a placement decision before task 26.
+- Natural-language and photo search use the agreed search-page modes; the assistant uses the recommended collapsible product/search section.
 - The administrator overview (`/admin`) and seller overview (`/seller`) should link to the new pages with counts, for example returns waiting for a decision or orders to dispatch.
 - The older task plan `12-release-and-evidence.md` lists historical release checks.
   Its mandatory Safari pass is superseded by the one-browser, three-size verification decision of 24 November 2026.
