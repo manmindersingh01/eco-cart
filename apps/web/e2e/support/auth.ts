@@ -79,7 +79,9 @@ export async function signIn(
   await page.getByLabel('Six-digit code').fill(code)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page).not.toHaveURL(/\/sign-in/)
-  const me = await page.request.get('/api/me')
+  // A dev-server keep-alive connection may reset after navigation.
+  // Playwright retries only ECONNRESET here, never HTTP errors or writes.
+  const me = await page.request.get('/api/me', { maxRetries: 2 })
   expect(me.status()).toBe(200)
   return z
     .object({ role: z.string(), email: z.string() })

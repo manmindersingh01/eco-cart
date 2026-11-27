@@ -34,6 +34,8 @@ export async function startTestWorker(
     max: 2,
     migrate: false,
     supervise: false,
+    // Allow manual test passes to refresh counts again after one second.
+    monitorIntervalSeconds: 1,
     schedule: false,
   })
   boss.on('error', (error) => {

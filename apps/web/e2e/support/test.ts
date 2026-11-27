@@ -14,13 +14,16 @@ export const test = base.extend<{ checkPage: () => Promise<void> }>({
       failures.push(`Page error: ${error.message}`),
     )
     page.on('console', (message) => {
-      // Resource errors from these explicitly asserted refusals are expected.
+      // A missing own review is the API's documented empty state (404).
+      // These resource errors and explicitly asserted refusals are expected.
       const location = message.location().url
       const expectedRefusal =
         (/Failed to load resource.*400/.test(message.text()) &&
           /\/api\/seller\/products\/[^/]+\/submit$/.test(location)) ||
         (/Failed to load resource.*401/.test(message.text()) &&
           location.includes('/api/me')) ||
+        (/Failed to load resource.*404/.test(message.text()) &&
+          /\/api\/products\/[^/]+\/reviews\/mine$/.test(location)) ||
         (/Failed to load resource.*400/.test(message.text()) &&
           location.includes('/api/auth/sign-in/email-otp'))
       if (message.type() === 'error' && !expectedRefusal) {

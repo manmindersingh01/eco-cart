@@ -109,6 +109,50 @@ textarea {
   padding-inline: var(--page-gutter);
 }
 
+.policy-markdown > * + * {
+  margin-top: 1rem;
+}
+.policy-markdown :is(h2, h3, h4, h5, h6) {
+  font-weight: 600;
+  margin-top: 1.5rem;
+}
+.policy-markdown h2 {
+  font-size: 1.5rem;
+}
+.policy-markdown h3 {
+  font-size: 1.25rem;
+}
+.policy-markdown ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.policy-markdown ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+.policy-markdown li + li {
+  margin-top: 0.5rem;
+}
+.policy-markdown a {
+  color: var(--brand-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.policy-markdown blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 1rem;
+}
+.policy-markdown pre {
+  overflow-x: auto;
+  background: var(--surface-subtle);
+  padding: 1rem;
+  border-radius: var(--radius-sm);
+}
+.policy-markdown code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .skip-link {
   position: fixed;
   z-index: 100;

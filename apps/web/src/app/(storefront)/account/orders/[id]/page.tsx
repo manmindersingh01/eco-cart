@@ -14,6 +14,7 @@ import { AddressLines } from '@/components/buyer/address-form'
 import { LineThumbnail, optionsText } from '@/components/buyer/line-thumbnail'
 import { OrderActions } from '@/components/buyer/order-actions'
 import { OrderTotals } from '@/components/buyer/order-totals'
+import { ReturnRequest } from '@/components/buyer/return-request'
 import { Card, Notice, StatusBadge } from '@/components/ui/feedback'
 import { PageLoading } from '@/components/ui/page-loading'
 import { requireBuyerPage } from '@/lib/buyer-page'
@@ -129,7 +130,9 @@ async function OrderContent({
                   : 'Online with Razorpay'}
               </span>
               <span className="font-medium">
-                {PAYMENT_STATE[order.paymentState]}
+                {order.paymentMethod === 'cod' && order.paymentState === 'paid'
+                  ? 'Cash collected'
+                  : PAYMENT_STATE[order.paymentState]}
               </span>
             </p>
             {order.paidAt ? (
@@ -145,7 +148,9 @@ async function OrderContent({
                 totalPaise={order.totalPaise}
                 couponCode={order.couponCode}
                 totalLabel={
-                  order.paymentMethod === 'cod' && order.status !== 'cancelled'
+                  order.paymentMethod === 'cod' &&
+                  order.status !== 'cancelled' &&
+                  order.paymentState !== 'paid'
                     ? 'To pay on delivery'
                     : 'Total'
                 }
@@ -315,6 +320,17 @@ function OrderLine({ line }: { line: OrderLineView }) {
               </a>
             ) : null}
           </div>
+        ) : null}
+        {line.status === 'delivered' ? (
+          <ReturnRequest lineId={line.id} />
+        ) : null}
+        {line.status === 'return_requested' || line.status === 'returned' ? (
+          <Link
+            href="/account/returns"
+            className="mt-3 inline-flex min-h-11 items-center text-brand-strong underline"
+          >
+            Track your returns
+          </Link>
         ) : null}
       </div>
     </Card>

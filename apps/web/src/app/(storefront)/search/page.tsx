@@ -19,6 +19,8 @@ import { getDatabase } from '@/lib/db'
 import { getPublicBrands } from '@/lib/public-catalogue'
 import { getStorage } from '@/lib/storage'
 import { LIST_SORTS, listingQuery, queryRecord } from '@/lib/storefront-display'
+import { DiscoverySearch } from '@/components/storefront/discovery-search'
+import { ShoppingAssistant } from '@/components/storefront/shopping-assistant'
 
 export const metadata: Metadata = {
   title: 'Search',
@@ -38,14 +40,75 @@ export default function SearchPage(props: PageProps<'/search'>) {
           in the header's search box, which keeps them on this page. */}
       <Suspense fallback={<ContentLoading />}>
         <div className="grid gap-6">
-          <SearchResults {...props} />
+          <SearchWorkspace {...props} />
         </div>
       </Suspense>
     </main>
   )
 }
 
-async function SearchResults({ searchParams }: PageProps<'/search'>) {
+async function SearchWorkspace({ searchParams }: PageProps<'/search'>) {
+  const raw = await searchParams
+  const value = (key: string) =>
+    Array.isArray(raw[key]) ? raw[key].at(-1) : raw[key]
+  const mode = value('mode') ?? 'keyword'
+  const query = listingQuery(raw)
+  const initial = {
+    ...query,
+    ...(value('category') ? { category: value('category') } : {}),
+  }
+  return (
+    <>
+      <nav aria-label="Search mode" className="flex flex-wrap gap-3">
+        <LinkButton
+          variant={mode === 'keyword' ? 'primary' : 'secondary'}
+          aria-current={mode === 'keyword' ? 'page' : undefined}
+          href={{ pathname: '/search', query: query.q ? { q: query.q } : {} }}
+        >
+          Keyword
+        </LinkButton>
+        <LinkButton
+          variant={mode === 'natural' ? 'primary' : 'secondary'}
+          aria-current={mode === 'natural' ? 'page' : undefined}
+          href={{
+            pathname: '/search',
+            query: { mode: 'natural', ...(query.q ? { q: query.q } : {}) },
+          }}
+        >
+          Natural language
+        </LinkButton>
+        <LinkButton
+          variant={mode === 'photo' ? 'primary' : 'secondary'}
+          aria-current={mode === 'photo' ? 'page' : undefined}
+          href="/search?mode=photo"
+        >
+          Photo
+        </LinkButton>
+      </nav>
+      {mode === 'keyword' ? (
+        <SearchResults searchParams={Promise.resolve(raw)} />
+      ) : mode === 'natural' || mode === 'photo' ? (
+        <DiscoverySearch
+          key={mode === 'natural' ? JSON.stringify(initial) : mode}
+          mode={mode}
+          initial={initial}
+          brands={(await getPublicBrands({ limit: 100 })).items}
+        />
+      ) : (
+        <>
+          <h1 className="text-3xl font-semibold">Search</h1>
+          <Notice tone="danger" title="Choose a search mode">
+            Use Keyword, Natural language or Photo above.
+          </Notice>
+        </>
+      )}
+    </>
+  )
+}
+
+async function SearchResults({
+  searchParams,
+}: Pick<PageProps<'/search'>, 'searchParams'>) {
   const query = listingQuery(await searchParams)
   const keyword = query.q ?? ''
   if (!keyword) {
@@ -56,6 +119,7 @@ async function SearchResults({ searchParams }: PageProps<'/search'>) {
           title="What are you looking for?"
           description="Type in the search box at the top: a product name, a brand, or what it is made of, for example bamboo toothbrush."
         />
+        <ShoppingAssistant productIds={[]} />
       </>
     )
   }
@@ -140,6 +204,13 @@ async function SearchResults({ searchParams }: PageProps<'/search'>) {
         path="/search"
         query={query}
         nextCursor={result.nextCursor}
+      />
+      <ShoppingAssistant
+        key={result.items
+          .map((item) => item.id)
+          .slice(0, 5)
+          .join(',')}
+        productIds={result.items.map((item) => item.id)}
       />
     </>
   )

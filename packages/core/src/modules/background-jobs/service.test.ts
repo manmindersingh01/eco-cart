@@ -94,9 +94,6 @@ async function stateOf(id: string): Promise<string | undefined> {
 describe('the queues', () => {
   test('lists every queue in src/jobs.ts with its counts', async () => {
     await failedJob(RENDER_INVOICE_QUEUE, { invoiceId: crypto.randomUUID() })
-    // The worker refreshes the counts about once a minute; this does it now.
-    await worker.countJobs(RENDER_INVOICE_QUEUE)
-
     const queues = await listJobQueues(admin, queue)
     expect(queues.map(({ name }) => name)).toEqual(
       QUEUES.map(({ name }) => name),
@@ -111,8 +108,18 @@ describe('the queues', () => {
         expect(Number.isInteger(count) && count >= 0).toBe(true)
       }
     }
-    const invoices = queues.find(({ name }) => name === RENDER_INVOICE_QUEUE)
-    expect(invoices?.failed).toBeGreaterThanOrEqual(1)
+    // Queue statistics can lag the failed job while another supervisor runs.
+    await expect
+      .poll(
+        async () => {
+          await worker.countJobs(RENDER_INVOICE_QUEUE)
+          const refreshed = await listJobQueues(admin, queue)
+          return refreshed.find(({ name }) => name === RENDER_INVOICE_QUEUE)
+            ?.failed
+        },
+        { timeout: 10000 },
+      )
+      .toBeGreaterThanOrEqual(1)
   })
 
   test('are for administrators only', async () => {

@@ -94,6 +94,13 @@ try {
   const port = await availablePort()
   const origin = `http://127.0.0.1:${port}`
   const env = childEnvironment(resources, origin)
+  if (demo) {
+    // The demo starts the stand-in itself. Share its settings with the web app.
+    env.RAZORPAY_KEY_ID = 'rzp_test_ecokartdemo'
+    env.RAZORPAY_KEY_SECRET = resources.id + '-test-key'
+    env.RAZORPAY_WEBHOOK_SECRET = resources.id + '-test-webhook'
+    env.RAZORPAY_API_URL = `http://127.0.0.1:${await availablePort(port + 1)}`
+  }
   env.E2E_RESULTS_DIR = join(runDir, 'test-results')
   env.E2E_REPORT_DIR = join(runDir, 'playwright-report')
   if (diagnostics === 'assertion') env.E2E_PROBE = 'assertion'
@@ -106,7 +113,9 @@ try {
   await prepareEnvironment(resources, origin)
   checkInterrupt()
   if (diagnostics === 'setup') throw new Error('Expected harness setup failure')
-  env.E2E_FIXTURES = JSON.stringify(await prepareFixtures(env))
+  env.E2E_FIXTURES = JSON.stringify(
+    await prepareFixtures(env, resources.database.migrationUrl),
+  )
   if (demo) await prepareDemoFixtures(env, resources.database.workerUrl)
   checkInterrupt()
   worker = startNode(
@@ -198,9 +207,16 @@ try {
   if (demo) {
     await writeFile(join(runDir, 'demo.txt'), browsers.output())
     if (
-      /skipped: not built yet|not run: an earlier step failed/.test(
-        browsers.output(),
-      )
+      browsers
+        .output()
+        .split(/\r?\n/)
+        .some(
+          (line) =>
+            line.startsWith('- ') &&
+            !line.startsWith(
+              '- The buyer asks the shopping assistant about the lunch box: the AI features are switched off here',
+            ),
+        )
     )
       result = 1
   }

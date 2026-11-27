@@ -41,7 +41,10 @@ export default defineConfig({
     navigationTimeout: 60_000,
   },
   projects: browsers.flatMap((browser) =>
-    ['desktop', 'phone'].map((size) => ({
+    (browser === 'chrome'
+      ? ['desktop', 'medium', 'phone']
+      : ['desktop', 'phone']
+    ).map((size) => ({
       name: `${browser}-${size}`,
       use: {
         browserName: browser === 'chrome' ? ('chromium' as const) : browser,
@@ -49,7 +52,9 @@ export default defineConfig({
         viewport:
           size === 'desktop'
             ? { width: 1440, height: 900 }
-            : { width: 390, height: 844 },
+            : size === 'medium'
+              ? { width: 768, height: 1024 }
+              : { width: 390, height: 844 },
       },
     })),
   ),

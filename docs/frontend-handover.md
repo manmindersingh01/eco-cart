@@ -36,21 +36,22 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 
 | Area | Screens |
 | --- | --- |
-| Sign-in | `/sign-in` (email code), `/access-denied` |
-| Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, reviews list), `/search` (keyword) |
+| Sign-in | `/sign-in` (email code and phone code when SMS is enabled), `/access-denied` |
+| Shop | Home with product shelves, `/categories/[slug]`, `/products/[slug]` (gallery, video, variants, minimum quantity, review list, buyer review form and similar products), `/search` (keyword, natural language and photo), collapsible shopping assistant on product and search pages |
 | Cart and checkout | `/cart` (quantities, coupons), `/checkout` (address, cash on delivery or Razorpay) |
-| Buyer account | `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
-| Seller portal | Overview, business profile, documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports |
-| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation |
+| Policies | `/policies/[slug]` for all six published policies, plus footer links and company details |
+| Buyer account | `/account` (profile and display name), `/account/orders`, `/account/orders/[id]` (progress, tracking, invoices, cancel, Pay now), `/account/addresses`, `/account/seller-application` |
+| Seller portal | Overview, business profile, verification documents, products (list, create, full editor with photos, video, variants, submit for review), catalogue imports with AI mapping choices, listing suggestions with explicit field selection, orders (list, detail, dispatch and delivery), read-only returns, earnings with statements and masked bank summary, invoice list |
+| Administrator portal | Overview, platform settings, sellers (list, create, detail, approve, reject, suspend, reinstate, ask for documents), seller document review, categories, brands, listing moderation, orders (filtered list, detail, cancellation, refund recording, delivery and invoice regeneration), returns (filtered list, detail, approve, reject and record external refunds), seller balances, bank/ledger details, external payout and adjustment recording, settlement statements, customer review moderation, coupon management, policy editor, background work and email retries, AI usage and search-gap reports |
 
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
 Start your work from the latest `main`.
 
-### Not built yet
+### Local release verification
 
-Seller dispatch and seller order screens, administrator order screens, returns (buyer, seller, and administrator), seller earnings and statements, administrator payouts, coupons administration, review writing and moderation, policy pages and their editor, background work tools, the AI screens, and a few account extras.
-Section 7 lists each one with its route, its APIs, and what "done" means.
-The backend for every one of them already exists.
+The buyer, seller and administrator journeys passed the local release checks on 28 November 2026.
+See the [task 31 evidence](../temp/frontend/step-3-remaining-screens/31-release-verification.md) for the tested commit, commands and screenshots.
+The project lead can use the [provider checklist](../temp/frontend/step-3-remaining-screens/31-provider-checklist.md) to verify Razorpay and OpenRouter with the configured accounts.
 
 ## 3. Running it on your computer
 
@@ -261,7 +262,8 @@ This applies to photos, videos, return photos, seller documents, imports, invoic
 - `cx()` in `src/lib/classes.ts` only joins class names; it does not resolve two classes that fight (for example `px-4` and `px-2`).
   Do not pass a size or padding to a component that already sets one; give the component an option instead.
 - Every page must work at phone width (375 pixels) and desktop width with no sideways scrolling.
-  Check every screen in Chrome and Safari at both widths, and fix anything that looks off, even if you did not cause it.
+  Verify one browser (Chrome by default) at large (1440 x 900), medium (768 x 1024) and mobile (390 x 844) sizes, and fix visible issues.
+  The project lead agreed this focused scope on 24 November 2026; it replaces mandatory multi-browser and real Safari checks.
 - Every control needs a visible label or an `aria-label`, buttons must be at least 44 pixels tall (`min-h-11`), and status messages use `Notice`, which announces itself to screen readers.
 
 ## 6. What every finished screen needs
@@ -270,7 +272,8 @@ A screen is done when all of these are true:
 
 1. It works through the real APIs against `pnpm dev`, for the right role, and refuses the wrong one.
 2. It shows loading, empty, error, and success states, and every message from the server.
-3. It looks right at phone and desktop widths, in light and dark mode, in Chrome and Safari.
+3. It looks right at large, medium and mobile sizes in one browser, in light and dark mode, with keyboard access and no horizontal overflow.
+   Focus on the main journey, permissions and important errors; testing every possible scenario is not required.
 4. These pass, run one at a time from the repository root:
 
    ```bash
@@ -314,6 +317,14 @@ Each item gives the route to create, the APIs it uses (all listed in section 10)
 
 ### 7.1 Seller orders and dispatch (shipping)
 
+Task 01 adds `/seller/orders` and `/seller/orders/[id]` on 21 November 2026.
+Task 01 was completed on 24 November 2026, with Chrome checks at all three agreed sizes and `pnpm check` passing.
+The screens show seller-only lines, delivery details, status filters, cursor navigation and seller invoice downloads, with an Orders menu entry.
+Implementation verification is recorded in [task 01](../temp/frontend/step-3-remaining-screens/01-seller-orders.md).
+Task 02 adds line selection, courier details, optional HTTPS tracking links and confirmed delivery actions to the order detail page.
+Its verification evidence is recorded in [task 02](../temp/frontend/step-3-remaining-screens/02-seller-dispatch.md).
+The existing API contracts below are unchanged.
+
 There is no courier company integration.
 The seller books their own courier (for example Delhivery or India Post), then records the courier name and tracking number in EcoKart.
 The buyer sees the tracking details and link on their order page straight away.
@@ -331,6 +342,18 @@ The buyer sees the tracking details and link on their order page straight away.
 
 ### 7.2 Administrator orders
 
+Task 03 adds the administrator order list and detail pages on 25 November 2026.
+The list supports status, full order-number and needs-refund filters, with cursor pagination.
+Applying filters resets pagination; Back to orders preserves the filters and cursor from the list.
+Details show the original order totals and items, delivery address, parcels, payment records, event history and private invoice downloads.
+Implementation and verification evidence is recorded in [task 03](../temp/frontend/step-3-remaining-screens/03-admin-orders.md).
+Task 04 adds confirmed cancellation with a reason, recording an already-made Razorpay refund, parcel delivery overrides and invoice PDF regeneration.
+Refund wording says explicitly that EcoKart does not move money, and rupee input is converted to exact integer paise.
+Actions refresh the server view after success or failure so stale controls are removed.
+Invoice regeneration shows request failures and the accepted queue state; its API does not report when that specific render job finishes or fails.
+An available PDF may still be the previous version, so the UI does not announce a completed regeneration based on availability alone.
+Verification evidence is recorded in [task 04](../temp/frontend/step-3-remaining-screens/04-admin-order-actions.md).
+
 - `/admin/orders`: `GET /api/admin/orders` with filters `?status=`, `?needsRefund=true` (paid orders that were cancelled and still owe a refund), and `?orderNumber=EK-261018-000123` to find one order.
   Show a clear "needs refund" marker.
 - `/admin/orders/[id]`: `GET /api/admin/orders/{id}` gives the lines, parcels, payments, the event history, and invoices.
@@ -342,6 +365,28 @@ The buyer sees the tracking details and link on their order page straight away.
 - Add "Orders" to the administrator menu.
 
 ### 7.3 Returns
+
+Task 05 adds return requests to delivered lines on the buyer order detail page.
+The form supports quantity, the existing reasons and optional photos uploaded directly to storage and checked by the worker before submission.
+Other requires an explanation; request errors preserve the form, and photo polling stops when the form closes or unmounts.
+Blank quantity asks the server to return everything still eligible.
+Evidence is recorded in [task 05](../temp/frontend/step-3-remaining-screens/05-buyer-return-request.md).
+Task 06 adds `/account/returns` and `/account/returns/[id]` with cursor pagination, status wording, decision notes, recorded refunds and protected photo links.
+The account tabs and returned order lines link to tracking; details provide a refresh button and a link back to the originating list page.
+Evidence is recorded in [task 06](../temp/frontend/step-3-remaining-screens/06-buyer-returns.md).
+Task 07 adds the seller return list and read-only detail pages, status filters, cursor pagination, administrator notes and protected photos opened with `?as=seller`.
+Seller routes always act in seller context, including dual-role accounts, and only show that business's returns.
+Refund records are omitted by the seller contract; the detail uses the return status without claiming an omitted record means no refund.
+Evidence is recorded in [task 07](../temp/frontend/step-3-remaining-screens/07-seller-returns.md).
+Task 08 adds the administrator return list and detail pages with status filters, private photos, approval with an optional note and rejection with a required note.
+Requested and approved lists use oldest-first service ordering; finished lists use newest-first ordering.
+Confirmed decisions refresh the server view, including when another tab has already decided the return.
+Approval does not issue or record a refund.
+Evidence is recorded in [task 08](../temp/frontend/step-3-remaining-screens/08-admin-return-decisions.md).
+Task 09 adds recording an already-made refund on approved returns, with exact money input, the server's maximum value, method-specific references and confirmation that no money is moved.
+Cash-on-delivery returns use bank transfer; online returns offer Razorpay or bank transfer, matching the existing service.
+The form explains that recording a smaller refund still completes the return, and refreshes the server result after saving or a conflict.
+Evidence is recorded in [task 09](../temp/frontend/step-3-remaining-screens/09-admin-return-refunds.md).
 
 Returns can be asked for only after delivery, within the return window the administrator set (setting `return_window_days`).
 
@@ -362,6 +407,16 @@ Returns can be asked for only after delivery, within the return window the admin
 
 ### 7.4 Seller earnings
 
+Task 10 adds `/seller/earnings`, its seller menu entry, the signed current balance, paginated money history and masked bank summary.
+Negative balances remain negative, and the wording explains whether the seller or EcoKart owes the amount.
+Bank details are read-only for sellers and show only the last four account digits.
+The refresh button reloads server totals.
+Evidence is recorded in [task 10](../temp/frontend/step-3-remaining-screens/10-seller-earnings.md).
+Task 11 adds statement requests and history to earnings and the separate seller invoice list.
+Statement status updates while processing, displays failure reasons and stops polling after completion or unmount.
+Ready CSV and PDF files use protected seller-context routes, with unavailable-file messages and no signed storage URL stored in the page.
+Evidence is recorded in [task 11](../temp/frontend/step-3-remaining-screens/11-seller-documents.md).
+
 - `/seller/earnings`:
   - The balance and the ledger from `GET /api/seller/ledger` (`balancePaise` plus a page of entries).
     Entry types: `sale`, `commission`, `refund_reversal`, `commission_reversal`, `payout`, `adjustment`.
@@ -376,6 +431,19 @@ Returns can be asked for only after delivery, within the return window the admin
 - Add "Earnings" and "Invoices" to the seller menu.
 
 ### 7.5 Administrator payouts and seller money
+
+Task 12 adds the balance list and seller-detail bank and ledger screens on `frontend/step-3-admin-seller-money`.
+The bank form starts empty, confirms only the new account's last four digits and clears all entry fields after success.
+It also clears the number after a failed save attempt.
+The balance list uses the service's largest-first non-zero ordering and cursor pages; seller ledgers show the full balance alongside newest-first entries.
+See [task 12](../temp/frontend/step-3-remaining-screens/12-admin-seller-money.md) for verification evidence.
+Tasks 13 and 14 add payout and adjustment recording and administrator statement requests, history and private CSV downloads on `frontend/step-3-admin-payouts-statements`.
+Payouts record completed external transfers and never initiate a payment.
+Confirmations show the amount and masked bank account; rejected writes preserve useful values.
+Uncertain write results require a reload and history check before another attempt from that form.
+Statements use administrator access for status and file reads, while the shared components keep seller access as their default.
+Statement and ledger cursors remain separate.
+See [task 13](../temp/frontend/step-3-remaining-screens/13-admin-payout-recording.md) and [task 14](../temp/frontend/step-3-remaining-screens/14-admin-statements.md) for verification evidence.
 
 - `/admin/payouts`: sellers with a balance from `GET /api/admin/seller-balances`, largest first, with their bank account's last 4 digits or "no bank account yet".
 - On the seller detail page (`/admin/sellers/[id]`), add:
@@ -392,16 +460,31 @@ Returns can be asked for only after delivery, within the return window the admin
 
 ### 7.6 Buyer account extras
 
+Tasks 15 and 16 add display-name editing at `/account` and phone sign-in on `frontend/step-3-buyer-profile-phone-sign-in`.
+The profile uses the existing buyer access rule and refreshes the header after a successful name save.
+It keeps contact details read-only and hides placeholder email addresses.
+An expired session preserves the draft name and links back through sign-in.
+Phone sign-in uses the existing SMS configuration and is offered only while that channel is enabled.
+Email sign-in and safe return URLs remain supported.
+See [task 15](../temp/frontend/step-3-remaining-screens/15-buyer-name.md) and [task 16](../temp/frontend/step-3-remaining-screens/16-phone-sign-in.md) for verification evidence.
+
 - **Name:** there is no EcoKart route for it; use Better Auth's `authClient.updateUser({ name })` from `src/lib/auth-client.ts`.
   Changing an email address or phone number needs a verified flow; agree it with the project lead first.
 - **Phone sign-in:** the backend supports it (Better Auth's phone plugin; in development each code lands in Mailpit as an email to the number without its plus sign at `sms.mailpit.test`, for example `919812345678@sms.mailpit.test`).
-  Add `phoneNumberClient()` (from `better-auth/client/plugins`) to `src/lib/auth-client.ts`, then offer "Sign in with phone" on `/sign-in` using `authClient.phoneNumber.sendOtp` and `authClient.phoneNumber.verify`.
+  `src/lib/auth-client.ts` includes `phoneNumberClient()` (from `better-auth/client/plugins`), and `/sign-in` offers "Sign in with phone" using `authClient.phoneNumber.sendOtp` and `authClient.phoneNumber.verify` when SMS is enabled.
   Phone-only accounts get a placeholder email ending in `.invalid`; never show it.
 - **Reviews:** on the product page, a signed-in buyer writes one review (`POST /api/products/{slug}/reviews` with `{ "rating": 1-5, "authorName", "title", "body" }`) and edits it later (`GET` and `PATCH .../reviews/mine`).
   The "Verified purchase" badge comes from the server; never decide it in the browser.
   Show "load more" for reviews with `GET /api/products/{slug}/reviews?cursor=`.
 
 ### 7.7 Administrator coupons
+
+Task 18 adds the coupon list, create and edit pages on `frontend/step-3-admin-coupons`.
+The forms convert rupees and percentages exactly, use India-time date fields and preserve stored timestamp precision when a date is unchanged.
+Codes stay immutable, fixed coupons clear percentage-only caps, and enable/disable controls have confirmations.
+Term edits do not send an enable flag, so saving a draft after deactivation cannot switch the coupon back on.
+The existing services validate current dates and limits and decide whether buyers can use a coupon.
+See [task 18](../temp/frontend/step-3-remaining-screens/18-admin-coupons.md) for verification evidence.
 
 - `/admin/coupons`: list with `GET /api/admin/coupons`, create with `POST`, change with `PATCH /api/admin/coupons/{id}`.
 - Fields: `code` (3 to 20 letters or digits, stored in capitals, cannot change later), `description`, `discountType` (`percent` or `fixed`), `discountValue` (basis points for percent, so 1000 is 10%; paise for fixed), `minOrderPaise`, `maxDiscountPaise` (percent only), `usageLimit`, `perUserLimit`, `startsAt`, `endsAt`, `isActive`.
@@ -410,10 +493,25 @@ Returns can be asked for only after delivery, within the return window the admin
 
 ### 7.8 Review moderation
 
+Tasks 17 and 19 add buyer review creation/editing on product pages, published-review pagination and administrator moderation on `frontend/step-3-buyer-reviews-moderation`.
+The buyer's own review is loaded privately, including hidden reviews, and editing a hidden review does not republish it.
+Product rating summaries and verified-purchase badges use the server's values.
+`/admin/reviews` filters published and hidden reviews, follows cursor pages, links to products and confirms hide/show decisions.
+See [task 17](../temp/frontend/step-3-remaining-screens/17-buyer-reviews.md) and [task 19](../temp/frontend/step-3-remaining-screens/19-admin-reviews.md) for verification evidence.
+
 - `/admin/reviews`: `GET /api/admin/reviews?status=published|hidden`, and hide or show one with `PATCH /api/admin/reviews/{id}` and `{ "status": "hidden" }`.
   Link each review to its product.
 
 ### 7.9 Policy pages and the footer
+
+Tasks 20 and 21 add public policies, the company footer and the administrator policy editor on `frontend/step-3-policies`.
+The administrator menu includes Policy pages, with `/admin/content` and `/admin/content/[slug]` for drafts and publishing.
+The public page and unsaved preview share a Markdown renderer that disables raw HTML and omits images.
+Drafts stay private, public reads use the existing cache tags, and saving uses the existing audit and invalidation services.
+Missing company settings leave the footer links available.
+Save errors retain edits, and uncertain results require checking the saved version before another write.
+Development placeholders still need client-approved text before launch.
+See [task 20](../temp/frontend/step-3-remaining-screens/20-public-policies.md) and [task 21](../temp/frontend/step-3-remaining-screens/21-policy-editor.md) for evidence.
 
 - Public `/policies/[slug]` for `terms`, `privacy`, `shipping`, `returns`, `refunds`, and `seller-agreement`, read through `readContentPage` in `src/lib/storefront.ts` (cached).
   Render the Markdown safely (raw HTML off) and show a not-found page for a draft.
@@ -425,6 +523,11 @@ Returns can be asked for only after delivery, within the return window the admin
 
 ### 7.10 Background work tools for administrators
 
+Task 22 adds the queue-count panel, filtered work lists and confirmed retry controls on `frontend/step-3-background-work-similar-products`.
+The screen uses existing services and only renders safe metadata, without raw payloads, subjects or error text.
+Sign-in codes cannot be retried, and uncertain retry results require a reload before another attempt.
+See [task 22](../temp/frontend/step-3-remaining-screens/22-background-work.md) for evidence.
+
 - `/admin/background-work`:
   - Queues with waiting, running, and failed counts: `GET /api/admin/queues`.
   - Failed jobs of one queue: `GET /api/admin/queues/{name}/failed-jobs`, retry one with `POST .../failed-jobs/{id}/retry`.
@@ -433,6 +536,12 @@ Returns can be asked for only after delivery, within the return window the admin
 
 ### 7.11 AI features
 
+Tasks 23 and 24 add Keyword, Natural language and Photo options on `/search`, with keyword search retained in the header (agreed 27 November 2026).
+Natural search preserves supported filters and cursors in the address and explains the server's keyword fallback without guessing its cause.
+Photo uploads go directly to private storage; the key stays in client state, and the original and signed upload details are not displayed.
+These modes use best-match ordering because their existing contracts do not accept other sorts.
+See [task 23](../temp/frontend/step-3-remaining-screens/23-natural-search.md) and [task 24](../temp/frontend/step-3-remaining-screens/24-photo-search.md) for local evidence and remaining real-provider checks.
+
 Every AI screen must still work when AI is off or fails: the APIs fall back or say so, and the screen must show that calmly.
 AI suggestions are only suggestions; nothing is saved or published until a person chooses it.
 
@@ -440,22 +549,38 @@ AI suggestions are only suggestions; nothing is saved or published until a perso
   Offer it on `/search`, for example as a toggle, and show what was understood.
 - **Search by photo:** get a signed form from `POST /api/search/photo/uploads`, upload the photo, then `GET /api/search/photo?photo=<key>`.
 - **Similar products:** `GET /api/products/{slug}/similar` (or `readSimilarProducts` in `src/lib/storefront.ts`) under the product page, loaded without blocking the page.
+  Task 25 adds this section with a separate loading boundary, existing product cards and empty/unavailable states.
+  See [task 25](../temp/frontend/step-3-remaining-screens/25-similar-products.md) for evidence and the distinction between test vectors and real provider embeddings.
 - **Shopping assistant:** a panel that sends `POST /api/assistant` with `{ "question", "history", "productIds" }` (`productIds` are the products the shopper is looking at, for example two to compare).
   The answer is an `AssistantAnswer`: plain-text `answer`, `declined` when it cannot answer from the products, product cards, and an optional `comparison` table.
   Show `answer` as plain text and the products as normal product cards.
+  Task 26 uses the recommended collapsible section on product and search pages following the instruction to start implementation.
+  It sends at most five viewed ids and six earlier messages, keeps three exchanges in page memory and leaves shopping usable on errors.
+  See [task 26](../temp/frontend/step-3-remaining-screens/26-shopping-assistant.md) for evidence and live-provider limits.
 - **Listing draft for sellers,** in the product editor once it has a ready photo: `POST /api/seller/listing-drafts` with `{ "productId" }` (202, or 200 with a recent draft), then check `GET /api/seller/listing-drafts/{id}` until `succeeded`.
   Show each suggested field next to the current value and let the seller pick fields; save the picked ones with the normal `PATCH /api/seller/products/{id}`.
   Never overwrite what the seller has typed but not saved.
+  Task 27 adds a ready-photo request, bounded status checks and unchecked per-field choices.
+  Selected values are copied into the current unsaved form; the seller still saves explicitly through the normal editor.
+  See [task 27](../temp/frontend/step-3-remaining-screens/27-listing-drafts.md) for local evidence and live-provider limits.
 - **Import mapping suggestions:** `GET /api/seller/imports/{id}` includes `suggestedMapping` (each column's suggested field, with `source` `name` or `ai`) and `suggestionPending` while the worker is still thinking.
-  The import screen (`src/components/seller/import-manager.tsx`) already pre-fills the `name` suggestions but ignores the `ai` ones.
-  Add the `ai` ones, marked as AI suggestions, show a note while `suggestionPending` is true, and keep the seller's confirmation before `PUT .../mapping`.
+  Task 28 extends the import screen (`src/components/seller/import-manager.tsx`) with labelled AI suggestions and per-column choices, while retaining column-name prefill.
+  Pending AI work is shown without blocking manual choices; late responses never replace those choices, and mapping still requires confirmation before `PUT .../mapping`.
+  See [task 28](../temp/frontend/step-3-remaining-screens/28-import-suggestions.md) for evidence.
 - **Administrator reports:** `/admin/ai` from `GET /api/admin/ai/usage?from=&to=` (calls, failures, cost per day and feature, today's use against the limit), and `/admin/search-gaps` from `GET /api/admin/search/gaps?days=30` (searches that found nothing, so the team knows what to stock).
+  Task 29 adds both pages with the service's date/day filters, exact USD costs, explicit unknown costs and today's separate allowance.
+  See [task 29](../temp/frontend/step-3-remaining-screens/29-ai-reports.md) for verification.
 
 ### 7.12 Smaller items
 
-- Natural-language search, photo search, and the assistant need a place in the header or search page; agree the layout with the project lead.
-- The administrator overview (`/admin`) and seller overview (`/seller`) should link to the new pages with counts, for example returns waiting for a decision or orders to dispatch.
-- The task plan `12-release-and-evidence.md` lists the final release checks, including a manual pass on a real iPhone with Safari and with VoiceOver.
+- Natural-language and photo search use the agreed search-page modes; the assistant uses the recommended collapsible product/search section.
+- Task 30 links every implemented portal tool from both its menu and overview, using shared typed definitions.
+  The administrator overview has 15 tools and the seller overview has eight, with the seller's real business status retained.
+  Order and return totals are not added because the existing services expose cursor pages without efficient total-count contracts; page lengths are not totals.
+  Existing report and earnings pages continue to show their supported server-derived figures.
+  See [task 30](../temp/frontend/step-3-remaining-screens/30-portal-navigation.md) for navigation and access verification.
+- The older task plan `12-release-and-evidence.md` lists historical release checks.
+  Its mandatory Safari pass is superseded by the one-browser, three-size verification decision of 24 November 2026.
 
 ## 8. Payments with Razorpay
 

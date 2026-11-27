@@ -1,7 +1,10 @@
 import { getSeller, NotFoundError } from '@ecokart/core'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { Suspense } from 'react'
 import { SellerDetailManager } from '@/components/admin/seller-detail-manager'
+import { SellerMoney } from '@/components/admin/seller-money'
+import { ContentLoading } from '@/components/ui/page-loading'
 import type { SellerDetail } from '@/lib/admin-sellers'
 import { requireAdminPageContext } from '@/lib/page-auth'
 import { getSellerServices } from '@/lib/sellers'
@@ -14,6 +17,7 @@ export const instant = false
 
 export default async function SellerDetailPage({
   params,
+  searchParams,
 }: PageProps<'/admin/sellers/[id]'>) {
   const { id } = await params
   const context = await requireAdminPageContext('/admin/sellers')
@@ -31,5 +35,30 @@ export default async function SellerDetailPage({
     createdAt: seller.createdAt.toISOString(),
     updatedAt: seller.updatedAt.toISOString(),
   }
-  return <SellerDetailManager initialSeller={serialised} />
+  const query = await searchParams
+  const cursor = Array.isArray(query.ledgerCursor)
+    ? query.ledgerCursor.at(-1)
+    : query.ledgerCursor
+  const balanceCursor = Array.isArray(query.balanceCursor)
+    ? query.balanceCursor.at(-1)
+    : query.balanceCursor
+  const statementCursor = Array.isArray(query.statementCursor)
+    ? query.statementCursor.at(-1)
+    : query.statementCursor
+  return (
+    <SellerDetailManager
+      initialSeller={serialised}
+      money={
+        <Suspense fallback={<ContentLoading />}>
+          <SellerMoney
+            sellerId={id}
+            context={context}
+            cursor={cursor}
+            balanceCursor={balanceCursor}
+            statementCursor={statementCursor}
+          />
+        </Suspense>
+      }
+    />
+  )
 }

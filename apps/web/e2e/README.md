@@ -43,7 +43,8 @@ Next.js regenerates route type files while serving pages; a concurrent typecheck
 `pnpm test:e2e:demo` runs the API walk-through with its own database, bucket, web server and worker, using the same ownership checks and cleanup as browser runs.
 It also seeds example products because the combined seller/buyer story purchases another seller's product.
 The demo now exercises applying to sell and combined-account shopping rather than skipping them.
-Required-feature skips fail the isolated demo gate; an AI-disabled step is reported explicitly as skipped.
+The demo starts its Razorpay stand-in on loopback and verifies payment confirmation, stock and ledger effects after a webhook replay.
+The only allowed skip is the shopping assistant when AI is disabled.
 The redacted command summary belongs in task evidence, while raw local output is saved in that run's `demo.txt` and remains ignored.
 WebKit is automated engine coverage, not proof of actual Safari on Apple hardware.
 Phone projects exercise responsive widths without claiming physical-device emulation.
@@ -57,7 +58,33 @@ pnpm --filter @ecokart/web exec playwright test --list
 
 The second command only lists tests; actual execution must go through the launcher.
 To test an installed Google Chrome, set `$env:E2E_CHROME = '1'`, run `pnpm test:e2e`, then remove that environment override.
-This selects `chrome-desktop` and `chrome-phone` instead of the bundled-engine projects.
+This selects `chrome-desktop` (1440 x 900), `chrome-medium` (768 x 1024) and `chrome-phone` (390 x 844) instead of the bundled-engine projects.
+As agreed on 24 November 2026, frontend task verification uses one browser at these three sizes and focused journey, permission and error checks.
+The broader browser projects remain available for investigating a specific problem; they are not a task completion requirement.
+
+For seller order tasks 01 and 02:
+
+```powershell
+$env:E2E_CHROME = '1'
+pnpm test:e2e -- --project=chrome-desktop --project=chrome-medium --project=chrome-phone seller-orders.spec.ts
+Remove-Item Env:E2E_CHROME
+```
+
+For administrator order tasks 03 and 04, use the same three Chrome sizes with `admin-orders.spec.ts` instead of `seller-orders.spec.ts`.
+Its focused journey creates a cash-on-delivery order and parcel through the real services, then checks administrator filters, pagination, Back navigation, original order data, invoice access and role restrictions.
+It also checks keyboard filtering, light/dark accessibility and horizontal overflow.
+Task 04 adds cancellation and stale-tab recovery, exact refund recording, delivery overrides, and invoice request failure and queue acceptance.
+Task 05 extends AO01 with the buyer return form after delivery, required Other details, server quantity rejection with preserved values, a real direct photo upload processed by the worker and successful return submission.
+Task 06 extends that journey with buyer return tracking, private photo access, approval notes, a recorded bank refund and refusal of another buyer.
+BR01 checks empty states, a seeded 21-row return list, cursor navigation, Back links and invalid URLs.
+Task 07 extends AO01 with seller return filters, pagination, list/API agreement, dual-role access, another seller's refusal, private seller photo links and read-only controls.
+Task 08 adds administrator ordering and pagination, private photos, confirmed approval with and without a note, rejection validation, and stale-tab recovery.
+Task 09 uses `return-refunds.spec.ts` at the same three Chrome sizes for exact refund money, maximum values, method-specific references, stale-state recovery and seller ledger reversals.
+Its approved fixtures use the existing payment confirmation, dispatch, delivery and return services; no live provider is called.
+Task 10 uses `seller-earnings.spec.ts` at the same three Chrome sizes for balance signs and grouping, ledger pagination, masked read-only bank details, seller isolation and refresh after a real administrator adjustment.
+Task 11 uses `seller-documents.spec.ts` for date errors, status retry, polling cleanup, a real worker-built CSV, private downloads, invoice readiness and seller isolation.
+Its fixtures include an unrendered invoice and processing/failed statement records for deterministic unavailable states.
+The refund fixture seeds a captured payment through the existing confirmation service; it never contacts a live payment provider.
 
 `test:e2e:verify-harness` runs ownership/provider-isolation unit tests plus three deliberate failure probes.
 Setup failure, interruption after startup and a failed browser assertion must each produce the expected non-zero child result, clean up their resources, and preserve unrelated disposable sentinel data.

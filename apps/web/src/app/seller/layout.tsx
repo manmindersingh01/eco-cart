@@ -1,16 +1,9 @@
 import { AccountControls } from '@/components/auth/account-controls'
 import { PortalShell } from '@/components/ui/portal-shell'
 import { requireSellerPage } from '@/lib/page-auth'
+import { sellerNavigation } from '@/lib/portal-tools'
 import { Suspense } from 'react'
 import Loading from '../loading'
-
-const navigation = [
-  { href: '/seller', label: 'Overview' },
-  { href: '/seller/profile', label: 'Business profile' },
-  { href: '/seller/documents', label: 'Documents' },
-  { href: '/seller/products', label: 'Products' },
-  { href: '/seller/imports', label: 'Catalogue imports' },
-] as const
 
 // Entering a protected area may block on the server's session decision.
 export const instant = false
@@ -28,7 +21,7 @@ async function SellerAccess({ children }: LayoutProps<'/seller'>) {
   return (
     <PortalShell
       portalName="Seller portal"
-      navigation={navigation}
+      navigation={sellerNavigation}
       accountActions={<AccountControls initialAccount={account} />}
     >
       {children}

@@ -1144,11 +1144,17 @@ All four discovery features end in the same place: one SQL query over `products`
   Product images are embedded once, when the listing is approved.
 - Similar products: nearest neighbours of the product's own text embedding within the same category, computed on demand and cached with the product page.
 
+The search page offers Keyword, Natural language and Photo options, while the header continues to submit keyword searches (agreed 27 November 2026).
+Private photo keys stay out of the page address and are kept only while the search page retains its client state.
+
 Every search writes a `search_queries` row, and zero-result queries surface in the admin console as the catalogue gap report.
 A row is written for each new search, not for each further page, and keyword search rows carry no user or session, because the report needs only the words and the count.
 Searches are limited per visitor address (120 a minute), counted in `rate_limits`.
 
 ### 6.9 Shopping assistant
+
+The assistant appears in a collapsible section on product and search pages, using the recommended placement when implementation was requested on 27 November 2026.
+It uses the products currently being viewed as context and keeps a bounded conversation only in the page's memory.
 
 The assistant is stateless on the server.
 The browser sends the question and the last few turns; the server retrieves the most relevant approved, in-stock products by embedding similarity plus any products the buyer named, and calls the text model with a strict instruction to answer only from the supplied product data and to say so when it cannot.

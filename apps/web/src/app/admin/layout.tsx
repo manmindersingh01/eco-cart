@@ -1,18 +1,9 @@
 import { AccountControls } from '@/components/auth/account-controls'
 import { PortalShell } from '@/components/ui/portal-shell'
 import { requireAdminPage } from '@/lib/page-auth'
+import { adminNavigation } from '@/lib/portal-tools'
 import { Suspense } from 'react'
 import Loading from '../loading'
-
-const navigation = [
-  { href: '/admin', label: 'Overview' },
-  { href: '/admin/settings', label: 'Platform settings' },
-  { href: '/admin/sellers', label: 'Sellers' },
-  { href: '/admin/seller-documents', label: 'Document review' },
-  { href: '/admin/categories', label: 'Categories' },
-  { href: '/admin/brands', label: 'Brands' },
-  { href: '/admin/moderation', label: 'Product moderation' },
-] as const
 
 // Entering a protected area may block on the server's session decision.
 export const instant = false
@@ -30,7 +21,7 @@ async function AdminAccess({ children }: LayoutProps<'/admin'>) {
   return (
     <PortalShell
       portalName="Administrator portal"
-      navigation={navigation}
+      navigation={adminNavigation}
       accountActions={<AccountControls initialAccount={account} />}
     >
       {children}

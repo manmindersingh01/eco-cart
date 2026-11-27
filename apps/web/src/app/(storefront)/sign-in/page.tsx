@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { loadAuthConfig } from '@ecokart/core'
 import { Suspense } from 'react'
 import Loading from '../../loading'
 import { SignInForm } from '@/components/auth/sign-in-form'
@@ -32,6 +33,7 @@ async function SignInContent({ searchParams }: SignInPageProps) {
   const query = await searchParams
   const returnTo = safeReturnTo(firstValue(query.returnTo))
   const reason = firstValue(query.reason)
+  const phoneEnabled = loadAuthConfig().smsOtpEnabled
 
   return (
     <main
@@ -44,10 +46,15 @@ async function SignInContent({ searchParams }: SignInPageProps) {
             Sign in to EcoKart
           </h1>
           <p className="mt-2 text-sm text-muted">
-            Use the one-time code sent to your email address.
+            Use the one-time code sent to your email address
+            {phoneEnabled ? ' or Indian mobile number' : ''}.
           </p>
         </div>
-        <SignInForm returnTo={returnTo} reason={reason} />
+        <SignInForm
+          returnTo={returnTo}
+          reason={reason}
+          phoneEnabled={phoneEnabled}
+        />
       </Card>
     </main>
   )

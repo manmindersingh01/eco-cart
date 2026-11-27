@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { SellerBusinessFields } from './seller-form-fields'
 import { SellerDocumentRequests } from './document-review-manager'
@@ -51,8 +51,10 @@ function statusTone(status: SellerStatus) {
 
 export function SellerDetailManager({
   initialSeller,
+  money,
 }: {
   initialSeller: SellerDetail
+  money?: ReactNode
 }) {
   const router = useRouter()
   const ready = useClientReady()
@@ -282,6 +284,8 @@ export function SellerDetailManager({
           </dl>
         </Card>
       </div>
+
+      {money}
 
       <Card>
         <form autoComplete="off" onSubmit={(event) => event.preventDefault()}>

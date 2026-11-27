@@ -13,6 +13,7 @@ const RESEND_COOLDOWN_SECONDS = 30
 type SignInFormProps = {
   returnTo: string | null
   reason: string | null
+  phoneEnabled: boolean
 }
 
 type PendingAction = 'sending' | 'verifying' | 'redirecting' | null
@@ -31,10 +32,26 @@ function authErrorMessage(error: {
   if (error.code === 'BANNED_USER') {
     return 'This account cannot sign in. Contact an administrator for help.'
   }
+  if (error.code === 'OTP_EXPIRED' || error.code === 'OTP_NOT_FOUND') {
+    return 'That code has expired. Request a new code.'
+  }
+  if (error.code === 'TOO_MANY_ATTEMPTS') {
+    return 'Too many incorrect codes. Request a new code.'
+  }
+  if (error.code === 'INVALID_OTP') {
+    return 'That code is invalid. Check it and try again.'
+  }
   return error.message || 'That code is invalid or has expired.'
 }
 
-export function SignInForm({ returnTo, reason }: SignInFormProps) {
+export function SignInForm({
+  returnTo,
+  reason,
+  phoneEnabled,
+}: SignInFormProps) {
+  const [method, setMethod] = useState<'email' | 'phone'>('email')
+  const [phone, setPhone] = useState('')
+  const actionLock = useRef(false)
   const [step, setStep] = useState<'email' | 'code'>('email')
   const [ready, setReady] = useState(false)
   const [email, setEmail] = useState('')
@@ -44,6 +61,7 @@ export function SignInForm({ returnTo, reason }: SignInFormProps) {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const emailInput = useRef<HTMLInputElement>(null)
+  const phoneInput = useRef<HTMLInputElement>(null)
   const otpInput = useRef<HTMLInputElement>(null)
   const hasChangedStep = useRef(false)
 
@@ -59,40 +77,66 @@ export function SignInForm({ returnTo, reason }: SignInFormProps) {
   useEffect(() => {
     if (hasChangedStep.current) {
       if (step === 'code') otpInput.current?.focus()
+      else if (method === 'phone') phoneInput.current?.focus()
       else emailInput.current?.focus()
     } else {
       hasChangedStep.current = true
       setReady(true)
     }
-  }, [step])
+  }, [step, method])
 
   async function sendCode(): Promise<boolean> {
+    if (!ready || actionLock.current) return false
     const normalisedEmail = email.trim().toLowerCase()
+    const digits = phone.replaceAll(/[\s()-]/g, '')
+    const normalisedPhone = /^\d{10}$/.test(digits) ? `+91${digits}` : digits
+    if (method === 'phone' && !/^\+91[6-9]\d{9}$/.test(normalisedPhone)) {
+      setError(
+        'Enter a 10-digit Indian mobile number starting with 6, 7, 8 or 9, or use +91 followed by that number.',
+      )
+      return false
+    }
+    actionLock.current = true
     setPending('sending')
     setError(null)
     setMessage(null)
     let result
     try {
-      result = await authClient.emailOtp.sendVerificationOtp({
-        email: normalisedEmail,
-        type: 'sign-in',
-      })
+      result =
+        method === 'phone'
+          ? await authClient.phoneNumber.sendOtp({
+              phoneNumber: normalisedPhone,
+            })
+          : await authClient.emailOtp.sendVerificationOtp({
+              email: normalisedEmail,
+              type: 'sign-in',
+            })
     } catch {
       setPending(null)
       setError('Sign-in is temporarily unavailable. Please try again shortly.')
       return false
+    } finally {
+      actionLock.current = false
     }
     setPending(null)
 
     if (result.error) {
-      setError(authErrorMessage(result.error))
+      setError(
+        method === 'phone' && result.error.status === 404
+          ? 'Phone sign-in is unavailable. Use email or try again later.'
+          : authErrorMessage(result.error),
+      )
       return false
     }
 
     setEmail(normalisedEmail)
+    setPhone(normalisedPhone)
+    setOtp('')
     setStep('code')
     setCooldown(RESEND_COOLDOWN_SECONDS)
-    setMessage(`A six-digit code was sent to ${normalisedEmail}.`)
+    setMessage(
+      `A six-digit code was sent to ${method === 'phone' ? normalisedPhone : normalisedEmail}.`,
+    )
     return true
   }
 
@@ -103,20 +147,30 @@ export function SignInForm({ returnTo, reason }: SignInFormProps) {
 
   async function submitCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (actionLock.current) return
+    actionLock.current = true
     setPending('verifying')
     setError(null)
     setMessage(null)
 
     let result
     try {
-      result = await authClient.signIn.emailOtp({
-        email,
-        otp,
-      })
+      result =
+        method === 'phone'
+          ? await authClient.phoneNumber.verify({
+              phoneNumber: phone,
+              code: otp,
+            })
+          : await authClient.signIn.emailOtp({
+              email,
+              otp,
+            })
     } catch {
       setPending(null)
       setError('Sign-in is temporarily unavailable. Please try again shortly.')
       return
+    } finally {
+      actionLock.current = false
     }
     if (result.error) {
       setPending(null)
@@ -150,7 +204,9 @@ export function SignInForm({ returnTo, reason }: SignInFormProps) {
   async function resendCode() {
     if (cooldown > 0 || pending) return
     if (await sendCode()) {
-      setMessage(`A new six-digit code was sent to ${email}.`)
+      setMessage(
+        `A new six-digit code was sent to ${method === 'phone' ? phone : email}.`,
+      )
     }
   }
 
@@ -184,20 +240,57 @@ export function SignInForm({ returnTo, reason }: SignInFormProps) {
           aria-busy={pending === 'sending'}
           onSubmit={submitEmail}
         >
-          <Field label="Email address" htmlFor="email" required>
-            <Input
-              ref={emailInput}
-              id="email"
-              name="email"
-              type="email"
-              value={email}
-              autoComplete="email"
-              required
+          {phoneEnabled ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setMethod(method === 'email' ? 'phone' : 'email')
+                setOtp('')
+                setError(null)
+                setMessage(null)
+              }}
               disabled={!ready || pending !== null}
-              placeholder="you@example.com"
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </Field>
+            >
+              {method === 'email' ? 'Sign in with phone' : 'Sign in with email'}
+            </Button>
+          ) : null}
+          {method === 'email' ? (
+            <Field label="Email address" htmlFor="email" required>
+              <Input
+                ref={emailInput}
+                id="email"
+                name="email"
+                type="email"
+                value={email}
+                autoComplete="email"
+                required
+                disabled={!ready || pending !== null}
+                placeholder="you@example.com"
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </Field>
+          ) : (
+            <Field
+              label="Mobile number"
+              htmlFor="phone"
+              required
+              hint="Use your 10-digit Indian mobile number, or include +91."
+            >
+              <Input
+                ref={phoneInput}
+                id="phone"
+                name="phone"
+                type="tel"
+                autoComplete="tel"
+                inputMode="tel"
+                value={phone}
+                required
+                disabled={!ready || pending !== null}
+                onChange={(event) => setPhone(event.target.value)}
+                maxLength={24}
+              />
+            </Field>
+          )}
           <Button type="submit" disabled={!ready || pending !== null}>
             {pending === 'sending' ? 'Sending code...' : 'Send sign-in code'}
           </Button>
@@ -213,7 +306,9 @@ export function SignInForm({ returnTo, reason }: SignInFormProps) {
         >
           <div>
             <p className="text-sm text-muted">Code sent to</p>
-            <p className="font-medium break-all">{email}</p>
+            <p className="font-medium break-all">
+              {method === 'phone' ? phone : email}
+            </p>
           </div>
           <Field
             label="Six-digit code"
@@ -252,7 +347,7 @@ export function SignInForm({ returnTo, reason }: SignInFormProps) {
               onClick={changeEmail}
               disabled={pending !== null}
             >
-              Change email
+              {method === 'phone' ? 'Change phone number' : 'Change email'}
             </Button>
             <Button
               variant="quiet"

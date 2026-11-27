@@ -19,6 +19,7 @@ import {
   type UploadForm,
 } from '@/lib/catalogue-operations'
 import { useClientReady } from '@/lib/use-client-ready'
+import { importNeedsPolling } from '@/lib/seller-suggestions'
 
 export function ImportList() {
   const [items, setItems] = useState<CatalogueImportSummary[]>([])
@@ -197,18 +198,27 @@ export function ImportDetail({
   }
   useEffect(() => {
     if (
-      !['uploaded', 'mapping_confirmed', 'validating', 'importing'].includes(
-        item.status,
-      )
+      !importNeedsPolling({
+        status: item.status,
+        suggestionPending: item.suggestionPending,
+      })
     )
       return undefined
     let active = true
+    const controller = new AbortController()
     let attempts = 0
     let timer: ReturnType<typeof setTimeout>
     async function poll() {
       try {
         const result = await apiRequest<{ import: CatalogueImport }>(
           `/api/seller/imports/${item.id}`,
+          {
+            signal: AbortSignal.any([
+              controller.signal,
+              AbortSignal.timeout(10000),
+            ]),
+            cache: 'no-store',
+          },
         )
         if (!active) return
         setItem(result.import)
@@ -222,17 +232,9 @@ export function ImportDetail({
                     .map(([header, suggestion]) => [header, suggestion.field]),
                 ),
           )
-          return
+          if (!result.import.suggestionPending) return
         }
-        if (
-          ![
-            'uploaded',
-            'mapping_confirmed',
-            'validating',
-            'importing',
-          ].includes(result.import.status)
-        )
-          return
+        if (!importNeedsPolling(result.import)) return
       } catch (cause) {
         if (active)
           setError(
@@ -248,9 +250,10 @@ export function ImportDetail({
     timer = setTimeout(() => void poll(), 1000)
     return () => {
       active = false
+      controller.abort()
       clearTimeout(timer)
     }
-  }, [item.id, item.status])
+  }, [item.id, item.status, item.suggestionPending])
   async function confirm() {
     setError(null)
     setPending(true)
@@ -327,8 +330,15 @@ export function ImportDetail({
           <h2 className="text-lg font-semibold">Column mapping</h2>
           <p className="my-3 text-sm">
             Choose each required field once. Ignore columns you do not need.
-            Suggestions from column names need your confirmation.
+            Suggestions from column names or AI need your confirmation. Late
+            suggestions never replace your choices.
           </p>
+          {item.status === 'mapping_suggested' && item.suggestionPending ? (
+            <Notice title="AI suggestions are being checked">
+              You can map the columns and confirm now. Any later suggestions
+              must be chosen explicitly.
+            </Notice>
+          ) : null}
           <form autoComplete="off" onSubmit={(event) => event.preventDefault()}>
             <fieldset
               disabled={
@@ -342,8 +352,52 @@ export function ImportDetail({
                   label={header}
                   htmlFor={`column-${index}`}
                   hint={
-                    item.fields.find((field) => field.field === mapping[header])
-                      ?.hint
+                    <>
+                      {
+                        item.fields.find(
+                          (field) => field.field === mapping[header],
+                        )?.hint
+                      }
+                      {item.suggestedMapping?.[header] ? (
+                        <span className="mt-1 block">
+                          {item.suggestedMapping[header].source === 'ai'
+                            ? 'AI suggestion'
+                            : 'Column-name suggestion'}
+                          :{' '}
+                          {item.fields.find(
+                            (field) =>
+                              field.field ===
+                              item.suggestedMapping?.[header]?.field,
+                          )?.label ?? item.suggestedMapping[header].field}{' '}
+                          (
+                          {Math.round(
+                            item.suggestedMapping[header].confidence * 100,
+                          )}
+                          % confidence).
+                        </span>
+                      ) : null}
+                      {item.suggestedMapping?.[header]?.source === 'ai' &&
+                      item.status === 'mapping_suggested' ? (
+                        <Button
+                          className="mt-2"
+                          variant="secondary"
+                          disabled={
+                            !ready ||
+                            pending ||
+                            mapping[header] ===
+                              item.suggestedMapping[header].field
+                          }
+                          onClick={() =>
+                            setMapping((current) => ({
+                              ...current,
+                              [header]: item.suggestedMapping![header]!.field,
+                            }))
+                          }
+                        >
+                          Use AI suggestion for {header}
+                        </Button>
+                      ) : null}
+                    </>
                   }
                 >
                   <Select

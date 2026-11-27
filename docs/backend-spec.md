@@ -1569,6 +1569,15 @@ Green Basket's 101st call of the day is refused with 429, "You have used todayâ€
 - The client confirms the daily limits of 2000 calls for the platform and 100 per seller (open since step 3).
 - Once a key exists: check whether DeepSeek V4.1 Flash thinks before answering by default, which would make every short JSON task slower and dearer, and whether OpenRouter passes `dimensions` and `input_type` on to Voyage (OpenRouter lists no supported parameters for it; 1024 is also Voyage's default size, and the client checks every vector's size either way).
 
+## Step 18: Similar-products correction during frontend verification
+
+The existing catalogue service returns nearby products from stored text vectors in the same category (design section 6.8).
+Frontend task 25 reproduced a defect when the source product has no vector but other products do: the query can return arbitrary rows with null distances.
+The query now requires a non-null source vector, preserving the existing empty-result contract without adding an endpoint, setting or migration.
+The regression test includes another embedded product in the same category, so the missing-vector case cannot pass merely because the category is empty.
+The strengthened test failed before the fix and all 15 focused search tests passed afterwards.
+The three-size Chrome journey passed, followed by `pnpm check` with 1,283 passing tests and a successful production build.
+
 ## Change log
 
 - 5 October 2026: File created and step 1 written.
@@ -1652,3 +1661,5 @@ Green Basket's 101st call of the day is refused with 429, "You have used todayâ€
 - 19 November 2026: Buyer screens for the shop, cart, addresses, checkout, and the buyer's orders were built (frontend tasks 06, 07, and 08 in part).
   One backend addition came with them: `resumeOnlinePayment` in the checkout module and `GET /api/account/orders/[id]/payment`, which hand the browser Razorpay's checkout details again for the buyer's own order that is still waiting for its online payment.
   It reuses the order's Razorpay order, refuses an order that is paid, cancelled, or expired, and adds no new way to confirm a payment; the design doc says so in section 6.3, step 5.
+- 27 November 2026: Frontend task 25 reproduced arbitrary similar-product results for a source without a text vector.
+  The step 18 correction above restores the documented empty result and strengthens the existing missing-vector regression test.

@@ -1,0 +1,855 @@
+import { test, expect, type Page } from '@playwright/test'
+import { AxeBuilder } from '@axe-core/playwright'
+import { randomInt } from 'node:crypto'
+import { z } from 'zod'
+import sharp from 'sharp'
+import { signIn } from './support/auth.ts'
+import { fixturesFor } from './support/test.ts'
+
+const headers = () => ({
+  'x-forwarded-for': `198.18.${randomInt(256)}.${randomInt(1, 255)}`,
+})
+
+test('BR01 buyer return pagination and empty states', async ({
+  page,
+}, info) => {
+  test.setTimeout(120000)
+  await page.context().setExtraHTTPHeaders(headers())
+  await page.goto('/account/returns')
+  await expect(page).toHaveURL(/\/sign-in\?returnTo=/)
+  await signIn(page)
+  await page.goto('/account/returns')
+  await expect(
+    page.getByRole('heading', { name: 'No returns yet' }),
+  ).toBeVisible()
+  await page.context().clearCookies()
+  const data = z
+    .object({
+      orderProducts: z.record(
+        z.string(),
+        z.object({ returnsBuyerEmail: z.string() }),
+      ),
+    })
+    .parse(JSON.parse(process.env.E2E_FIXTURES ?? '{}')).orderProducts[
+    info.project.name
+  ]!
+  await signIn(page, data.returnsBuyerEmail)
+  await page.goto('/account/returns')
+  await expect(page.locator('h2 a')).toHaveCount(20)
+  await page.getByRole('link', { name: 'Older returns', exact: true }).click()
+  await expect(page.locator('h2 a')).toHaveCount(1)
+  const cursorUrl = page.url()
+  await page.locator('h2 a').click()
+  await page.getByRole('link', { name: 'Back to returns' }).click()
+  await expect(page).toHaveURL(cursorUrl)
+  await page.getByRole('link', { name: 'Show your latest returns' }).click()
+  await expect(page.locator('h2 a')).toHaveCount(20)
+  await checkLayout(page)
+  await page.screenshot({
+    path: info.outputPath('buyer-returns-list.png'),
+    fullPage: true,
+  })
+  await page.goto('/account/returns?cursor=invalid')
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'This page of returns could not be shown' }),
+  ).toBeVisible()
+  await page.goto('/account/returns/not-an-id')
+  await expect(
+    page.getByRole('heading', { name: 'Return not found' }),
+  ).toBeVisible()
+})
+async function checkLayout(page: Page) {
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true)
+  await expect
+    .poll(async () => (await new AxeBuilder({ page }).analyze()).violations)
+    .toEqual([])
+}
+
+test('AO01 administrator filters, order snapshots and permissions', async ({
+  page,
+  browser,
+}, info) => {
+  test.setTimeout(360000)
+  await page.context().setExtraHTTPHeaders(headers())
+  const data = z
+    .object({
+      orderProducts: z.record(
+        z.string(),
+        z.object({
+          sellerEmail: z.string(),
+          otherSellerEmail: z.string(),
+          firstVariantId: z.string(),
+          firstTitle: z.string(),
+        }),
+      ),
+    })
+    .parse(JSON.parse(process.env.E2E_FIXTURES ?? '{}')).orderProducts[
+    info.project.name
+  ]!
+  await page.goto('/admin/orders')
+  await expect(page).toHaveURL(/\/sign-in\?returnTo=/)
+  await page.goto('/admin/returns')
+  await expect(page).toHaveURL(/\/sign-in\?returnTo=/)
+  await page.goto('/seller/returns')
+  await expect(page).toHaveURL(/\/sign-in\?returnTo=/)
+  await signIn(page)
+  await page.goto('/admin/returns')
+  await expect(page).toHaveURL(/\/access-denied/)
+  await page.goto('/seller/returns')
+  await expect(page).toHaveURL(/\/access-denied/)
+  await page.goto('/admin/orders')
+  await expect(page).toHaveURL(/\/access-denied/)
+  expect(
+    (
+      await page.request.post('/api/cart/items', {
+        data: { variantId: data.firstVariantId, quantity: 1 },
+      })
+    ).status(),
+  ).toBe(200)
+  const addressResponse = await page.request.post('/api/account/addresses', {
+    data: {
+      fullName: 'Admin order buyer',
+      phone: '+919812345678',
+      line1: '14 Lake Road',
+      city: 'Bengaluru',
+      stateCode: '29',
+      pincode: '560001',
+    },
+  })
+  expect(addressResponse.status()).toBe(201)
+  const address = z
+    .object({ address: z.object({ id: z.string() }) })
+    .parse(await addressResponse.json()).address
+  const placed = await page.request.post('/api/checkout', {
+    data: { addressId: address.id, paymentMethod: 'cod' },
+  })
+  expect(placed.status()).toBe(201)
+  const order = z
+    .object({ order: z.object({ id: z.string(), orderNumber: z.string() }) })
+    .parse(await placed.json()).order
+  await page.goto(`/admin/orders/${order.id}`)
+  await expect(page).toHaveURL(/\/access-denied/)
+  const sellerContext = await browser.newContext({
+    baseURL: process.env.E2E_BASE_URL,
+    viewport: page.viewportSize(),
+    extraHTTPHeaders: headers(),
+  })
+  const adminContext = await browser.newContext({
+    baseURL: process.env.E2E_BASE_URL,
+    viewport: page.viewportSize(),
+    extraHTTPHeaders: headers(),
+  })
+  try {
+    const seller = await sellerContext.newPage()
+    await signIn(seller, data.sellerEmail)
+    await seller.goto(`/admin/orders/${order.id}`)
+    await expect(seller).toHaveURL(/\/access-denied/)
+    const detail = z
+      .object({
+        order: z.object({ lines: z.array(z.object({ id: z.string() })) }),
+      })
+      .parse(
+        await (
+          await seller.request.get(`/api/seller/orders/${order.id}`)
+        ).json(),
+      ).order
+    expect(
+      (
+        await seller.request.post(`/api/seller/orders/${order.id}/shipments`, {
+          data: {
+            lineIds: detail.lines.map((line) => line.id),
+            courierName: 'Admin test courier',
+            trackingNumber: 'ADMIN123',
+          },
+        })
+      ).status(),
+    ).toBe(201)
+    const admin = await adminContext.newPage()
+    const errors: string[] = []
+    admin.on('pageerror', (error) => errors.push(error.message))
+    await signIn(admin, fixturesFor(info.project.name).adminEmail)
+    await admin.goto('/admin/orders?status=confirmed')
+    await expect(
+      admin.getByRole('heading', { name: 'Orders', exact: true }),
+    ).toBeVisible()
+    await checkLayout(admin)
+    await admin.screenshot({ path: info.outputPath('admin-orders-list.png') })
+    await admin.getByRole('link', { name: 'Next orders', exact: true }).click()
+    await expect(admin).toHaveURL(/cursor=/)
+    const cursorUrl = admin.url()
+    await admin.locator('h2 a[href^="/admin/orders/"]').first().click()
+    await admin
+      .getByRole('link', { name: 'Back to orders', exact: true })
+      .click()
+    await expect(admin).toHaveURL(cursorUrl)
+    await admin.getByLabel('Order number').fill(order.orderNumber.toLowerCase())
+    await admin.getByRole('button', { name: 'Apply filters' }).focus()
+    await admin.keyboard.press('Enter')
+    await expect(admin).not.toHaveURL(/cursor=/)
+    await expect(admin.locator('h2 a[href^="/admin/orders/"]')).toHaveCount(1)
+    const filteredQuery = new URL(admin.url()).searchParams
+    await admin
+      .getByRole('link', { name: `Order ${order.orderNumber}`, exact: true })
+      .click()
+    await expect(
+      admin.getByRole('heading', { name: data.firstTitle, exact: true }),
+    ).toBeVisible()
+    const api = z
+      .object({
+        order: z.object({
+          totalPaise: z.number(),
+          events: z.array(
+            z.object({ eventType: z.string(), note: z.string().nullable() }),
+          ),
+        }),
+      })
+      .parse(
+        await (await admin.request.get(`/api/admin/orders/${order.id}`)).json(),
+      ).order
+    const total = new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+    }).format(api.totalPaise / 100)
+    await expect(admin.getByText(total, { exact: true }).first()).toBeVisible()
+    await expect(
+      admin.getByRole('region', { name: 'Parcels', exact: true }),
+    ).toContainText('ADMIN123')
+    await expect(
+      admin.getByRole('region', { name: 'Payments', exact: true }),
+    ).toContainText('Cod')
+    await expect(
+      admin.getByRole('region', { name: 'Order history' }).locator('li'),
+    ).toHaveCount(api.events.length)
+    for (const event of api.events) {
+      if (event.note)
+        await expect(
+          admin.getByText(event.note, { exact: true }).first(),
+        ).toBeVisible()
+    }
+    await expect
+      .poll(
+        async () => {
+          await admin.reload()
+          return admin
+            .getByRole('link', { name: 'Download PDF', exact: true })
+            .count()
+        },
+        { timeout: 60000 },
+      )
+      .toBe(1)
+    const invoice = admin.getByRole('link', {
+      name: 'Download PDF',
+      exact: true,
+    })
+    const href = await invoice.getAttribute('href')
+    expect(href).toMatch(/\/api\/invoices\/[^/]+\/pdf$/)
+    expect((await admin.request.get(href!, { maxRedirects: 0 })).status()).toBe(
+      302,
+    )
+    await checkLayout(admin)
+    await admin.screenshot({
+      path: info.outputPath('admin-order-light.png'),
+      fullPage: true,
+    })
+    await admin.emulateMedia({ colorScheme: 'dark' })
+    await checkLayout(admin)
+    await admin.screenshot({
+      path: info.outputPath('admin-order-dark.png'),
+      fullPage: true,
+    })
+    await admin
+      .getByRole('button', { name: 'Mark delivered', exact: true })
+      .click()
+    await expect(admin.getByRole('dialog')).toContainText(
+      'confirm payment was collected',
+    )
+    await admin
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm delivery' })
+      .click()
+    await expect(
+      admin.getByText('Cash collected', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      admin.getByRole('button', { name: 'Mark delivered', exact: true }),
+    ).toHaveCount(0)
+    await page.goto(`/account/orders/${order.id}`)
+    await page
+      .getByRole('button', { name: 'Request a return', exact: true })
+      .click()
+    await page.getByLabel('Return reason').selectOption('other')
+    await expect(
+      page.getByRole('button', { name: 'Send return request' }),
+    ).toBeDisabled()
+    await page.getByLabel('Reason details').fill('The bottle is damaged')
+    await page.getByLabel('Return quantity').fill('2')
+    await page.getByRole('button', { name: 'Send return request' }).click()
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Return could not be sent' }),
+    ).toContainText('at most 1')
+    await expect(page.getByLabel('Reason details')).toHaveValue(
+      'The bottle is damaged',
+    )
+    await page.getByLabel('Return quantity').fill('1')
+    const buffer = await sharp({
+      create: { width: 800, height: 800, channels: 3, background: '#276e55' },
+    })
+      .png()
+      .toBuffer()
+    await page
+      .getByLabel('Return photo (optional)')
+      .setInputFiles({ name: 'damage.png', mimeType: 'image/png', buffer })
+    await expect(page.getByText('Photo 1: Ready', { exact: true })).toBeVisible(
+      { timeout: 60000 },
+    )
+    await checkLayout(page)
+    await page.screenshot({
+      path: info.outputPath('buyer-return-light.png'),
+      fullPage: true,
+    })
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await checkLayout(page)
+    await page.screenshot({
+      path: info.outputPath('buyer-return-dark.png'),
+      fullPage: true,
+    })
+    await page.getByRole('button', { name: 'Send return request' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(
+      page.getByText('Return requested', { exact: true }).first(),
+    ).toBeVisible()
+    await page.goto('/account/returns')
+    await page.getByRole('link', { name: data.firstTitle, exact: true }).click()
+    await expect(page).toHaveURL(/\/account\/returns\/[0-9a-f-]{36}$/)
+    await expect(
+      page.getByText('Awaiting review', { exact: true }).first(),
+    ).toBeVisible()
+    const returnId = new URL(page.url()).pathname.split('/').at(-1)!
+    await seller.goto('/seller/returns?status=requested')
+    await expect(seller.locator('h2 a')).toHaveCount(20)
+    const sellerList = await seller.request.get(
+      '/api/seller/returns?status=requested&limit=20',
+    )
+    const sellerRows = z
+      .object({ items: z.array(z.object({ id: z.string() })) })
+      .parse(await sellerList.json()).items
+    const visibleIds = await seller
+      .locator('h2 a')
+      .evaluateAll((links) =>
+        links.map((link) =>
+          new URL(link.getAttribute('href') ?? '', location.origin).pathname
+            .split('/')
+            .at(-1),
+        ),
+      )
+    expect(visibleIds).toEqual(sellerRows.map((item) => item.id))
+    await checkLayout(seller)
+    await seller.screenshot({
+      path: info.outputPath('seller-returns-list.png'),
+      fullPage: true,
+    })
+    await seller.getByRole('link', { name: 'Older returns' }).click()
+    await expect(seller).toHaveURL(/cursor=/)
+    const sellerCursor = seller.url()
+    await seller.locator('h2 a').first().click()
+    await seller.getByRole('link', { name: 'Back to returns' }).click()
+    await expect(seller).toHaveURL(sellerCursor)
+    await seller.getByRole('link', { name: 'Approved', exact: true }).click()
+    await expect(seller).not.toHaveURL(/cursor=/)
+    await expect(
+      seller.getByRole('heading', { name: 'No matching returns' }),
+    ).toBeVisible()
+    await seller.goto('/seller/returns?status=requested')
+    await seller
+      .getByRole('link', { name: data.firstTitle, exact: true })
+      .click()
+    await expect(seller).toHaveURL(new RegExp(`/seller/returns/${returnId}`))
+    await expect(
+      seller.getByText('The bottle is damaged', { exact: true }),
+    ).toBeVisible()
+    expect(
+      await seller
+        .getByRole('link', { name: /Open photo 1/ })
+        .getAttribute('href'),
+    ).toMatch(/\?as=seller$/)
+    const sellerPhoto = `/api/return-photos/${(await seller.getByRole('link', { name: /Open photo 1/ }).getAttribute('href'))!.split('/')[3]}/file?as=seller`
+    expect(
+      (await seller.request.get(sellerPhoto, { maxRedirects: 0 })).status(),
+    ).toBe(302)
+    await checkLayout(seller)
+    await seller.screenshot({
+      path: info.outputPath('seller-return-light.png'),
+      fullPage: true,
+    })
+    await seller.emulateMedia({ colorScheme: 'dark' })
+    await checkLayout(seller)
+    await seller.screenshot({
+      path: info.outputPath('seller-return-dark.png'),
+      fullPage: true,
+    })
+    await expect(
+      seller.getByRole('button', { name: /Approve|Reject|Record refund/i }),
+    ).toHaveCount(0)
+    const otherContext = await browser.newContext({
+      baseURL: process.env.E2E_BASE_URL,
+      viewport: page.viewportSize(),
+      extraHTTPHeaders: headers(),
+    })
+    try {
+      const otherSeller = await otherContext.newPage()
+      await signIn(otherSeller, data.otherSellerEmail)
+      await otherSeller.goto(`/seller/returns/${returnId}`)
+      await expect(
+        otherSeller.getByRole('heading', { name: 'Return not found' }),
+      ).toBeVisible()
+      expect(
+        (
+          await otherSeller.request.get(sellerPhoto, { maxRedirects: 0 })
+        ).status(),
+      ).toBe(404)
+      const otherRows = z
+        .object({ items: z.array(z.object({ id: z.string() })) })
+        .parse(
+          await (await otherSeller.request.get('/api/seller/returns')).json(),
+        ).items
+      expect(otherRows.some((item) => item.id === returnId)).toBe(false)
+    } finally {
+      await otherContext.close()
+    }
+    const photoLink = page.getByRole('link', { name: /Open photo 1/ })
+    const photoHref = await photoLink.getAttribute('href')
+    expect(
+      (await page.request.get(photoHref!, { maxRedirects: 0 })).status(),
+    ).toBe(302)
+    await checkLayout(page)
+    await page.screenshot({
+      path: info.outputPath('buyer-return-detail-dark.png'),
+      fullPage: true,
+    })
+    const adminOrderUrl = admin.url()
+    await admin.goto(`/admin/returns/${returnId}`)
+    await expect(
+      admin.getByRole('button', { name: 'Reject return', exact: true }),
+    ).toBeDisabled()
+    const adminPhoto = await admin
+      .getByRole('link', { name: /Open photo 1/ })
+      .getAttribute('href')
+    expect(adminPhoto).not.toContain('?as=seller')
+    expect(
+      (await admin.request.get(adminPhoto!, { maxRedirects: 0 })).status(),
+    ).toBe(302)
+    await admin
+      .getByLabel('Decision note')
+      .fill('We have approved your return.')
+    const staleAdmin = await admin.context().newPage()
+    await staleAdmin.goto(`/admin/returns/${returnId}`)
+    await admin
+      .getByRole('button', { name: 'Approve return', exact: true })
+      .focus()
+    await admin.keyboard.press('Enter')
+    await expect(admin.getByRole('dialog')).toContainText(
+      'does not issue or record a refund',
+    )
+    await checkLayout(admin)
+    await admin.emulateMedia({ colorScheme: 'dark' })
+    await checkLayout(admin)
+    await admin.screenshot({
+      path: info.outputPath('admin-return-approval-dark.png'),
+    })
+    const firstApproval = admin.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/admin/returns/${returnId}/approve`) &&
+        response.request().method() === 'POST',
+    )
+    await admin
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm approval' })
+      .click()
+    expect((await firstApproval).status()).toBe(200)
+    await expect(
+      admin
+        .getByRole('status')
+        .filter({ hasText: 'Return approved. No refund' }),
+    ).toBeVisible()
+    await expect(
+      admin.getByRole('button', { name: 'Approve return', exact: true }),
+    ).toHaveCount(0)
+    await staleAdmin
+      .getByRole('button', { name: 'Approve return', exact: true })
+      .click()
+    const staleResponse = staleAdmin.waitForResponse((response) =>
+      response.url().endsWith(`/api/admin/returns/${returnId}/approve`),
+    )
+    await staleAdmin
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm approval' })
+      .click()
+    expect((await staleResponse).status()).toBe(409)
+    await expect(
+      staleAdmin.getByRole('alert').filter({ hasText: 'already approved' }),
+    ).toBeVisible()
+    await expect(
+      staleAdmin.getByRole('button', { name: 'Approve return', exact: true }),
+    ).toHaveCount(0)
+    await staleAdmin.close()
+    await checkLayout(admin)
+    await admin.emulateMedia({ colorScheme: 'light' })
+    await checkLayout(admin)
+    await admin.screenshot({
+      path: info.outputPath('admin-return-light.png'),
+      fullPage: true,
+    })
+    await page.getByRole('button', { name: 'Refresh return' }).click()
+    await expect(
+      page.getByText('We have approved your return.', { exact: true }),
+    ).toBeVisible()
+    await page.emulateMedia({ colorScheme: 'light' })
+    await checkLayout(page)
+    await page.screenshot({
+      path: info.outputPath('buyer-return-detail-light.png'),
+      fullPage: true,
+    })
+    expect(
+      (
+        await admin.request.post(`/api/admin/returns/${returnId}/refund`, {
+          data: {
+            method: 'bank_transfer',
+            amountPaise: 50000,
+            note: 'TEST-BANK-TRANSFER',
+          },
+        })
+      ).status(),
+    ).toBe(200)
+    await page.reload()
+    await expect(
+      page.getByText('Refund recorded', { exact: true }).first(),
+    ).toBeVisible()
+    await expect(
+      page.getByText('Method: Bank transfer', { exact: true }),
+    ).toBeVisible()
+    await seller.getByRole('button', { name: 'Refresh return' }).focus()
+    await seller.keyboard.press('Enter')
+    await expect(
+      seller.getByText('Refund recorded', { exact: true }).first(),
+    ).toBeVisible()
+    await expect(
+      seller.getByText('We have approved your return.', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      seller.getByText('No refund has been recorded yet.', { exact: true }),
+    ).toHaveCount(0)
+    await seller.goto('/seller/returns?status=invalid')
+    await expect(
+      seller
+        .getByRole('alert')
+        .filter({ hasText: 'This return list could not be opened' }),
+    ).toBeVisible()
+    await seller.goto('/seller/returns?cursor=invalid')
+    await expect(
+      seller
+        .getByRole('alert')
+        .filter({ hasText: 'This return list could not be opened' }),
+    ).toBeVisible()
+    await seller.goto(`/account/returns/${returnId}`)
+    await expect(
+      seller.getByRole('heading', { name: 'Return not found' }),
+    ).toBeVisible()
+    expect(
+      (await seller.request.get(photoHref!, { maxRedirects: 0 })).status(),
+    ).toBe(404)
+    await admin.goto('/admin/returns')
+    await expect(admin.locator('h2 a')).toHaveCount(20)
+    const pendingPage = z
+      .object({
+        items: z.array(z.object({ id: z.string(), createdAt: z.string() })),
+      })
+      .parse(
+        await (await admin.request.get('/api/admin/returns?limit=20')).json(),
+      ).items
+    const adminIds = await admin
+      .locator('h2 a')
+      .evaluateAll((links) =>
+        links.map((link) =>
+          new URL(link.getAttribute('href') ?? '', location.origin).pathname
+            .split('/')
+            .at(-1),
+        ),
+      )
+    expect(adminIds).toEqual(pendingPage.map((item) => item.id))
+    const timestamps = pendingPage.map((item) => Date.parse(item.createdAt))
+    expect(timestamps).toEqual(timestamps.toSorted((a, b) => a - b))
+    await admin.getByRole('link', { name: 'Next returns', exact: true }).click()
+    await expect(admin).toHaveURL(/cursor=/)
+    const reviewCursor = admin.url()
+    await admin.locator('h2 a').first().click()
+    await admin.getByRole('link', { name: 'Back to returns' }).click()
+    await expect(admin).toHaveURL(reviewCursor)
+    await admin.getByRole('link', { name: 'Approved', exact: true }).click()
+    await expect(admin).not.toHaveURL(/cursor=/)
+    await admin.goto(`/admin/returns/${pendingPage[0]!.id}`)
+    await admin
+      .getByRole('button', { name: 'Approve return', exact: true })
+      .click()
+    await admin
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm approval' })
+      .click()
+    await expect(
+      admin.getByRole('button', { name: 'Approve return', exact: true }),
+    ).toHaveCount(0)
+    await expect(
+      admin.getByRole('button', { name: 'Reject return', exact: true }),
+    ).toBeDisabled()
+    await admin
+      .getByLabel('Decision note')
+      .fill('The return was not received. Please contact support.')
+    await admin
+      .getByRole('button', { name: 'Reject return', exact: true })
+      .click()
+    await checkLayout(admin)
+    await admin.screenshot({
+      path: info.outputPath('admin-return-rejection-light.png'),
+    })
+    await admin
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm rejection' })
+      .click()
+    await expect(
+      admin.getByText('Not approved', { exact: true }).first(),
+    ).toBeVisible()
+    await expect(
+      admin.getByText('The return was not received. Please contact support.', {
+        exact: true,
+      }),
+    ).toBeVisible()
+    await expect(
+      admin.getByRole('button', { name: 'Reject return', exact: true }),
+    ).toHaveCount(0)
+    await admin.goto('/admin/returns?status=invalid')
+    await expect(
+      admin
+        .getByRole('alert')
+        .filter({ hasText: 'This return list could not be opened' }),
+    ).toBeVisible()
+    await admin.goto('/admin/returns?cursor=invalid')
+    await expect(
+      admin
+        .getByRole('alert')
+        .filter({ hasText: 'This return list could not be opened' }),
+    ).toBeVisible()
+    await admin.goto('/admin/returns/not-an-id')
+    await expect(
+      admin.getByRole('heading', { name: 'Return not found' }),
+    ).toBeVisible()
+    await admin.goto(adminOrderUrl)
+    await admin
+      .getByRole('link', { name: 'Back to orders', exact: true })
+      .click()
+    await expect(admin).toHaveURL(
+      (url) =>
+        url.pathname === '/admin/orders' &&
+        url.searchParams.get('orderNumber') ===
+          filteredQuery.get('orderNumber') &&
+        url.searchParams.get('status') === filteredQuery.get('status') &&
+        !url.searchParams.get('cursor'),
+    )
+    await checkLayout(admin)
+    await admin.getByLabel('Refund', { exact: true }).selectOption('true')
+    await admin.getByRole('button', { name: 'Apply filters' }).click()
+    await expect(
+      admin.getByRole('heading', { name: 'No matching orders' }),
+    ).toBeVisible()
+    await admin.getByRole('link', { name: 'Clear', exact: true }).click()
+    await expect(admin).toHaveURL(/\/admin\/orders$/)
+    await expect(admin.getByLabel('Order number')).toHaveValue('')
+    await expect(admin.getByLabel('Status', { exact: true })).toHaveValue('')
+    await expect(admin.getByLabel('Refund', { exact: true })).toHaveValue('')
+    await admin.goto('/admin/orders?cursor=invalid')
+    await expect(
+      admin
+        .getByRole('alert')
+        .filter({ hasText: 'This order list could not be opened' }),
+    ).toBeVisible()
+    await admin.goto('/admin/orders/not-an-id')
+    await expect(
+      admin.getByRole('heading', { name: 'Order not found' }),
+    ).toBeVisible()
+    expect(errors).toEqual([])
+  } finally {
+    await sellerContext.close()
+    await adminContext.close()
+  }
+})
+
+test('AO02 administrator cancellation, refund recording and invoice requests', async ({
+  page,
+}, info) => {
+  test.setTimeout(180000)
+  await page.context().setExtraHTTPHeaders(headers())
+  const data = z
+    .object({
+      orderProducts: z.record(
+        z.string(),
+        z.object({ refundOrderId: z.string() }),
+      ),
+    })
+    .parse(JSON.parse(process.env.E2E_FIXTURES ?? '{}')).orderProducts[
+    info.project.name
+  ]!
+  await signIn(page, fixturesFor(info.project.name).adminEmail)
+  const path = `/admin/orders/${data.refundOrderId}`
+  await page.goto(path)
+  await expect(
+    page.getByRole('button', { name: 'Cancel order', exact: true }),
+  ).toBeDisabled()
+  await page
+    .getByLabel('Cancellation reason')
+    .fill('The seller cannot supply this item')
+  const stale = await page.context().newPage()
+  await stale.goto(path)
+  await stale
+    .getByLabel('Cancellation reason')
+    .fill('Already cancelled in another tab')
+  await page.getByRole('button', { name: 'Cancel order', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('dialog')).toContainText(
+    'make the refund separately',
+  )
+  await checkLayout(page)
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await checkLayout(page)
+  await page.screenshot({
+    path: info.outputPath('admin-cancel-dialog-dark.png'),
+  })
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Confirm cancellation' })
+    .click()
+  await expect(
+    page.getByRole('heading', { name: 'Record an already-made refund' }),
+  ).toBeVisible()
+  await stale.getByRole('button', { name: 'Cancel order', exact: true }).click()
+  const conflict = stale.waitForResponse((response) =>
+    response.url().endsWith(`/api/admin/orders/${data.refundOrderId}/cancel`),
+  )
+  await stale
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Confirm cancellation' })
+    .click()
+  expect((await conflict).status()).toBe(409)
+  await expect(
+    stale.getByRole('button', { name: 'Cancel order', exact: true }),
+  ).toHaveCount(0)
+  await expect(
+    stale.getByRole('alert').filter({ hasText: /cancelled/ }),
+  ).toBeVisible()
+  await stale.close()
+  await expect(
+    page.getByText('No money is moved', { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByLabel('Refund amount (₹)')).toHaveValue('123.45')
+  await page.getByLabel('Refund amount (₹)').fill('123.456')
+  await expect(
+    page.getByRole('button', { name: 'Record refund', exact: true }),
+  ).toBeDisabled()
+  await page.getByLabel('Refund amount (₹)').fill('123.44')
+  await page
+    .getByLabel('Razorpay refund ID', { exact: false })
+    .fill(
+      `rfnd_${'A'.repeat(13)}${info.project.name === 'chrome-phone' ? 'P' : info.project.name === 'chrome-medium' ? 'M' : 'D'}`,
+    )
+  await page.getByRole('button', { name: 'Record refund', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('No money is moved')
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Confirm refund record' })
+    .click()
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'That refund cannot be recorded' }),
+  ).toContainText('123.45')
+  await page.getByLabel('Refund amount (₹)').fill('123.45')
+  await checkLayout(page)
+  await page.screenshot({
+    path: info.outputPath('admin-refund-dark.png'),
+    fullPage: true,
+  })
+  await page.emulateMedia({ colorScheme: 'light' })
+  await checkLayout(page)
+  await page.screenshot({
+    path: info.outputPath('admin-refund-light.png'),
+    fullPage: true,
+  })
+  await page.getByRole('button', { name: 'Record refund', exact: true }).click()
+  const refund = page.waitForRequest(
+    (request) =>
+      request
+        .url()
+        .endsWith(`/api/admin/orders/${data.refundOrderId}/refund`) &&
+      request.method() === 'POST',
+  )
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Confirm refund record' })
+    .click()
+  expect((await refund).postDataJSON()).toMatchObject({
+    amountPaise: 12345,
+    method: 'gateway',
+  })
+  await expect(page.getByText('Refunded', { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Record refund', exact: true }),
+  ).toHaveCount(0)
+  await expect(
+    page.getByRole('region', { name: 'Order history' }),
+  ).toContainText('Refund recorded')
+  const invoiceRoute = '**/api/admin/invoices/*/render'
+  await page.route(invoiceRoute, (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: 'The invoice queue is unavailable. Try again.',
+      }),
+    }),
+  )
+  await page.getByRole('button', { name: 'Make PDF again' }).click()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Queue invoice PDF' })
+    .click()
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'invoice queue is unavailable' }),
+  ).toBeVisible()
+  await page.unroute(invoiceRoute)
+  await page.getByRole('button', { name: 'Make PDF again' }).click()
+  const queued = page.waitForResponse((response) =>
+    /\/api\/admin\/invoices\/[^/]+\/render$/.test(response.url()),
+  )
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Queue invoice PDF' })
+    .click()
+  expect((await queued).status()).toBe(202)
+  await expect(
+    page.getByRole('status').filter({ hasText: 'PDF generation queued' }),
+  ).toBeVisible()
+  await expect
+    .poll(
+      async () => {
+        await page.reload()
+        return page
+          .getByRole('link', { name: 'Download PDF', exact: true })
+          .count()
+      },
+      { timeout: 60000 },
+    )
+    .toBe(1)
+})
