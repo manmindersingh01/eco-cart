@@ -68,17 +68,15 @@ Tasks started as planned; each task file records its current implementation and 
 | [28](./28-import-suggestions.md) | AI import mapping suggestions | None | complete |
 | [29](./29-ai-reports.md) | AI usage and search-gap reports | None | complete |
 | [30](./30-portal-navigation.md) | Portal overview links and counts | 01-29 as applicable | complete |
-| [31](./31-release-verification.md) | Local release verification and provider handover | 01-30 | planned |
+| [31](./31-release-verification.md) | Local release verification and provider handover | 01-30 | complete |
 
-## Current position - 27 November 2026
+## Current position - 28 November 2026
 
-30 of the 31 tasks are implemented and locally verified: 01-30.
+All 31 tasks are locally complete.
 The Status column above and each task's evidence section record what was checked.
 Complete means local implementation and the required local checks passed; it does not claim production sign-off or live-provider verification.
 
-| Remaining task | Current category | Next action |
-| --- | --- | --- |
-| 31 - Local release verification and provider handover | Ready for final local verification | Run the complete local marketplace journeys now that 01-30 are complete and keep deferred live-provider checks explicit. |
+The project lead owns the remaining [provider checks](31-provider-checklist.md) and launch inputs below.
 
 ### Inputs and attention before launch
 
@@ -135,4 +133,4 @@ The initial planning delivery changed Markdown only after the separately authori
 Application tests were not run for that documentation-only pass.
 Its checks were formatting, local links and git diff --check.
 Subsequent implementation and application verification are recorded in each task file.
-The latest implementation, task 30, passed `pnpm check` with 1,298 tests and the production build, plus the agreed three-size Chrome journey (`3 passed (2.8m)`).
+The [final release verification](31-release-verification.md) passed 1,298 repository tests, the production build, 24 local API walkthrough steps and 21 Chrome journeys across three screen sizes.

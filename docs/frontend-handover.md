@@ -47,11 +47,11 @@ That is why many actions answer "accepted" (HTTP 202) and the screen has to chec
 The shop, cart, checkout, and buyer order screens were built on 19 November 2026 and are on `main`.
 Start your work from the latest `main`.
 
-### Not built yet
+### Local release verification
 
-Final release verification remains in this task plan.
-Section 7 lists each one with its route, its APIs, and what "done" means.
-The backend for every one of them already exists.
+The buyer, seller and administrator journeys passed the local release checks on 28 November 2026.
+See the [task 31 evidence](../temp/frontend/step-3-remaining-screens/31-release-verification.md) for the tested commit, commands and screenshots.
+The project lead can use the [provider checklist](../temp/frontend/step-3-remaining-screens/31-provider-checklist.md) to verify Razorpay and OpenRouter with the configured accounts.
 
 ## 3. Running it on your computer
 
