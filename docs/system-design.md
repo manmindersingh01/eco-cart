@@ -1144,6 +1144,9 @@ All four discovery features end in the same place: one SQL query over `products`
   Product images are embedded once, when the listing is approved.
 - Similar products: nearest neighbours of the product's own text embedding within the same category, computed on demand and cached with the product page.
 
+The search page offers Keyword, Natural language and Photo options, while the header continues to submit keyword searches (agreed 27 November 2026).
+Private photo keys stay out of the page address and are kept only while the search page retains its client state.
+
 Every search writes a `search_queries` row, and zero-result queries surface in the admin console as the catalogue gap report.
 A row is written for each new search, not for each further page, and keyword search rows carry no user or session, because the report needs only the words and the count.
 Searches are limited per visitor address (120 a minute), counted in `rate_limits`.

@@ -16,7 +16,10 @@ export function HeaderSearch({
 }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const keyword = pathname === '/search' ? (searchParams.get('q') ?? '') : ''
+  const keyword =
+    pathname === '/search' && !searchParams.get('mode')
+      ? (searchParams.get('q') ?? '')
+      : ''
   // The key starts the uncontrolled input again when the search changes.
   return (
     <SearchBox
