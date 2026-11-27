@@ -206,10 +206,11 @@ const closeness = (distance: SQL) => sql`(1 - (${distance}))::numeric`
 
 function nearestText(target: SQL, exceptProductId?: string): SQL {
   const distance = sql`e.embedding <=> ${target}`
+  // Without a source vector, null distances would otherwise return arbitrary rows.
   return sql`(
     select e.product_id, ${closeness(distance)} as rank
     from product_embeddings e
-    where e.kind = 'text'${exceptProductId ? sql` and e.product_id <> ${exceptProductId}` : sql``}
+    where e.kind = 'text'${exceptProductId ? sql` and e.product_id <> ${exceptProductId} and ${target} is not null` : sql``}
     order by ${distance}
     limit ${VECTOR_CANDIDATES}
   )`

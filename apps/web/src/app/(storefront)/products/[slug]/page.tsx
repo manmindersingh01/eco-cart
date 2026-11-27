@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/ui/feedback'
 import { PageLoading } from '@/components/ui/page-loading'
 import { PublicReviews } from '@/components/storefront/public-reviews'
 import { OwnReviewForm } from '@/components/storefront/own-review'
+import { SimilarProducts } from '@/components/storefront/similar-products'
 import { readProductPage, readProductReviews } from '@/lib/storefront'
 import { formatRating } from '@/lib/storefront-display'
 
@@ -177,6 +178,16 @@ async function ProductContent({ params }: PageProps<'/products/[slug]'>) {
         />
       </section>
       <OwnReviewForm key={product.slug} slug={product.slug} />
+      <section aria-label="Similar products" className="grid gap-4">
+        <h2 className="text-xl font-semibold">Similar products</h2>
+        <Suspense
+          fallback={
+            <p className="text-sm text-muted">Loading similar products...</p>
+          }
+        >
+          <SimilarProducts slug={product.slug} />
+        </Suspense>
+      </section>
     </div>
   )
 }

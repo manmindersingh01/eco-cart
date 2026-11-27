@@ -574,6 +574,7 @@ describe('listSimilarProducts', () => {
 
   test('is empty until the product is embedded, and 404 for a product not on sale', async () => {
     const leaf = await category()
+    await listed({ categoryId: leaf.id, vector: fakeDirection(newAxis()) })
     const plain = await listed({ categoryId: leaf.id })
     expect((await similar(`product-${plain}`)).items).toEqual([])
     const draft = await listed({ categoryId: leaf.id, status: 'draft' })

@@ -38,6 +38,8 @@ import {
   createTestProduct,
   createTestUser,
   createTestCoupon,
+  startTestWorker,
+  fakeDirection,
   addTestLedgerEntries,
   orderToInvoiceFor,
 } from '@ecokart/core/testing'
@@ -47,7 +49,11 @@ import {
 } from '../../../../packages/core/src/modules/payments/service.ts'
 import { onOrderConfirmed } from '../../../../packages/core/src/modules/orders/service.ts'
 import { SEND_EMAIL_QUEUE } from '../../../../packages/core/src/modules/notifications/jobs.ts'
-import { settlementStatements } from '../../../../packages/core/src/db/schema/index.ts'
+import {
+  settlementStatements,
+  emailOutbox,
+  productEmbeddings,
+} from '../../../../packages/core/src/db/schema/index.ts'
 
 export const browserProjects = [
   'chromium-desktop',
@@ -60,6 +66,15 @@ export const browserProjects = [
 
 export interface BrowserFixtures {
   categoryId: string
+  similarProducts: Record<
+    string,
+    {
+      slug: string
+      candidateSlug: string
+      candidateTitle: string
+      emptySlug: string
+    }
+  >
   couponExamples: Record<string, { id: string; code: string }>
   reviewProducts: Record<string, { slug: string; buyerEmail: string }>
   adminMoney: Record<
@@ -121,6 +136,7 @@ export async function prepareFixtures(
   const orderProducts: BrowserFixtures['orderProducts'] = {}
   const reviewProducts: BrowserFixtures['reviewProducts'] = {}
   const couponExamples: BrowserFixtures['couponExamples'] = {}
+  const similarProducts: BrowserFixtures['similarProducts'] = {}
   let categoryId = ''
   try {
     const projects = [
@@ -142,7 +158,64 @@ export async function prepareFixtures(
       if (index === 0) {
         for (let count = 0; count < 21; count++)
           await createTestCoupon(fixtureDb, admin.id)
+        const failedWorker = await startTestWorker(migrationUrl)
+        try {
+          for (let count = 0; count < 25; count++)
+            await failedWorker.failJob(
+              'catalogue.embed-product',
+              {
+                productId: crypto.randomUUID(),
+                code: 'PRIVATE_SIGN_IN_CODE',
+                detail: 'PRIVATE_JOB_PAYLOAD',
+              },
+              { message: 'PRIVATE_FAILURE_DETAIL' },
+            )
+          await failedWorker.failJob('notifications.send-sms', {
+            phoneNumber: '+919800000000',
+            code: 'PRIVATE_SIGN_IN_CODE',
+          })
+          await failedWorker.countJobs('catalogue.embed-product')
+        } finally {
+          await failedWorker.stop()
+        }
+        for (let count = 0; count < 25; count++)
+          await fixtureDb.insert(emailOutbox).values({
+            toEmail: `failed-${count}@ecokart.test`,
+            template: 'payment_received',
+            subject: 'PRIVATE_MESSAGE_SUBJECT',
+            payload: {
+              orderNumber: 'TEST-BACKGROUND',
+              amountPaise: 50000,
+              method: 'upi',
+              paidAt: '2026-11-01T10:00:00Z',
+            },
+            status: 'failed',
+            attempts: 5,
+            lastError: 'PRIVATE_FAILURE_DETAIL',
+          })
+        await fixtureDb.insert(emailOutbox).values({
+          toEmail: 'expired-code@ecokart.test',
+          template: 'otp',
+          subject: 'PRIVATE_SIGN_IN_CODE',
+          payload: { code: 'PRIVATE_SIGN_IN_CODE' },
+          status: 'failed',
+          attempts: 5,
+        })
       }
+      await fixtureDb.insert(emailOutbox).values({
+        toEmail: `stuck-${project}@ecokart.test`,
+        template: 'payment_received',
+        subject: 'PRIVATE_MESSAGE_SUBJECT',
+        payload: {
+          orderNumber: 'TEST-STUCK',
+          amountPaise: 50000,
+          method: 'upi',
+          paidAt: '2026-11-01T10:00:00Z',
+        },
+        status: 'queued',
+        createdAt: new Date(Date.now() - 3600000),
+        updatedAt: new Date(Date.now() - 3600000),
+      })
       const exhaustedCoupon = await createTestCoupon(fixtureDb, admin.id, {
         usedCount: 2,
         usageLimit: 2,
@@ -262,6 +335,32 @@ export async function prepareFixtures(
         sellerId: orderOther.id,
         categoryId,
       })
+      const emptySimilar = await createTestProduct(fixtureDb, {
+        sellerId: orderSeller.id,
+        categoryId,
+      })
+      await fixtureDb.insert(productEmbeddings).values([
+        {
+          productId: first.product.id,
+          kind: 'text',
+          model: 'browser-test',
+          contentHash: crypto.randomUUID(),
+          embedding: fakeDirection(100 + index * 3),
+        },
+        {
+          productId: second.product.id,
+          kind: 'text',
+          model: 'browser-test',
+          contentHash: crypto.randomUUID(),
+          embedding: fakeDirection(100 + index * 3, 5),
+        },
+      ])
+      similarProducts[project] = {
+        slug: first.product.slug,
+        candidateSlug: second.product.slug,
+        candidateTitle: second.product.title,
+        emptySlug: emptySimilar.product.slug,
+      }
       const buyer = await createTestUser(fixtureDb)
       // Enough real rows to exercise the seller page's 20-row cursor boundary.
       for (let count = 0; count < 21; count++) {
@@ -508,6 +607,7 @@ export async function prepareFixtures(
       adminMoney,
       reviewProducts,
       couponExamples,
+      similarProducts,
     }
   } finally {
     await Promise.all([pool.end(), fixturePool.end(), queue.stop()])
